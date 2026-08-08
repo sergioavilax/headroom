@@ -153,8 +153,32 @@ $ uv run pytest -m live -q
 9 deselected, 1 warning in 0.17s
 ```
 
-CI on PR-0: *(filled in by the operator at the gate — the workflow is keyless, so it
-runs identically here and on GitHub.)*
+CI on PR-0 ([run 31281919485](https://github.com/sergioavilax/headroom/actions/runs/31281919485)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31281919485 --json conclusion,jobs
+success
+lint + typecheck: success
+gateway image builds and serves: success
+pytest (postgres + dynamodb-local service containers): success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 16 source files
+gateway image builds and serves | gateway healthy
+pytest (…service containers) | dynamodb-local answering (HTTP 400 to an unsigned GET)
+pytest (…service containers) | ========================= 9 passed, 1 warning in 1.14s ===
+```
+
+**9 passed, 0 skipped in CI** — the service tests executed against the containers
+rather than skipping, which is the half of the gate a green pytest alone would not
+prove.
+
+The first PR-0 run was also green but carried a deprecation annotation
+(`actions/checkout@v4` and `astral-sh/setup-uv@v5` target Node 20, force-run on Node
+24). Fixed in-branch: checkout `v7`, setup-uv `v9.0.0` — pinned to the exact release
+because astral-sh publishes floating major tags only through `v7`, and an assumed `v9`
+alias failed to resolve on the intervening run.
 
 The one warning is `StarletteDeprecationWarning: Using httpx with starlette.testclient
 is deprecated; install httpx2 instead` — emitted by `fastapi.testclient` under
