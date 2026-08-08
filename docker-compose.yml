@@ -1,0 +1,90 @@
+# Headroom's local stack: db (Postgres 16 + pgvector) + dynamodb (DynamoDB Local)
+# + gateway (FastAPI). Every variable has a default, so a bare `docker compose up`
+# works with no `.env`; compose reads `.env` automatically for overrides.
+#
+# Host ports deliberately sidestep the usual suspects — 5433 for Postgres, 8080 for
+# the gateway, 8001 for DynamoDB Local — so the stack coexists with whatever else is
+# already bound to 5432/8000 on a developer's machine (docs/DECISIONS.md H-006).
+# Container-internal ports stay canonical.
+#
+# No secret appears in this file, ever (BUILD_PLAN §0.2 invariant 3). The AWS
+# credentials below are DynamoDB Local's ignored dummies — it requires *some*
+# credential to sign against and never validates it. Real provider keys live in the
+# gitignored `.env` and are wired in by the phase that needs them.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-headroom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-headroom}
+      POSTGRES_DB: ${POSTGRES_DB:-headroom}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-headroom} -d ${POSTGRES_DB:-headroom}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Token buckets and budget reservations only (BUILD_PLAN L2). `-sharedDb` keeps
+  # every credential looking at one dataset, so a table created by one process is
+  # visible to the next; `-inMemory` makes the container disposable — the local
+  # stack's DynamoDB state is never meant to survive a restart.
+  dynamodb:
+    image: amazon/dynamodb-local:3.1.0
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb", "-port", "8000"]
+    ports:
+      - "${DYNAMODB_PORT:-8001}:8000"
+    healthcheck:
+      # An unsigned GET is a malformed DynamoDB request by definition, so a 400 is
+      # the service answering — which is what "up" means for this container.
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/ | grep -q 400",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-headroom}:${POSTGRES_PASSWORD:-headroom}@db:5432/${POSTGRES_DB:-headroom}
+      DYNAMODB_ENDPOINT_URL: http://dynamodb:8000
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      dynamodb:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=4)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  dbdata:
