@@ -431,6 +431,27 @@ Headroom can measure about itself, and it is now in the ledger's shape from day 
   the live smoke exercises the same path by hand.
 - **A1, A3, A6, A7** — not due at this gate.
 
+CI on PR-1 ([run 31284884898](https://github.com/sergioavilax/headroom/actions/runs/31284884898)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31284884898 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 57 source files
+pytest (…service containers) | ===== 127 passed, 2 deselected, 1 warning in 0.79s =====
+gateway image builds and serves | gateway healthy
+```
+
+**127 passed, 0 skipped in CI** — the service tests executed against the containers
+rather than skipping, which under H-012 is now enforced rather than hoped for: CI sets
+`DATABASE_URL` and `DYNAMODB_ENDPOINT_URL` explicitly, and an explicit endpoint that is
+unreachable fails instead of skipping.
+
 **Live smoke** — not yet run. It is operator-run, after CI is green, and the commands are
 in the PR description. Budgeted at well under $0.05 against the $3 P1–P7 bucket.
 
