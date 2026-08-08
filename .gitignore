@@ -1,0 +1,40 @@
+# env / secrets — no key ever reaches git (BUILD_PLAN §0.2 invariant 3)
+.env
+*.env.local
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+*.egg-info/
+
+# node / next (the dashboard arrives in Phase 7)
+node_modules/
+ui/.next/
+ui/out/
+ui/next-env.d.ts
+*.tsbuildinfo
+
+# terraform / deploy state (Phase 9–10) — state can carry secrets, lockfiles cannot
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+kubeconfig
+*.kubeconfig
+
+# agent / editor / os
+.claude/
+.idea/
+.vscode/
+.DS_Store
