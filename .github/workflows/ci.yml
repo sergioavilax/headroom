@@ -13,8 +13,8 @@ jobs:
     name: lint + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -54,8 +54,8 @@ jobs:
       DATABASE_URL: postgresql://headroom:headroom@localhost:5432/headroom
       DYNAMODB_ENDPOINT_URL: http://localhost:8001
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -81,7 +81,7 @@ jobs:
     name: gateway image builds and serves
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -t headroom:ci .
       - name: Smoke /healthz in the built image
         run: |
