@@ -1,0 +1,8 @@
+# LF everywhere. The repo is developed under WSL2 with Windows tooling in reach;
+# a CRLF that sneaks into a shell script or a Dockerfile breaks the container, not
+# the editor.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.svg text eol=lf

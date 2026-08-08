@@ -1,0 +1,101 @@
+# Fully keyless CI (BUILD_PLAN §0.2 invariant 4): no secret is read by any job, so
+# forks and every PR run the same way the maintainer does. Live provider calls are
+# opt-in locally (`pytest -m live`) and never happen here.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-type:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      # The compose file is a deliverable; a typo in it should fail here, not on the
+      # operator's machine.
+      - name: docker compose config is valid
+        run: docker compose config --quiet
+
+  test:
+    name: pytest (postgres + dynamodb-local service containers)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: headroom
+          POSTGRES_PASSWORD: headroom
+          POSTGRES_DB: headroom
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U headroom -d headroom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      # Default CMD is `-jar DynamoDBLocal.jar -inMemory` on port 8000. Service
+      # containers cannot override CMD, so the readiness proof is the explicit wait
+      # step below rather than a --health-cmd.
+      dynamodb:
+        image: amazon/dynamodb-local:3.1.0
+        ports:
+          - 8001:8000
+    env:
+      DATABASE_URL: postgresql://headroom:headroom@localhost:5432/headroom
+      DYNAMODB_ENDPOINT_URL: http://localhost:8001
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Wait for DynamoDB Local
+        run: |
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/ || true)
+            if [ "$code" = "400" ]; then
+              echo "dynamodb-local answering (HTTP 400 to an unsigned GET)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "dynamodb-local never answered"
+          exit 1
+      # Both service-backed tests must actually run here — a silent skip would make
+      # this job a liar about the containers.
+      - run: uv run pytest -v
+      - name: Migration runner is a clean no-op at Phase 0
+        run: uv run python -m headroom.db.migrate
+
+  image:
+    name: gateway image builds and serves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t headroom:ci .
+      - name: Smoke /healthz in the built image
+        run: |
+          docker run -d --name headroom-ci -p 8000:8000 headroom:ci
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:8000/healthz | grep -q '"status":"ok"'; then
+              echo "gateway healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "gateway never became healthy"
+          docker logs headroom-ci
+          exit 1
+      - name: Remove the smoke container
+        if: always()
+        run: docker rm -f headroom-ci || true
