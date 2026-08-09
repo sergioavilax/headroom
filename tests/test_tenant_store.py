@@ -51,16 +51,25 @@ async def open_postgres_store() -> AsyncIterator[TenantStore]:
         # DATABASE_URL is a suite people learn to interrupt.
         pytest.fail(f"DATABASE_URL was set to {DATABASE.url} and nothing is listening there")
     await run_migrations(DATABASE.url)
-    conn = await asyncpg.connect(DATABASE.url, timeout=10)
-    try:
-        await conn.execute("TRUNCATE virtual_keys, tenants CASCADE")
-    finally:
-        await conn.close()
+    await truncate_control_plane()
     store = PostgresTenantStore(url=DATABASE.url)
     try:
         yield store
     finally:
         await store.aclose()
+        # Truncate on the way out as well as on the way in. Before is what makes the
+        # assertions exact; after is what stops `make test` leaving rows behind, so
+        # that following the README's demo immediately afterwards does not collide
+        # with a tenant some test invented.
+        await truncate_control_plane()
+
+
+async def truncate_control_plane() -> None:
+    conn = await asyncpg.connect(DATABASE.url, timeout=10)
+    try:
+        await conn.execute("TRUNCATE virtual_keys, tenants CASCADE")
+    finally:
+        await conn.close()
 
 
 @pytest.fixture
