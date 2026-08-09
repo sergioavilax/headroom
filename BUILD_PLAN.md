@@ -72,6 +72,7 @@ headroom/
     core/              # request context, tracing/log, config, storage interfaces
     db/                # migrations runner
   migrations/          # raw SQL, filename order
+  config/routing.yaml  # providers + model-prefix routes, per dialect (Phase 1; H-014)
   config/models.yaml   # model ids, dialects, context windows, DATED prices (D-017 pattern)
   ui/                  # Next.js dashboard — true black #000, cool zinc surfaces, the operator's design language (read the frontend-design skill before touching it)
   experiments/         # P8: paraphrase corpus (golden, hashed), runners, results/

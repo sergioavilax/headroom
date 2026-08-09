@@ -18,9 +18,12 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Project code.
+# Project code. `config/` carries the routing table the gateway reads at startup —
+# no secret is in it (BUILD_PLAN §0.2 invariant 3), only the names of the environment
+# variables that hold them.
 COPY headroom ./headroom
 COPY migrations ./migrations
+COPY config ./config
 RUN uv sync --frozen --no-dev
 
 EXPOSE 8000

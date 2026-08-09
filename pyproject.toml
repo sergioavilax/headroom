@@ -12,6 +12,10 @@ dependencies = [
     "asyncpg>=0.30",
     "pydantic>=2.7",
     "boto3>=1.35",
+    # config/routing.yaml (Phase 1) and config/models.yaml with its dated price
+    # schedules (Phase 3). YAML rather than JSON because both files are meant to be
+    # read and edited by a human, and both earn their comments.
+    "pyyaml>=6.0",
 ]
 
 # The semantic cache's embedder (BAAI/bge-small-en-v1.5, CPU — BUILD_PLAN L6) is a
@@ -40,6 +44,9 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
     "mypy>=1.11",
+    # PyYAML ships no inline types, and `mypy --strict` will not take Any for an
+    # answer on a config loader.
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]

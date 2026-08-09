@@ -270,3 +270,376 @@ profile that toggles ports (configuration for a problem a different default solv
 copy-pasting a `psql -p 5432` from Backline's docs will silently talk to the wrong
 database, which is precisely the kind of foot-gun a single fixed convention avoids.
 The P9 AWS deployment is unaffected (ALB listeners and RDS have their own addressing).
+
+---
+
+## H-007 — SSE passthrough observes the stream; it never re-frames it (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** The gateway has to know things about a stream it is forwarding. Phase 1
+needs to know whether the upstream reached its dialect's terminal marker — without that,
+a truncated answer is indistinguishable from a complete one. Phase 3 needs the usage
+payload from `message_delta` / the trailing usage chunk. Phase 5 needs the stop reason
+before it may cache. All of that argues for parsing. Meanwhile assumption A4 and the
+tool-block requirement (A5) argue for touching nothing.
+
+**Decision.** Forward the upstream's bytes **unchanged** and feed a *copy* of every chunk
+to an incremental SSE parser (`headroom/core/sse.py`) used purely as an observer. The
+parser's output steers gateway behaviour; it can never alter a byte the client receives,
+because the yield and the `feed` are separate statements over the same immutable chunk.
+
+Consequences that fall out for free: chunk boundaries are whatever the network produced
+(A4 satisfied by construction), multi-byte characters split mid-sequence pass through
+intact because nothing decodes them, and `input_json_delta` fragments — which are *not*
+valid JSON documents individually — need no special handling.
+
+**Alternatives considered.** *Parse and re-emit* — the obvious design, and the one that
+makes usage extraction tidiest; rejected because re-serializing is exactly the class of
+change that breaks A5 silently, and because it puts a JSON encoder on the first-token
+path. *Pure byte passthrough with no parser* — cheapest, but then the gateway cannot tell
+a finished stream from an amputated one, which is the whole subject of this phase.
+*Tail-scanning the raw bytes for `message_stop`* — works until a terminal marker straddles
+a chunk boundary, which the `chunk_size=1` fixture does on every run.
+
+**Consequences.** The parser is on the hot path for every streamed chunk, so it is written
+to be cheap (byte-level line splitting, no regex, nothing decoded that need not be). Its
+correctness is load-bearing in a way a passive component usually is not: a parser that
+loses an event appends a spurious error to a good response, and one that hallucinates an
+event lets a truncation through. `tests/test_sse.py` therefore tests it at the boundaries
+directly, not only through the proxy.
+
+---
+
+## H-008 — A stream that ends early ends in a terminal error event (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN's risk register item 1 orders the mid-stream-cut fixture written
+*before* the happy path. Once a 200 and some SSE frames are on the wire, the HTTP status
+is spent: there is no status code left to say "actually, that failed". The default
+behaviour of every naive proxy — let the stream stop — produces a fragment that an SDK
+returns as a complete answer, that Phase 3 bills as complete, and that Phase 5 would cache
+and serve forever (invariant 6, one layer down).
+
+**Decision.** A streamed response that does not reach its dialect's terminal marker gets
+one appended frame, in the caller's own dialect, that the caller's SDK raises on:
+
+- **Anthropic**: `event: error` carrying `{"type":"error","error":{"type":"api_error",…}}`
+  — part of the Messages API streaming spec.
+- **OpenAI**: a bare `data:` frame whose JSON carries an `error` key, and **no `[DONE]`
+  after it** — `openai-python` raises `APIError` on exactly that shape, and `[DONE]` is
+  precisely the claim that would make a fragment look finished.
+
+Both carry `headroom.reason`, which distinguishes the two ways a stream ends early:
+`upstream_stream_cut` (the connection died — an exception) and
+`upstream_stream_incomplete` (the bytes simply stopped — no exception anywhere). The
+second is the quieter failure, and the one a guard against *exceptions* alone misses.
+
+**Completion is defined per dialect, with deliberately different strictness.** Anthropic
+always sends `message_stop`, so the rule is strict: `message_stop` or an upstream `error`
+event, nothing else. The OpenAI dialect's `[DONE]` is convention rather than protocol, so
+the rule is lenient: `[DONE]`, **or** a chunk carrying a non-null `finish_reason`, **or**
+an error frame. Lenient there avoids crying truncation at a compliant-but-terse backend;
+strict here avoids missing a real one. (A `finish_reason` of `length` is a *complete
+stream* of a *truncated answer* — a real distinction, and Phase 5's business under
+invariant 6. The only question at this layer is whether the stream ended or was cut.)
+
+**Alternatives considered.** *Silently ending the stream* — the failure this decision
+exists to prevent. *Killing the TCP connection* so the client sees a transport error —
+honest, but it discards the request id and the reason, and behaves differently behind
+every load balancer. *Buffering the whole response and returning a 5xx once it turns out
+incomplete* — would work, and would throw away first-token latency, which is the product.
+*A gateway-specific error envelope* — a shape no SDK parses is barely better than silence.
+
+**Consequences.** The gateway must track completion for every streamed response, which is
+what H-007 pays for. The check is gated on a `text/event-stream` content-type, so a
+non-SSE 200 streamed through is not falsely accused. Phase 6 inherits the semantic that
+makes failover safe — a fault **before** the first byte may be retried against a fallback,
+a fault **after** it may not, because splicing is how gateways serve Frankenstein
+responses — and that line is drawn in the provider interface rather than in each provider.
+
+---
+
+## H-009 — Upstream errors are forwarded; invented ones are specific (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** "Upstream errors map to honest downstream errors with the upstream's status
+preserved" is a Phase 1 non-negotiable. Two different situations hide inside it, and they
+need opposite treatments.
+
+**Decision.**
+
+- **The upstream answered** (any status ≥ 400): forward its status, its body **verbatim**,
+  and its headers. The gateway composes nothing. An upstream 400 naming the offending
+  field is more useful than anything Headroom could write, and `retry-after` on a 429 is
+  the caller's means of behaving well.
+- **There was no answer**: the gateway invents a status, and which one is fixed by the
+  error class so the same fault always surfaces the same way — `504` timeout, `502`
+  unreachable or cut, `404` unroutable model (matching what both providers return for an
+  unknown model, so an SDK's `NotFoundError` means the same thing with or without Headroom
+  in the path), `400` unparseable body, `500` gateway misconfiguration.
+- Invented bodies use **only documented dialect error types** (`api_error`,
+  `rate_limit_error`, `overloaded_error`, …). The exact cause travels in a `headroom`
+  block — `{"reason": …, "request_id": …}` — that SDKs ignore as an unknown key.
+- Every error response carries `x-headroom-error-source: upstream | gateway`.
+
+**Alternatives considered.** *Normalizing every error into one Headroom shape* —
+consistent, and it destroys the information the caller needs; it would also flatten the
+429/529 distinction that Phase 6's failover and Phase 8's H3 are *measured* on. *Inventing
+more expressive error types* (`timeout_error` for the 504) — more honest at a glance, but a
+gateway is a poor place to coin vocabulary an SDK might switch on; `reason` carries that
+precision where nothing can trip over it. *Returning 500 for everything with no answer* —
+the generic 500 the plan forbids by name.
+
+**Consequences.** The set of invented statuses is now a compatibility surface: changing
+what a timeout returns changes caller retry behaviour. `reason` strings are likewise stable
+identifiers, and Phase 3 writes them to the ledger, so they are additive-only from here. A
+misconfiguration still returns 500 — but one that names the exact environment variable to
+set, which is what separates a specific 500 from a generic one.
+
+---
+
+## H-010 — Header policy: a deny-list, and credentials never cross (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** A proxy that forwards headers naively breaks in three distinct ways; a proxy
+that forwards none makes its callers worse citizens than they were without it.
+
+**Decision.** Both directions use a **deny-list**, not an allow-list.
+
+- **Upstream-bound**: strip the caller's `authorization` / `x-api-key` / `api-key` /
+  `cookie`, the hop-by-hop headers, `host`, `content-length`, and `accept-encoding`. Strip
+  `x-headroom-*` and hand it to the provider separately as *control* input. Everything else
+  is forwarded, and the provider adds its own credential on top.
+- **Client-bound**: strip hop-by-hop, `content-length`, and `content-encoding` — httpx has
+  already decoded the body, so the upstream's framing describes bytes that no longer exist.
+  Everything else is forwarded, including `retry-after` and the provider's rate-limit and
+  request-id headers.
+
+The credential rule matters more than it looks today: Phase 2 turns the client's
+`authorization` into a **virtual key** — an `hk_…` value meaningful only to Headroom — and a
+gateway that forwarded it would leak its own tenants' secrets to Anthropic. Writing the rule
+now means Phase 2 adds keys rather than also fixing a leak.
+
+**Alternatives considered.** *An allow-list* — safer against a future framing header, and it
+silently discards signal forever; the cost of the deny-list is having to notice one new
+header, the cost of the allow-list is invisible degradation. *Forwarding everything* —
+produces the classic `content-encoding: gzip` on decoded plaintext. *Forwarding the caller's
+auth upstream* — convenient in Phase 1, a security bug in Phase 2.
+
+**Consequences.** Repeated response headers collapse to a single comma-joined value (httpx's
+`Headers` semantics); neither dialect sends a header that must stay split, and revisiting
+this means changing the `UpstreamResponse.headers` type. A new hop-by-hop or framing header
+in some future HTTP revision has to be added to the deny-list by hand.
+
+---
+
+## H-011 — A vLLM base URL is accepted with or without its `/v1` suffix (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** Both dialect paths already begin with `/v1`. Meanwhile the OpenAI SDK wants its
+`base_url` to *end* with `/v1`, so half the world writes `VLLM_BASE_URL` as
+`http://box:8000/v1` and the other half as `http://box:8000`. httpx joins the first form
+into `/v1/v1/chat/completions` — a 404 that looks like a problem at the far end, on a path
+the operator exercises by hand during the live smoke.
+
+**Decision.** `normalize_base_url` trims trailing slashes and one trailing `/v1` segment, so
+both spellings resolve to the same endpoint. Applied to every HTTP provider, not just the
+OpenAI-compatible one.
+
+**Alternatives considered.** *Document the required form* — a README line against a
+misconfiguration that produces a confusing error is a losing trade. *Make the upstream path
+per-provider configuration* — more general, more to get wrong, and nothing needs the
+generality yet. *Detect at startup with a probe* — a network call at boot, for this.
+
+**Consequences.** A provider genuinely served under a path ending in `/v1` that is *not* the
+API version prefix would be mis-trimmed. No such deployment exists among the launch
+providers, and the failure would be immediate and loud rather than subtle.
+
+---
+
+## H-012 — Service-backed tests find the compose stack on their own (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** Phase 0 made `tests/test_services.py` skip unless `DATABASE_URL` and
+`DYNAMODB_ENDPOINT_URL` were exported by hand. The documented workflow is `make up && make
+test`, which therefore ran two fewer tests than the operator thought it did — a skip nobody
+reads is a test nobody has. Against that, `CLAUDE.md` says service-backed tests should "skip
+loudly on a missing endpoint env var rather than inventing a fallback", and CI's value
+depends on those tests *running* rather than skipping.
+
+**Decision.** Fall back to the compose endpoints (the H-006 host ports), keeping the
+distinction that actually matters:
+
+- **inferred** endpoint, nothing listening → skip, naming the address it tried and
+  suggesting `make up`. A fresh clone with no stack up is not a broken repo.
+- **explicit** endpoint, nothing listening → **fail**. Someone stated the store is there;
+  CI states it in its workflow env, and a silent skip would make that job a liar about its
+  own service containers.
+
+This deliberately amends the `CLAUDE.md` line: the fallback is not invented, it is the
+documented compose stack, and it stays loud when absent.
+
+**Alternatives considered.** *Export the defaults from the Makefile* — same effect for `make
+test`, no effect for a bare `pytest`, and Python could no longer tell an inferred value from
+an operator's. *A `HEADROOM_REQUIRE_SERVICES=1` flag in CI* — one more thing to set and to
+forget; explicit-configuration-means-required needs no flag. *Leave Phase 0 behaviour* —
+keeps a documented workflow quietly under-testing itself.
+
+**Consequences.** Adding a service-backed test means using `resolve_endpoint` rather than
+reading the environment directly. The reachability probe is a 0.4-second TCP connect, so a
+fresh clone pays under a second before skipping. `make up && make test` now reports **127
+passed, 0 skipped**.
+
+---
+
+## H-013 — Providers register as kinds; routes resolve to instance names (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** Phase 6 adds failover chains across the operator's two vLLM boxes, and
+invariant 7 says it extends this phase rather than rewriting it. Whether that is possible is
+decided now, by how a request finds its upstream.
+
+**Decision.** Two levels. **Kinds** are implementations (`anthropic`, `openai_compat`,
+`mock`) that self-register a factory at import time; config names a kind, and a new
+implementation becomes available without the loader, the router, or the proxy learning
+anything. **Instances** are configured providers with names (`anthropic`, `vllm_a`,
+`vllm_b`), held in a per-gateway `ProviderRegistry`. The routing table resolves
+`(dialect, model)` to an instance **name**; the registry turns a name into an object.
+
+Routes are per dialect, with **longest prefix wins** and `""` as the catch-all.
+
+**Alternatives considered.** *Routes holding provider objects* — one fewer indirection, and
+Phase 6 would have to change every rule's type. *A single flat provider table with no kinds*
+— the operator's two GPUs would need two copy-pasted classes. *First-match-wins ordering
+from the YAML file* — makes a config file's line order load-bearing, and carving one model
+out of a family becomes a game of positioning.
+
+**Consequences.** Phase 6 widens what a rule holds (primary plus same-dialect fallbacks) and
+`Gateway.provider_for`; the proxy is untouched, and BUILD_PLAN L4's same-dialect constraint
+is enforced by the data structure rather than remembered by a reviewer. Two equally specific
+prefixes are ordered alphabetically, so a restart cannot reshuffle routing under an
+experiment.
+
+---
+
+## H-014 — Routing lives in its own config file, and PyYAML is a dependency (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN §0.5 lists exactly one config file, `config/models.yaml`, labelled
+Phase 3 and described as model ids, dialects, context windows, and dated prices. Phase 1
+needs somewhere to declare providers and routes.
+
+**Decision.** A second file, `config/routing.yaml`, loaded and validated by Pydantic at
+startup. `models.yaml` stays Phase 3's and keeps its stated contents. The split is by
+ownership: routes are *policy* (they change when a provider is added or a GPU dies), while
+model metadata and prices are *reference data* (they change when a vendor publishes).
+`HEADROOM_ROUTING_CONFIG` overrides the path.
+
+Providers name the **environment variable** holding their credential (`api_key_env`), never
+the credential — and with `extra="forbid"`, a well-meaning `api_key:` line fails to load
+rather than quietly working, which makes invariant 3 structural rather than social.
+
+Validation happens at load (a route naming an undefined provider fails at startup);
+credentials resolve at use (a missing `ANTHROPIC_API_KEY` fails on the first request that
+needs Anthropic, not at boot). A gateway serving only mock and vLLM traffic must start
+without any key, and Phase 9's container must come up healthy before its secret arrives.
+
+**PyYAML** joins the dependencies. Both config files are meant to be read and edited by a
+human and both earn their comments, which JSON cannot carry. `types-PyYAML` joins the dev
+group because `mypy --strict` will not take `Any` for an answer on a config loader.
+
+**Alternatives considered.** *Put routes in `models.yaml` now* — closer to the letter of
+§0.5, and it mixes two things with different change rates and different owners.
+*Environment-variable routing* (`HEADROOM_ROUTES="claude-=anthropic,…"`) — no new
+dependency, unreadable, uncommentable. *JSON* — no comments, and these files are documents.
+*A silent built-in default when the file is missing* — a gateway that invents its own
+routing table sends real traffic somewhere nobody chose.
+
+**Consequences.** `config/` is now part of the container image (`Dockerfile`), and Phase 3
+adds `models.yaml` beside it rather than restructuring. §0.5's repo map is amended by this
+PR to list both files.
+
+---
+
+## H-015 — Pure ASGI middleware, and logging is configured explicitly (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** The request context has to be created before anything else touches a request,
+and one structured line has to be written after every request — including the ones that
+raised. Starlette's `BaseHTTPMiddleware` is the ergonomic way to do both.
+
+**Decision.** Use **pure ASGI middleware** instead. `BaseHTTPMiddleware` runs the downstream
+app in a separate task and pumps the response body through a memory-object stream — an extra
+hop between every upstream chunk and the client, and muddied backpressure. On a gateway
+whose entire product is first-token latency that is not a detail. The pure-ASGI form sees
+the same three message types and adds nothing to the path.
+
+Separately: **`configure_logging()` is called at startup.** Python's root level is
+`WARNING`, so a request logger that merely exists emits nothing, and the only symptom is a
+quiet container — a docstring promising structured logs above a stream of silence. The
+`headroom` logger gets an explicit level (`HEADROOM_LOG_LEVEL`, default `INFO`), a stdout
+handler emitting bare JSON, and `propagate = False` so uvicorn's root handlers do not print
+every line a second time in a different format.
+
+**Alternatives considered.** *`BaseHTTPMiddleware`* — fewer lines, measurable cost on the one
+path that matters. *Creating the context inside each route* — misses everything that fails
+before routing, which is exactly where a missing log line hurts. *Leaving logging to
+uvicorn's config* — works only if every deployment remembers to pass one.
+
+**Consequences.** The middleware manipulates raw ASGI messages, so it is coupled to those
+shapes rather than to a friendly API — it is small and commented for that reason.
+`ctx.complete()` is first-call-wins so the middleware's backstop cannot overwrite a diagnosis
+the proxy already recorded; `tests/test_request_context.py` pins that.
+
+---
+
+## H-016 — The reasoning fixtures serialize non-ASCII literally, unlike every other fixture (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** The live vLLM smoke turned up a delta field no module under `headroom/` has
+ever heard of (`reasoning_content`), carried to the client intact. Making that a keyless
+fixture meant deciding how the mock serializes it — and `mock_scripts._dumps` uses
+`json.dumps`'s default `ensure_ascii=True`, so every fixture in the repo ships its
+non-ASCII pre-escaped.
+
+That default quietly disarms the assertion. If the fixture's bytes contain no non-ASCII
+in the first place, then a proxy that re-encodes the stream with `json.loads`/`json.dumps`
+changes *nothing* about it — the escaped form survives an escaping round trip unchanged —
+and a byte-equality test passes against a gateway that is actively corrupting bodies.
+Worse, a 1-byte re-chop of an all-ASCII payload never splits a character, so the A4
+"mid-UTF-8-sequence" claim is not actually exercised by the payload making it.
+
+**Decision.** The reasoning fixtures serialize with `ensure_ascii=False`
+(`mock_scripts._dumps_literal`), which is also what vLLM's FastAPI layer really sends. The
+trace carries a literal `ö`, `—`, and `𝄞`, so the wire holds 2-, 3-, and 4-byte UTF-8
+sequences. The non-streamed `OPENAI_REASONING_BODY` goes further and carries the *same*
+character in both forms — literal and escaped — in one string, so a normalization is
+caught whichever direction it runs. `_dumps` is left exactly as it was; this is a second
+serializer beside it, not a change to the first (invariant 7).
+
+**Alternatives considered.** *Reuse `_dumps` for consistency* — one serializer, and a
+fixture that cannot detect the most likely real corruption; consistency bought at the cost
+of the property being asserted. *Escape everything and test A4 elsewhere* — the existing
+suite already does that, and the sabotage below shows it is not enough. *A raw byte
+literal for the stream too* (as the tool-use fixture does) — correct but unreadable across
+eighteen frames, and the builder has to stay parameterized so `reasoning_field`, the token
+counts, and `finish_reason: "length"` can all vary.
+
+**Consequences.** Two serializers live in `mock_scripts.py` and the difference between them
+is load-bearing, so both are documented at the definition. This is now verified rather than
+argued: with the proxy temporarily patched to rewrite one literal `ö` as its JSON escape on
+the outbound path, `tests/test_reasoning_passthrough.py` fails four ways while
+`test_streaming_passthrough` and `test_tool_blocks` both pass — 4 failed, 133 passed. The
+new file detects a class of corruption the suite previously could not see. Any future
+fixture meant to prove passthrough fidelity should use `_dumps_literal` for the same
+reason; `_dumps` remains right for fixtures asserting event sequences rather than bytes.
