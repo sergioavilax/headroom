@@ -703,7 +703,12 @@ that broke the Phase 1 smoke.
    path unchanged, rather than being exempted from it.
 6. **CI's migration step became a real assertion.** It was "the runner is a clean no-op at
    Phase 0"; it now applies the migration and proves a second run is a no-op.
-7. **Additions the plan's Phase 2 text does not enumerate**, all additive: the 503
+7. **The Postgres contract fixture truncates `tenants` and `virtual_keys`.** The compose
+   database is a test fixture, stated plainly here because it means `make test` wipes the
+   local control plane. It truncates on both entry and exit — entry so the contract
+   assertions can be exact (`==`, not `in`) and identical for both stores, exit so the
+   README's demo still works immediately after a test run.
+8. **Additions the plan's Phase 2 text does not enumerate**, all additive: the 503
    `control_plane_unavailable` status (H-020, extending H-009's table); tenant `active`
    state and deactivation; `key_id` in the request log line (P3 needs per-key attribution,
    not only per-tenant); and `docs/vllm.md`, which the session brief mandated.
@@ -756,6 +761,50 @@ The Postgres half of the contract suite **ran** rather than skipped — 18 of
 $ uv run pytest tests/test_tenant_store.py -v | grep -c 'postgres.*PASSED'
 18
 ```
+
+**Run again against a fresh clone** (`git clone -b claude/p2-tenancy . /tmp/hr-p2-gate`),
+with no venv, no pre-built image, and a `.env` holding only `HEADROOM_ADMIN_TOKEN` — then
+the README's demo executed verbatim on it:
+
+```
+$ make up
+docker compose up -d --build --wait
+ Container hr-p2-gate-db-1 Healthy
+ Container hr-p2-gate-dynamodb-1 Healthy
+ Container hr-p2-gate-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 1 migration(s): 0001_tenants_and_virtual_keys
+
+$ make test        # bare and keyless — nothing exported
+================= 280 passed, 2 deselected, 1 warning in 2.38s =================
+
+$ curl -sS localhost:8080/healthz
+{"status":"ok"}
+
+--- the README demo, run verbatim on this fresh clone ---
+POST /admin/tenants ->
+{"id":"50cba457-0e0b-4b7a-842c-7f4d3694787b","name":"acme","active":true,
+ "created_at":"2026-08-09T02:47:43.730039Z","updated_at":"2026-08-09T02:47:43.730039Z"}
+
+POST /admin/keys -> (plaintext redacted after its prefix)
+{"id":"71a44809-…","tenant_id":"50cba457-…","name":"laptop","key_prefix":"hk_rcGh-Zvy",
+ "allowed_models":["mock-*"],"allowed_providers":[],"status":"active","revoked_at":null,
+ "key":"hk_rcGh-Zvy..."}
+
+POST /v1/messages with that key ->
+{"id":"msg_mock_6ca20aa0926a68c6","type":"message","role":"assistant","model":"mock-model-1",
+ "content":[{"type":"text","text":"mock reply from mock-model-1"}],"stop_reason":"end_turn",
+ "usage":{"input_tokens":11,"output_tokens":7}}
+-> 200
+```
+
+The first attempt at that last block **failed**, and the failure was worth having: the
+demo's `POST /admin/tenants` came back `409 tenant_name_conflict`, because the Postgres
+contract fixture truncated the control-plane tables on the way *in* and left the last
+test's rows behind on the way *out*. So `make test` followed by the documented demo
+collided on a tenant a test had invented. Fixed in-branch by truncating on both sides
+(`tests/test_tenant_store.py`); the run above is the re-run. A repo whose own README stops
+working after its own test suite is a repo a stranger gives up on.
 
 **H-012 still holds with the new Postgres tests.** A fresh clone with no stack up must run
 a smaller suite *loudly*, and a stated-but-unreachable endpoint must fail rather than skip:
