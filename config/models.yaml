@@ -1,0 +1,121 @@
+# Headroom's model reference data: dialects, context windows, and DATED PRICES.
+#
+# Read once at startup (headroom/metering/prices.py). Point HEADROOM_MODELS_CONFIG at
+# another file to run a gateway with a different price book — that is how the test
+# suite exercises a price boundary without editing this one.
+#
+# ── Why dates are schema, not a footnote ───────────────────────────────────────
+# Backline's D-017 scar: a cost meter kept billing at sticker prices after a vendor
+# published new ones, and the error was invisible because the meter had nowhere to
+# put a date. Here a model does not have *a* price, it has a **history** of them:
+# each row states the day it took effect, and a request is priced at the row in
+# effect on the day the request was received. A price change is a new row appended
+# to a list; it can never reprice a request that already happened, because the
+# ledger copies the rates it used into the row it writes.
+#
+# ── Money is a string ──────────────────────────────────────────────────────────
+# Every rate below is quoted. That is not style: an unquoted `3.00` is a YAML float,
+# and a float is the one representation of money that is wrong by construction.
+# The loader REFUSES a float and says so — the rule is enforced by the parser, not
+# by whoever reviews the diff.
+#
+# ── Matching ───────────────────────────────────────────────────────────────────
+# An exact model id wins. Failing that, the longest `match: prefix` entry wins, the
+# same longest-prefix-wins rule the routing table uses (docs/DECISIONS.md H-013).
+# A model that matches nothing is **unpriced** — its tokens are still metered and
+# its ledger row still written, marked `unpriced_model` with a NULL cost. Inventing
+# a rate for a model nobody entered is exactly the failure this file exists to
+# prevent, so the meter refuses to.
+#
+# ── What is deliberately absent ────────────────────────────────────────────────
+# Prompt-cache tiers. Anthropic bills cache reads and cache writes at rates this
+# schema has no field for, so a request whose usage block reports them is recorded
+# with those token counts and marked `partial` — an honest bound rather than a
+# figure that looks complete. Pricing them is a later phase and a new row field
+# (docs/DECISIONS.md H-026).
+
+models:
+  # ── Mock models: FLAT, forever ────────────────────────────────────────────────
+  # Exactly one price row, effective from the epoch, and that is a deliberate
+  # asymmetry with the real models above and below. Every keyless test in the
+  # project prices against these numbers, so a second row with a later date would
+  # make the suite's expected costs change on a calendar day — a test that fails on
+  # a Tuesday because a price schedule rolled over teaches people to distrust the
+  # suite. `tests/test_prices.py` asserts the flatness rather than trusting it.
+  #
+  # The rates are chosen so the fixtures land on exact terminating decimals: the
+  # canonical 11-in/7-out mock reply prices to $0.0000115 and nothing rounds.
+  "mock-":
+    match: prefix
+    dialects: [anthropic, openai]
+    context_window: 200000
+    prices:
+      - effective_from: "1970-01-01"
+        usd_per_mtok_in: "0.25"
+        usd_per_mtok_out: "1.25"
+
+  # ── The operator's vLLM instances: honest zero ───────────────────────────────
+  # Two 4090s on one desk (BUILD_PLAN L5). Electricity is real and is not an API
+  # cost; billing these at zero is the truth, and it is *stated* rather than left
+  # to the unpriced fallback so a $0.00 row means "free" instead of "unknown".
+  "cyankiwi/Qwen3.6-27B-AWQ-INT4":
+    dialects: [openai]
+    context_window: 8192
+    prices:
+      - effective_from: "1970-01-01"
+        usd_per_mtok_in: "0.00"
+        usd_per_mtok_out: "0.00"
+
+  # ── Anthropic, as published on 2026-08-08 ────────────────────────────────────
+  # Every row below starts on the day these rates were read off Anthropic's pricing
+  # page and written down. Earlier history is deliberately NOT modelled: this
+  # project has never billed a request before that date, and guessing when a rate
+  # began is the same class of mistake as guessing the rate. A request dated before
+  # the first row is `unpriced_model`, loudly, which is the honest answer.
+  claude-haiku-4-5:
+    dialects: [anthropic]
+    context_window: 200000
+    prices:
+      - effective_from: "2026-08-08"
+        usd_per_mtok_in: "1.00"
+        usd_per_mtok_out: "5.00"
+
+  # The one entry that is already a two-row history, and it is not a contrivance:
+  # Anthropic published Sonnet 5 at an introductory $2/$10 **through 2026-08-31**,
+  # reverting to $3/$15 after. So the boundary below is a real vendor-published
+  # date, and a request on 2026-08-31 costs less than the identical request on
+  # 2026-09-01. That is D-017 in the shipped config rather than only in a fixture.
+  claude-sonnet-5:
+    dialects: [anthropic]
+    context_window: 1000000
+    prices:
+      - effective_from: "2026-08-08"
+        usd_per_mtok_in: "2.00"
+        usd_per_mtok_out: "10.00"
+      - effective_from: "2026-09-01"
+        usd_per_mtok_in: "3.00"
+        usd_per_mtok_out: "15.00"
+
+  claude-sonnet-4-6:
+    dialects: [anthropic]
+    context_window: 1000000
+    prices:
+      - effective_from: "2026-08-08"
+        usd_per_mtok_in: "3.00"
+        usd_per_mtok_out: "15.00"
+
+  claude-opus-5:
+    dialects: [anthropic]
+    context_window: 1000000
+    prices:
+      - effective_from: "2026-08-08"
+        usd_per_mtok_in: "5.00"
+        usd_per_mtok_out: "25.00"
+
+  claude-opus-4-8:
+    dialects: [anthropic]
+    context_window: 1000000
+    prices:
+      - effective_from: "2026-08-08"
+        usd_per_mtok_in: "5.00"
+        usd_per_mtok_out: "25.00"

@@ -31,6 +31,7 @@ from headroom.policy.routing import RouteRule, RoutingTable
 __all__ = [
     "ADMIN_TOKEN_ENV",
     "CONFIG_PATH_ENV",
+    "MODELS_CONFIG_PATH_ENV",
     "GatewayConfig",
     "ProviderSpec",
     "RouteSpec",
@@ -43,6 +44,12 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "routing.
 #: Point this at another file to run a gateway with a different routing table — how
 #: the test suite gets a mock-only gateway without editing the committed config.
 CONFIG_PATH_ENV = "HEADROOM_ROUTING_CONFIG"
+
+#: Where the dated price schedules live (Phase 3): ``config/models.yaml``, loaded by
+#: ``headroom/metering/prices.py``. It is named here, beside the routing path, because
+#: this module is where environment-variable names live — the loader itself is
+#: metering's, since prices are reference data rather than policy (H-014's split).
+MODELS_CONFIG_PATH_ENV = "HEADROOM_MODELS_CONFIG"
 
 #: The root admin credential for ``/admin/*`` (Phase 2), read from the environment and
 #: from nowhere else — invariant 3 again, and the reason it is named here beside the
