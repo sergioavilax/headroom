@@ -17,6 +17,21 @@ or was cut.)
 carries an ``error`` key; ``openai-python`` raises ``APIError`` on exactly that shape.
 So that is what a cut produces here — and, critically, no ``[DONE]`` after it, because
 ``[DONE]`` is precisely the claim that would make a fragment look finished.
+
+**Usage is opt-in, and the gateway does not opt in on the caller's behalf.** A streamed
+chat completion carries token counts only when the request set
+``stream_options: {"include_usage": true}``; without it the trailing usage chunk simply
+never arrives and the response is unmeterable. Headroom could inject the option upstream
+and strip the extra chunk on the way back — and deliberately does not, because both
+halves of that trick require rewriting bytes the whole proxy is built never to touch
+(docs/DECISIONS.md H-028). Such a request is recorded with ``usage_unknown`` and a NULL
+cost instead: an honest gap the dashboard can show and a caller can close by asking for
+usage, rather than an estimate nobody can audit.
+
+One consequence worth stating: ``prompt_tokens`` here is *inclusive* of any cached
+prompt tokens, where Anthropic's ``input_tokens`` excludes them. Both are recorded as
+"the tokens priced at the input rate" for their dialect, with the cache count kept
+beside them — see ``headroom/metering/usage.py``.
 """
 
 from __future__ import annotations
@@ -27,6 +42,7 @@ from typing import Any, Final
 
 from headroom.core.sse import SSEEvent, format_sse
 from headroom.dialects.base import Dialect, register_dialect
+from headroom.metering.usage import Usage, UsageObserver
 
 __all__ = ["DONE_SENTINEL", "OPENAI", "OpenAIDialect"]
 
@@ -79,6 +95,18 @@ class OpenAIDialect(Dialect):
             for choice in choices
         )
 
+    def usage_from_body(self, body: bytes) -> Usage:
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return Usage()
+        if not isinstance(payload, Mapping):
+            return Usage()
+        return _usage_of(payload).with_stop_reason(_finish_reason(payload))
+
+    def usage_observer(self) -> UsageObserver:
+        return _OpenAIUsageObserver()
+
     def error_payload(
         self, *, status_code: int, reason: str, message: str, request_id: str
     ) -> dict[str, Any]:
@@ -101,3 +129,87 @@ class OpenAIDialect(Dialect):
 
 
 OPENAI: Final = register_dialect(OpenAIDialect())
+
+
+# --------------------------------------------------------------------------------
+# Usage extraction
+# --------------------------------------------------------------------------------
+#
+# The usage object, and only the usage object. `completion_tokens` is the number the
+# provider bills; `completion_tokens_details.reasoning_tokens` is the share of it spent
+# on chain of thought, which is already inside the total and must never be added to it.
+# Phase 1's reasoning fixture is the proof that the two cannot be recovered from text:
+# 11 visible characters, 63 completion tokens, 57 of them reasoning.
+
+
+def _int(value: Any) -> int | None:
+    """A reported count, or ``None``. ``bool`` is excluded because it is an ``int``."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _nested_int(payload: Mapping[str, Any], outer: str, inner: str) -> int | None:
+    block = payload.get(outer)
+    return _int(block.get(inner)) if isinstance(block, Mapping) else None
+
+
+def _usage_of(payload: Mapping[str, Any]) -> Usage:
+    """Map a chunk's or a body's ``usage`` object onto :class:`Usage`."""
+    block = payload.get("usage")
+    if not isinstance(block, Mapping):
+        return Usage()
+    return Usage(
+        input_tokens=_int(block.get("prompt_tokens")),
+        output_tokens=_int(block.get("completion_tokens")),
+        reasoning_tokens=_nested_int(block, "completion_tokens_details", "reasoning_tokens"),
+        cache_read_tokens=_nested_int(block, "prompt_tokens_details", "cached_tokens"),
+    )
+
+
+def _finish_reason(payload: Mapping[str, Any]) -> str | None:
+    """The first non-null ``finish_reason`` among the choices, if any."""
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return None
+    for choice in choices:
+        if not isinstance(choice, Mapping):
+            continue
+        reason = choice.get("finish_reason")
+        if isinstance(reason, str):
+            return reason
+    return None
+
+
+class _OpenAIUsageObserver(UsageObserver):
+    """Watches for the trailing usage chunk and the frame that carries the finish reason.
+
+    Ordering matters and is the reason this is an accumulator rather than a check on
+    the last frame: with ``include_usage``, the chunk bearing ``finish_reason`` comes
+    *before* the usage-only chunk, which comes before ``[DONE]``. A meter that stopped
+    reading at the terminal marker would miss the counts entirely.
+    """
+
+    __slots__ = ("_usage",)
+
+    def __init__(self) -> None:
+        self._usage = Usage()
+
+    @property
+    def usage(self) -> Usage:
+        return self._usage
+
+    def feed(self, event: SSEEvent) -> None:
+        # Cheap substring gates before any JSON parse. Every content chunk carries
+        # `"finish_reason": null`, so its mere presence is not a signal — its
+        # *null-ness* is. Skipping the compact spelling covers the frames that
+        # dominate a long response without ever being wrong: a differently-spaced
+        # server just falls through to the parse below and costs one extra `loads`.
+        data = event.data
+        if '"usage"' not in data and (
+            '"finish_reason"' not in data or '"finish_reason":null' in data
+        ):
+            return
+        payload = event.json()
+        if not isinstance(payload, Mapping):
+            return  # `[DONE]`, or a keep-alive comment that reached here somehow
+        self._usage = self._usage.merge(_usage_of(payload))
+        self._usage = self._usage.with_stop_reason(_finish_reason(payload))

@@ -27,7 +27,10 @@ import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Final
+
+from headroom.core.ledger import format_usd
 
 __all__ = ["RequestContext", "current_context", "new_request_id"]
 
@@ -72,6 +75,27 @@ class RequestContext:
     upstream_status: int | None = None
     error_source: str | None = None  # "upstream" | "gateway" | None
     error_reason: str | None = None
+
+    # --- what it cost (Phase 3) ---------------------------------------------------
+    # Filled by `apply_metering` once the response is over and the provider's usage
+    # block has been read. They stay None on a request nothing metered — which is the
+    # honest state for one that never reached a provider, and different from zero.
+    #
+    # These are duplicated onto the ledger row on purpose rather than left to it: the
+    # log line reaches stdout *before* the row is queued, so it is the reconstruction
+    # path when a process dies with rows in flight (docs/DECISIONS.md H-027).
+    input_tokens: int | None = None
+    #: Reasoning-inclusive, straight from the usage block. Never counted from text.
+    output_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    stop_reason: str | None = None
+    usd_cost: Decimal | None = None
+    #: See ``headroom/metering/cost.py``: priced | partial | unpriced_model |
+    #: usage_unknown | not_billable. A NULL cost and a zero cost are different facts
+    #: and this is the field that says which one this is.
+    cost_status: str | None = None
 
     # --- when --------------------------------------------------------------------
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -121,6 +145,33 @@ class RequestContext:
             self.error_source = error_source
         if error_reason is not None:
             self.error_reason = error_reason
+
+    def apply_metering(
+        self,
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
+        cache_read_tokens: int | None = None,
+        cache_write_tokens: int | None = None,
+        stop_reason: str | None = None,
+        usd_cost: Decimal | None = None,
+        cost_status: str | None = None,
+    ) -> None:
+        """Record what the request cost. Called once, by the meter, after completion.
+
+        Unlike :meth:`complete` this is *not* first-call-wins: it is called from
+        exactly one place, and a second call would mean a request was metered twice —
+        a bug worth seeing in the log rather than swallowing.
+        """
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.reasoning_tokens = reasoning_tokens
+        self.cache_read_tokens = cache_read_tokens
+        self.cache_write_tokens = cache_write_tokens
+        self.stop_reason = stop_reason
+        self.usd_cost = usd_cost
+        self.cost_status = cost_status
 
     # --- derived durations (milliseconds; None until the mark exists) -------------
 
@@ -174,6 +225,19 @@ class RequestContext:
             "upstream_status": self.upstream_status,
             "error_source": self.error_source,
             "error_reason": self.error_reason,
+            "stop_reason": self.stop_reason,
+            # Phase 3. The token counts come from the provider's usage block and never
+            # from the response text — a reasoning model bills for tokens that appear
+            # nowhere in the content stream. `usd_cost` is a *string*: this line is
+            # JSON, and JSON numbers are floats, which is the one representation of
+            # money the whole metering path is arranged to avoid.
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
+            "usd_cost": format_usd(self.usd_cost),
+            "cost_status": self.cost_status,
             "upstream_latency_ms": _round(self.upstream_latency_ms),
             "ttft_ms": _round(self.time_to_first_token_ms),
             "passthrough_overhead_ms": _round(self.passthrough_overhead_ms),

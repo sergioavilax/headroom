@@ -6,7 +6,7 @@ backends. **Cross-dialect translation is explicitly out of scope** — it is Lit
 entire codebase and a swamp of edge cases, and the plan names the cut instead of
 hiding it.
 
-So a dialect here is not a translator. It answers four narrow questions the gateway
+So a dialect here is not a translator. It answers five narrow questions the gateway
 cannot avoid asking:
 
 1. **Which model is this?** — routing needs it, and it is the only reason the request
@@ -16,6 +16,11 @@ cannot avoid asking:
    fragment (``tests/test_mid_stream_cut.py``).
 4. **How do I say "it failed" in a way this dialect's SDK will understand?** — an
    error the client's SDK cannot parse is not much better than no error at all.
+5. **What did the provider say this cost?** (Phase 3) — read out of the response's
+   *usage block*, in this dialect's spelling of it, and never inferred from the text.
+   The two shapes differ enough to be worth a method: Anthropic splits usage across
+   ``message_start`` and ``message_delta``, while the OpenAI dialect appends a single
+   usage-bearing chunk *after* the frame that ends the answer.
 
 Note what is absent: nothing here rewrites, re-encodes, or normalizes a request or a
 response. The body the client sent is the body the provider receives, byte for byte,
@@ -31,6 +36,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from headroom.core.sse import SSEEvent
+from headroom.metering.usage import Usage, UsageObserver
 
 __all__ = ["Dialect", "dialect_for", "register_dialect"]
 
@@ -64,6 +70,26 @@ class Dialect(ABC):
 
         Seeing one is what licenses the gateway to end the stream silently. Never
         seeing one is a truncation, and the caller gets told.
+        """
+
+    # --- reading what it cost (Phase 3) -------------------------------------------
+
+    @abstractmethod
+    def usage_from_body(self, body: bytes) -> Usage:
+        """The usage block of a complete, non-streamed response.
+
+        Returns an empty :class:`~headroom.metering.usage.Usage` rather than raising
+        when there is nothing to read — an upstream error body, a truncated payload, a
+        provider that omits the block. "The provider did not say" is a state the ledger
+        records; it is not an exception.
+        """
+
+    @abstractmethod
+    def usage_observer(self) -> UsageObserver:
+        """A fresh accumulator for one streamed response.
+
+        Fed the same events the completion check sees, from the same tap (H-007), so
+        metering a stream adds no second parse and cannot touch a forwarded byte.
         """
 
     # --- speaking failure ---------------------------------------------------------
