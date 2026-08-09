@@ -43,6 +43,9 @@ DEFAULT_API_VERSION: Final = "2023-06-01"
 _ERROR_TYPES: Final[Mapping[int, str]] = {
     400: "invalid_request_error",
     401: "authentication_error",
+    # Anthropic's own type for "your credit balance is too low" — the closest thing in
+    # its vocabulary to a budget refusal, and a value anthropic-python already knows.
+    402: "billing_error",
     403: "permission_error",
     404: "not_found_error",
     413: "request_too_large",
@@ -65,6 +68,10 @@ class AnthropicDialect(Dialect):
 
     def wants_stream(self, body: Mapping[str, Any]) -> bool:
         return body.get("stream") is True
+
+    def max_output_tokens(self, body: Mapping[str, Any]) -> int | None:
+        """``max_tokens``, which the Messages API requires — so this is rarely None."""
+        return _positive_int(body.get("max_tokens"))
 
     def is_terminal(self, event: SSEEvent) -> bool:
         # The event name is authoritative and free to read. Falling back to the data
@@ -143,6 +150,12 @@ def _load(body: bytes) -> Mapping[str, Any] | None:
 def _int(value: Any) -> int | None:
     """A reported count, or ``None``. ``bool`` is excluded because it is an ``int``."""
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _positive_int(value: Any) -> int | None:
+    """A stated ceiling, or ``None`` for anything that is not one."""
+    parsed = _int(value)
+    return parsed if parsed is not None and parsed > 0 else None
 
 
 def _usage_of(block: Any, *, include_output: bool = True) -> Usage:

@@ -1548,3 +1548,532 @@ deselected are the live smokes, still excluded, as invariant 4 requires.
 
 **Spend** — $0.00. The dry run above talked to the MockProvider; no provider API was
 called.
+
+---
+
+## Phase 4 — Limits and budgets: the D-019 lesson as a product (2026-08-09)
+
+**Shipped**
+
+- **The budget gate, reservation-based from the first line.** Admission reserves a
+  request's worst case *before* the upstream is opened; completion settles the hold to
+  the actual cost. Both halves are one atomic DynamoDB conditional write, and the
+  sentence the whole phase rests on is: **every mutation of a budget is a single
+  conditional write to a single item.** No transactions, no dual writes, no
+  read-then-write anywhere on the path.
+- **The condition, in full** (`headroom/db/budgets.py`):
+
+  ```
+  ConditionExpression: attribute_exists(scope_id)
+                       AND window_expires_at > :now
+                       AND remaining_picos  >= :estimate
+                       AND attribute_not_exists(reservations.#rid)
+  UpdateExpression:    SET remaining_picos = remaining_picos - :estimate,
+                           reserved_picos  = reserved_picos  + :estimate,
+                           reservations.#rid = :hold, updated_at = :updated
+  ```
+
+  `remaining` is a **stored** attribute rather than a derived one, because DynamoDB
+  conditions compare an attribute to a value and do no arithmetic — there is no way to
+  write `spent + reserved + estimate <= budget`. The item shape is downstream of what a
+  condition can express, and that is what turns "may this proceed?" into one operation.
+  **H-030.**
+- **One item per scope**, carrying config, window stamp, counters, *and* the live
+  reservations as a map. Keeping the holds inside the counter item is what avoids a
+  transaction: a reservation in a second item would be a dual write, and a crash between
+  the two either strands budget or invents it. The cost is DynamoDB's 400 KB item limit
+  — a few thousand simultaneously in-flight requests for one tenant — documented and
+  bounded by the sweep.
+- **Money is integer picodollars** (1e-12 USD), which is *exactly*
+  `metering.cost.USD_QUANTUM`, so `Decimal → int → Decimal` is lossless for every value
+  the meter can produce and the gate and the ledger can be compared to the last digit.
+  Cent-integers (the brief's suggestion) would round the canonical $0.0000115 fixture to
+  zero; `Decimal` would put a rounding context in the middle of the one argument that has
+  to be airtight. **H-030.**
+- **Windows: `monthly` (calendar, UTC) and `total` (lifetime), with no reset job.**
+  `window_expires_at > :now` is part of the admission condition, so the first request of
+  a new month fails it and the failure path rolls the counters with a compare-and-set on
+  the old `window_id`. Exactly one racer wins; the rest retry the ordinary path. The
+  window is resolved from the request's own `started_at` — the H-023 rule, so a queued
+  settlement cannot land in the wrong month. **H-033.**
+- **The estimate, documented term by term** (`headroom/policy/budgets.py`):
+
+  ```
+  input_tokens  = min(ceil(len(request_body) / 3), context_window)
+  output_tokens = max_tokens from the body, else 4096
+  usd           = input_tokens * rate_in / 1e6 + output_tokens * rate_out / 1e6
+  ```
+
+  at the price in effect on the request's own date. Three bytes per token, not four,
+  because a bound has to err upward. The prompt half is included even though the brief's
+  letter says "from max_tokens": generated tokens dominate the *rate*, prompt tokens
+  dominate the *count*, and an output-only estimate stops being an upper bound at
+  `max_tokens: 8` — which sabotage I below demonstrates. **H-034.**
+- **A refusal is 402**, in the caller's own dialect: Anthropic `billing_error`, OpenAI
+  `insufficient_quota`, `headroom.reason: budget_exceeded`, and the tenant's own figures
+  in the message. Not 429 — that means *slow down*, every SDK retries it, and a retry
+  storm against the one item the gate serialises on is the failure this phase exists to
+  prevent. No `retry-after`, for the same reason. **H-032.**
+- **A refused request provably never reaches a provider.** The gate raises between
+  `require_provider` and `provider.open`; `tests/test_budget_gate.py` asserts it against
+  the MockProvider's own record of what it was handed rather than reasoning about it.
+- **Settlement semantics, decided from the meter's `cost_status`** — and one deliberate
+  disagreement with the ledger. `priced`/`partial` settle at the actual cost;
+  `not_billable`/`unpriced_model` release to $0; **`usage_unknown` settles at the
+  estimate**, because a timeout or a cut stream *did* reach a model and releasing the
+  hold would be a cheerful guess that it cost nothing. The ledger still writes NULL there
+  — it is an invoice and states facts; the budget is a guard rail and states bounds. Both
+  figures sit on the same row. **H-031.**
+- **Reservations cannot leak.** Every hold carries `expires_at = now + 900s`, and expired
+  holds are **released, not charged** (an unknown *outcome* is not evidence of spend, and
+  charging on suspicion would let one restart under load eat a tenant's month). Three
+  sweep triggers, and the first is the one that matters: **on the refusal path, before
+  refusing** — so a dead process's hold can never be the reason a live request is turned
+  away. `ReturnValuesOnConditionCheckFailure` hands back the item the condition failed
+  against, so that sweep costs **no extra read**. Also on an admin read, and via an
+  explicit `sweep_expired`. No background task is load-bearing, so none is started.
+  **H-032.**
+- **`BudgetStore`: one interface, two implementations, one contract suite** — the H-021
+  shape, with an honest caveat stated in the module docstring rather than discovered
+  later: `InMemoryBudgetStore` reproduces the *semantics*, not the *concurrency*. Its
+  operations never suspend, so they cannot interleave, so a stampede run against it would
+  prove nothing. That proof belongs to DynamoDB Local alone.
+- **boto3 calls are dispatched to a bounded thread pool** (`headroom/db/dynamo.py`).
+  Not an optimisation: boto3 is synchronous, and calling it from a coroutine would block
+  the event loop *and* serialise the budget gate — the stampede would pass against a
+  design that had never actually been raced.
+- **`/admin/budgets`**: `PUT`/`GET`/`DELETE /admin/budgets/{tenant_id}` and
+  `GET /admin/budgets`, behind the same root token. Reports budget, spent, reserved,
+  remaining, **committed** (spent + reserved — the figure BUILD_PLAN §0.2 rule 5 is
+  about), live reservation count, and the sweep counters. Money leaves as a string; a
+  JSON *number* for `usd` is refused by name, the H-023 rule applied to the admin API.
+- **`migrations/0003_ledger_budget_columns.sql`** — `budget_status`,
+  `budget_reserved_usd`, `budget_settled_usd` on `usage_ledger`, plus a partial index on
+  refusals. A 402's row is the only surviving record that the request happened, since no
+  provider was called. The request log line grew the same three fields.
+- **Tests: 576 keyless** (446 → 576), 2 live-marked and deselected by default. New files
+  — `test_budget_store` (62, the contract suite over both implementations),
+  `test_admin_budgets` (20), `test_budget_gate` (18), `test_dynamo_client` (14),
+  `test_budget_estimate` (12), `test_budget_stampede` (4). Every Phase 0/1/2/3 test still
+  green, and **one** of them changed (deviation 4).
+- **Docs**: H-030 … H-034 in `docs/DECISIONS.md`; README gains a *Budgets that hold under
+  concurrency* section; `.env.example` documents `HEADROOM_BUDGETS_TABLE` and the
+  emulator-credential trap; `migrations/README.md` status table.
+
+**Deferred**
+
+- **Token-bucket rate limits — the other half of BUILD_PLAN's Phase 4 — did not land.**
+  The plan's Phase 4 text names *"token-bucket rate limits (requests/min and tokens/min
+  per key and per tenant)"* alongside monthly budget caps; this session's brief scoped
+  the phase to the budget gate alone and does not mention buckets, 429s, or
+  `retry-after`. The budget half is complete and coherent on its own, so the remainder is
+  marked here explicitly rather than half-built (`CLAUDE.md`: *finish a coherent
+  sub-slice, mark the remainder, stop cleanly*). It is a natural **PR-4b**: a second
+  DynamoDB table with its own access pattern and TTL, the same `DynamoClient`, the same
+  conditional-write discipline, and a hammer test of its own. Nothing in this PR
+  forecloses it — `BudgetScope` already carries a `kind`, and the client is shared.
+- **Per-key budgets**, deliberately (**H-033**): enforcing two caps on one request means
+  two holds, and two conditional writes are not one atomic operation. The compensating
+  release when the second fails is a new home for exactly the bug this phase exists to
+  remove. The scope abstraction is in place so a later phase adds a kind rather than
+  reshaping the table.
+- **Prompt-cache tier pricing** stays deferred from Phase 3 (H-026); a `partial` row's
+  budget effect is a lower bound too, and is labelled as one.
+
+**Deviations**
+
+1. **BUILD_PLAN's Phase 4 is delivered in two PRs, not one.** See *Deferred* above. The
+   plan's gate text for this phase mentions "clean 429 responses with retry-after", which
+   belongs to the rate-limit half and is therefore not claimed here. The budget half's
+   gate — the concurrency hammer and the sabotage — is met in full.
+2. **`migrations/0003` adds columns to `usage_ledger`**, which contradicts H-024's closing
+   remark that *"the shape of a ledger row stops changing after this migration"*. That
+   sentence was about the Phase 5 and Phase 6 seams, which really are already present as
+   columns; it did not anticipate a fourth phase needing a fact of its own on the row, and
+   the brief requires it (*"the ledger row records the budget outcome"*). The alternative
+   — a second table joined on `request_id` — would put the answer to "why was this
+   refused" one join away from the row that refused it. Additive, nullable, and H-003's
+   immutability rule is untouched: `0002` is not edited.
+3. **`Meter.record` was split into `measure` + `commit`.** The settlement sits between
+   them: what a hold settles at is decided from `cost_status`, which `measure` sets, and
+   the settled figure is a column on the row, which `commit` writes. `record` remains, as
+   `measure` + `commit`, for every caller with no budget to settle. Nothing about the
+   metering path became asynchronous — both halves are the same synchronous calls (H-027).
+4. **One Phase 1 test changed**, because the log-field set it pins grew:
+   `test_request_context.py::test_the_log_shape_is_complete`. Same class of change as
+   Phase 3's deviation 7. No Phase 1 *behaviour* changed.
+5. **`Dialect` gained `max_output_tokens`.** The one field in a request body that bounds
+   what a provider may generate, and the only way to estimate before the fact. Read-only,
+   additive, and it validates nothing — a nonsense value reads as "not stated" and the
+   provider's own rejection still stands (BUILD_PLAN L4).
+6. **`GET /admin/budgets/{tenant}` has a side effect**: it releases expired holds before
+   reporting. Taken deliberately (**H-032**) — releasing an already-expired hold changes
+   nothing live and is idempotent, and the alternative is a `reserved` figure that is
+   quietly wrong exactly when an operator is relying on it. The list route does not sweep.
+7. **Two facts about `amazon/dynamodb-local:3.1.0` that cost real time**, recorded in
+   H-030 and pinned by tests: **`scope` is a DynamoDB reserved word** (the partition key
+   is `scope_id`), and **DynamoDB Local rejects an access key id containing a hyphen**
+   with `UnrecognizedClientException: The Access Key ID or security token is invalid` —
+   an error that reads exactly like a real AWS authentication failure. The first emulator
+   credential was `headroom-local` and every DynamoDB-backed test failed with it.
+8. **Additions the plan's Phase 4 text does not enumerate**, all additive:
+   `tests/support/harness.py` gained a reusable `gateway_harness` context manager (so the
+   stampede can build a gateway backed by DynamoDB Local while every other test keeps the
+   in-memory default); `boto3`/`botocore` mypy overrides (neither ships type information,
+   and `boto3-stubs` is a large generated package pinned to an SDK version, for a surface
+   of five calls that cross one file); and `HEADROOM_BUDGETS_TABLE` in compose.
+
+---
+
+**Gate** — *the concurrency hammer: N parallel requests against a bucket sized for fewer,
+asserting zero oversubscription — plus the sabotage test: a deliberately naive
+implementation must FAIL the same hammer.*
+
+### THE STAMPEDE — the headline artifact
+
+64 concurrent requests through the whole gateway, against a budget sized for 5, on
+DynamoDB Local. The MockProvider is scripted to report exactly the usage the estimate
+assumed, so `actual == estimate == one unit` — the worst case a budget gate has to
+survive, and the case that makes the closing arithmetic exact rather than approximate.
+
+```
+$ uv run pytest tests/test_budget_stampede.py -q -s
+
+ATOMIC GATE (shipped)
+  requests fired         64
+  served (200)           5
+  refused (402)          59
+  budget                 $0.000237500000
+  settled spend          $0.000237500000
+  still reserved         $0.000000000000
+  remaining              $0.000000000000
+  overspend              $0.000000000000
+  spend / budget         1.00x
+```
+
+Five served, fifty-nine refused, the cap consumed **exactly** — to the picodollar — and
+no refused request left a hold behind. Every one of the 64 got a real HTTP answer.
+
+### THE SABOTAGE — D-019, reconstructed
+
+Same gateway, same budget, same 64 requests. The only difference is
+`NaiveBudgetStore.reserve`, which **reads the balance, decides, and then writes**, as two
+operations with an await between them. That is precisely what Backline's gate did.
+
+```
+SABOTAGED GATE (D-019: check, then write)
+  requests fired         64
+  served (200)           64
+  refused (402)          0
+  budget                 $0.000237500000
+  settled spend          $0.003040000000
+  still reserved         $-0.000950000000
+  remaining              $0.000142500000
+  overspend              $0.002802500000
+  spend / budget         12.80x
+```
+
+**Every single request admitted. Nothing refused. 12.80× the budget spent.** Every racer
+read the same untouched balance, every racer decided it fitted, and every racer was right
+about a world that no longer existed by the time it wrote.
+
+Look at `still reserved: -$0.000950000000`. It does not merely overspend — **the books
+stop balancing**. Unconditional writes of a stale `reserved` clobber one another, so the
+item ends up claiming a negative amount is held and a positive amount remains, while
+twelve times the cap has already been settled. That is the shape of a lost update, and it
+is why "check, then write" cannot be repaired by checking harder.
+
+### THE SECOND SABOTAGE — atomic, and still wrong
+
+BUILD_PLAN's own named sabotage is subtler and, for a reviewer, more useful: *"a
+deliberately naive **landed-only** gate"*. This one fixes the obvious bug and keeps the
+real one. The check and the deduction are a single atomic conditional write —
+everything the first sabotage got wrong is right here — and the condition asks the wrong
+question: `spent_picos <= :budget_minus_estimate`. **Landed** spend, not committed spend.
+
+```
+SABOTAGED GATE (atomic, but reads LANDED spend)
+  requests fired         64
+  served (200)           38
+  refused (402)          26
+  budget                 $0.000237500000
+  settled spend          $0.001805000000
+  still reserved         $0.000000000000
+  remaining              $-0.001567500000
+  overspend              $0.001567500000
+  spend / budget         7.60x
+```
+
+7.60× the cap — and note `still reserved: $0.00` and an arithmetic identity that
+**holds perfectly throughout**. That is the whole warning: everything about a landed-only
+gate looks right except the number it compares, which is why it survives code review.
+
+It is also **partly effective**, which is the most dangerous property a broken guard can
+have: settlements land while the burst is still running, so `spent` does eventually climb
+past the ceiling and the tail of the stampede really is refused. An operator watching 26
+402s in the logs concludes the budget is working. It is working at roughly a seventh of
+its stated cap.
+
+This is BUILD_PLAN §0.2 rule 5 in its exact words — *"the budget gate reads **committed**
+spend — reserved + landed — never landed alone"* — and it is why the shipped condition
+tests `remaining`, a number that moves the instant a hold is taken. **Atomicity is
+necessary and it is not sufficient.**
+
+All three runs are in one test file and all three are asserted, so the two sabotages are
+permanent: a future change that makes the stampede pass for the wrong reason fails the
+two tests whose job is to fail.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+100 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 100 source files
+
+$ make test
+================= 576 passed, 2 deselected, 1 warning in 7.35s =================
+
+$ uv run pytest -m live -q --collect-only
+2/578 tests collected (576 deselected) in 0.08s
+```
+
+**576 passed, 0 skipped** — `grep -c SKIPPED` over the run returns `0`, so the DynamoDB
+half of the budget-store contract suite and the stampede executed against the container
+rather than skipping.
+
+Per-file counts from the same run:
+
+```
+62 tests/test_budget_store.py         14 tests/test_error_mapping.py
+44 tests/test_tenant_store.py         14 tests/test_dynamo_client.py
+42 tests/test_ledger_store.py         12 tests/test_budget_estimate.py
+32 tests/test_metering.py             11 tests/test_request_context.py
+29 tests/test_auth_matrix.py          10 tests/test_reasoning_passthrough.py
+27 tests/test_virtual_keys.py         10 tests/test_auth_cache.py
+25 tests/test_admin_api.py             8 tests/test_ledger_writer.py
+23 tests/test_prices.py                8 tests/test_key_secrecy.py
+22 tests/test_usage_extraction.py      6 tests/test_non_streaming.py
+20 tests/test_admin_budgets.py         6 tests/test_mid_stream_cut.py
+19 tests/test_provider_clients.py      5 tests/test_tool_blocks.py
+18 tests/test_budget_gate.py           5 tests/test_logging.py
+17 tests/test_sse.py                   5 tests/test_live_smoke_wiring.py
+17 tests/test_routing.py               4 tests/test_no_buffering.py
+17 tests/test_cost.py                  4 tests/test_budget_stampede.py
+17 tests/test_admin_usage.py           3 tests/test_pytest_policy.py
+14 tests/test_streaming_passthrough.py 3 tests/test_migrations.py
+                                       2 tests/test_services.py
+                                       1 tests/test_healthz.py
+```
+
+**H-012 still holds with the new DynamoDB tests.** A fresh clone with no stack up must
+run a smaller suite *loudly*, and a stated-but-unreachable endpoint must fail rather than
+skip:
+
+```
+$ docker compose stop dynamodb
+$ uv run pytest -q                          # DYNAMODB_ENDPOINT_URL unset — inferred
+541 passed, 34 skipped, 2 deselected, 1 warning in 7.04s
+
+$ DYNAMODB_ENDPOINT_URL=http://localhost:8001 uv run pytest -q tests/test_budget_store.py
+36 passed, 26 errors in 0.28s
+```
+
+### The other sabotage runs
+
+The stampede pair above is the phase's headline, but three more of its claims were tested
+by breaking the thing they protect. All were applied with the Edit tool and reverted
+immediately; `diff` against pre-sabotage copies of all three touched files reports them
+identical, and the suite is 576 green above.
+
+*Sabotage F — an unknown cost is released to zero* (the tidy-looking alternative to
+H-031, and the one that undercounts every timeout a flaky provider produces):
+
+```
+3 failed, 573 passed, 2 deselected
+FAILED tests/test_budget_gate.py::test_a_timeout_settles_at_the_estimate_because_the_provider_may_have_billed_it
+FAILED tests/test_budget_gate.py::test_a_mid_stream_cut_settles_at_the_estimate
+FAILED tests/test_budget_gate.py::test_a_stream_with_no_usage_block_settles_at_the_estimate
+```
+
+*Sabotage G — stranded holds are never released* (the sweep removed from the refusal path
+in **both** implementations). Note that the *expiry* tests still pass: what breaks is the
+end-to-end property, which is the one that matters operationally.
+
+```
+3 failed, 573 passed, 2 deselected
+FAILED tests/test_budget_gate.py::test_a_stranded_hold_does_not_refuse_a_live_request
+FAILED tests/test_budget_store.py::test_a_dead_process_hold_never_refuses_a_live_request[memory]
+FAILED tests/test_budget_store.py::test_a_dead_process_hold_never_refuses_a_live_request[dynamodb]
+```
+
+*Sabotage H — the gate logs the refusal and continues*, which is what "fail open" looks
+like when somebody is nervous about false 402s:
+
+```
+9 failed, 567 passed, 2 deselected
+FAILED tests/test_budget_gate.py::test_an_exhausted_budget_is_402_in_the_callers_own_dialect[anthropic]
+FAILED tests/test_budget_gate.py::test_an_exhausted_budget_is_402_in_the_callers_own_dialect[openai]
+FAILED tests/test_budget_gate.py::test_a_refusal_never_reaches_a_provider
+FAILED tests/test_budget_gate.py::test_a_refusal_writes_a_ledger_row
+FAILED tests/test_budget_gate.py::test_a_budget_refusal_does_not_consume_the_budget
+FAILED tests/test_budget_stampede.py::test_the_stampede - assert 64 == 5
+FAILED tests/test_budget_stampede.py::test_every_refusal_is_a_ledger_row_and_no_provider_call
+…
+```
+
+*Sabotage I — the estimate drops its prompt half*, i.e. the brief's literal wording. The
+third failure is the interesting one: at `max_tokens: 8` an output-only estimate is
+**$0.00001** against an actual cost of **$0.0000115**, so the reservation stops being an
+upper bound at all — and with it, the stampede's headline claim stops being a property of
+the design.
+
+```
+3 failed, 573 passed, 2 deselected
+FAILED tests/test_budget_estimate.py::test_the_estimate_is_the_hand_computed_figure
+FAILED tests/test_budget_estimate.py::test_the_prompt_estimate_is_capped_at_the_models_context_window
+FAILED tests/test_budget_estimate.py::test_the_estimate_bounds_what_the_canonical_fixture_actually_costs[8]
+```
+
+### End to end through the real container, on a wiped volume
+
+```
+$ docker compose down -v && make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 3 migration(s): 0001_tenants_and_virtual_keys, 0002_usage_ledger, 0003_ledger_budget_columns
+
+### 3. no budget yet -> admitted, nothing held
+status 200
+{"error":{"type":"budget_not_found","message":"no budget for tenant 'bb069bc2-…';
+ this tenant is uncapped"}}  <- 404
+
+### 4. set a monthly cap of $0.0001
+{"scope":"tenant#bb069bc2-…","window":"monthly","window_id":"2026-08",
+ "usd":"0.000100000000","spent":"0.000000000000","reserved":"0.000000000000",
+ "remaining":"0.000100000000","committed":"0.000000000000","reservations":0}
+
+### 5. spend against it
+  request 1 -> 200
+  request 2 -> 200
+{"usd":"0.000100000000","spent":"0.000023000000","reserved":"0.000000000000",
+ "remaining":"0.000077000000","committed":"0.000023000000","reservations":0}
+
+### 6. exhaust it
+200 200 200 402 402 402 402 402 402 402 402 402 402 402 402 402 402 402 402 402
+
+### 7. the 402, in the Anthropic dialect
+HTTP/1.1 402 Payment Required
+x-headroom-error-source: gateway
+{
+    "type": "error",
+    "error": {
+        "type": "billing_error",
+        "message": "this request would exceed the tenant's monthly (2026-08) budget of
+                    $0.000100000000: $0.000057500000 settled plus $0.000000000000
+                    reserved leaves $0.000042500000, and this request reserves
+                    $0.000047000000 (28 prompt + 32 generated tokens at the current rate)"
+    },
+    "headroom": {"reason": "budget_exceeded", "request_id": "hr_1bf7c5609392482085fd…"}
+}
+
+### 8. and in the OpenAI dialect
+{
+    "error": {
+        "message": "this request would exceed the tenant's monthly (2026-08) budget …",
+        "type": "insufficient_quota", "param": null, "code": "budget_exceeded"
+    },
+    "headroom": {"reason": "budget_exceeded", "request_id": "hr_4bea0c4a348c400da5c4…"}
+}
+
+### 10. what the ledger says (three refused rows)
+{"model": "mock-model-1", "outcome": "budget_exceeded", "status_code": 402,
+ "usd_cost": "0.000000000000", "cost_status": "not_billable",
+ "budget_status": "exceeded", "budget_reserved_usd": "0.000047000000",
+ "budget_settled_usd": null}
+
+### 11. the raw DynamoDB item
+{
+ "budget_picos":     {"N": "100000000"},
+ "budget_window":    {"S": "monthly"},
+ "expired_released_picos": {"N": "0"},
+ "expired_releases": {"N": "0"},
+ "remaining_picos":  {"N": "42500000"},
+ "reservations":     {"M": {}},
+ "reserved_picos":   {"N": "0"},
+ "scope_id":         {"S": "tenant#bb069bc2-f260-4ea4-bac3-835fa78ee19d"},
+ "scope_kind":       {"S": "tenant"},
+ "scope_ref":        {"S": "bb069bc2-f260-4ea4-bac3-835fa78ee19d"},
+ "spent_picos":      {"N": "57500000"},
+ "updated_at":       {"S": "2026-08-09T09:15:24.729004+00:00"},
+ "window_expires_at":{"N": "1788220800"},
+ "window_id":        {"S": "2026-08"}
+}
+
+### 12. request log lines (one served, one refused)
+{"request_id":"hr_7eeecd8a0ad746c88a2f8354b2e7f537","model":"mock-model-1","outcome":"ok",
+ "status":200,"usd_cost":"0.000011500000","cost_status":"priced",
+ "budget_status":"reserved","budget_reserved_usd":"0.000047000000",
+ "budget_settled_usd":"0.000011500000","ttft_ms":5.404,"total_ms":5.404}
+{"request_id":"hr_4bea0c4a348c400da5c4939d29983f14","model":"mock-model-1",
+ "outcome":"budget_exceeded","status":402,"upstream_status":null,
+ "usd_cost":"0.000000000000","cost_status":"not_billable","budget_status":"exceeded",
+ "budget_reserved_usd":"0.000047000000","budget_settled_usd":null,
+ "upstream_latency_ms":null,"ttft_ms":4.671,"total_ms":4.673}
+```
+
+Four things in that output are the phase in miniature.
+
+`remaining_picos: 42500000` is **$0.0000425**, and the gate refuses a request whose
+*actual* cost would have been $0.0000115 — because its *estimate* is $0.000047. That is
+the conservative bound doing exactly what it is for, and it is the honest cost of the
+design: the gate stops slightly early rather than slightly late. Sabotage I above shows
+what the other choice buys.
+
+The refused row has `upstream_status: null` and `cost_status: not_billable` with a
+`usd_cost` of `0.000000000000` — a zero that is a *measurement*, because no model ran —
+while `budget_reserved_usd` records what the request wanted. Without that row a refused
+request would leave no trace anywhere, since nothing upstream ever saw it.
+
+`reservations: {}` and `reserved_picos: 0` after twenty-three requests: every hold that
+was taken was settled. And `expired_releases: 0` — nothing leaked, which is the number an
+operator should be alarming on in Phase 9.
+
+**Assumed-facts register (§0.4)**
+
+- **A1 — VERIFIED.** *`amazon/dynamodb-local` in compose behaves like DynamoDB for
+  `ConditionExpression` conditional writes via boto3 `endpoint_url`.* Every primitive
+  this phase depends on was probed against the pinned `3.1.0` image before a line of the
+  store was written, and each is now pinned by a test: conditional `UpdateItem` including
+  **nested document paths** (`reservations.#rid`) in both the condition and the update;
+  `ReturnValuesOnConditionCheckFailure=ALL_OLD`, which returns the full old item on a
+  refusal and returns *nothing* when the item does not exist — the two cases the gate
+  must tell apart, in one call; `create_table` with `PAY_PER_REQUEST` and
+  `ResourceInUseException` on a second create; 38-significant-digit numbers accepted and
+  39 rejected; negative numbers; compare-and-set on a string stamp; `Scan`. And the
+  property itself: **60 concurrent conditional writes against one item granted exactly
+  the 10 the budget afforded**, with `remaining` landing on zero.
+
+  Two caveats the assumption did not anticipate, both now documented (H-030) and pinned:
+  `scope` is a **reserved word** in expressions, and DynamoDB Local **rejects an access
+  key id containing a hyphen**. Neither is a difference from real DynamoDB in behaviour
+  that matters — the first is true of DynamoDB proper, the second is an emulator quirk in
+  a credential real AWS would reject for different reasons — but both cost time.
+
+  The second half of A1 (*"then identically against real DynamoDB in P9"*) is Phase 9's,
+  and the code is arranged so it is the same code: no branch anywhere asks whether it is
+  talking to a container or to AWS, the endpoint override is the only difference, and the
+  table definition is one function.
+- **A2, A3, A4, A5, A6, A7** — not due at this gate, none touched. A4 and A5 stay
+  VERIFIED: the budget gate reads the request body but never rebuilds it, and the 576
+  tests that prove passthrough fidelity all still run through the gate.
+
+**Spend** — $0.00. No provider API was called in this phase; every test ran on the
+MockProvider, and the container demo talked to nothing outside the compose network.

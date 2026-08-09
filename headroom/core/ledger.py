@@ -97,6 +97,18 @@ class LedgerEntry:
     #: — see ``headroom/metering/cost.py``. NULL cost and zero cost are different facts.
     cost_status: str = "usage_unknown"
 
+    # --- what the budget gate did (Phase 4) ----------------------------------------
+    #: ``no_budget`` | ``reserved`` | ``exceeded``. On a refusal this row is the *only*
+    #: record that the request happened at all — no provider was called, so there is
+    #: nothing else to correlate against.
+    budget_status: str | None = None
+    #: The conservative bound held before the provider ran (``headroom/policy/budgets``).
+    budget_reserved_usd: Decimal | None = None
+    #: What the hold became. Equals ``usd_cost`` when the cost is known, ``0`` when
+    #: nothing was billable, and the *reservation* when the cost is unknown — the one
+    #: place the budget and the invoice deliberately disagree (H-031).
+    budget_settled_usd: Decimal | None = None
+
     # --- timings, from the Phase 1 RequestContext ----------------------------------
     upstream_latency_ms: float | None = None
     ttft_ms: float | None = None

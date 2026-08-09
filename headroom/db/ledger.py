@@ -35,6 +35,7 @@ _COLUMNS = """
     outcome, status_code, upstream_status, error_source, error_reason, stop_reason,
     input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens,
     price_effective_from, usd_per_mtok_in, usd_per_mtok_out, usd_cost, cost_status,
+    budget_status, budget_reserved_usd, budget_settled_usd,
     upstream_latency_ms, ttft_ms, passthrough_overhead_ms, total_ms,
     cache_disposition, failover_hops, started_at, created_at
 """
@@ -45,6 +46,7 @@ INSERT INTO usage_ledger (
     outcome, status_code, upstream_status, error_source, error_reason, stop_reason,
     input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens,
     price_effective_from, usd_per_mtok_in, usd_per_mtok_out, usd_cost, cost_status,
+    budget_status, budget_reserved_usd, budget_settled_usd,
     upstream_latency_ms, ttft_ms, passthrough_overhead_ms, total_ms,
     cache_disposition, failover_hops, started_at
 ) VALUES (
@@ -52,8 +54,9 @@ INSERT INTO usage_ledger (
     $9, $10, $11, $12, $13, $14,
     $15, $16, $17, $18, $19,
     $20, $21, $22, $23, $24,
-    $25, $26, $27, $28,
-    $29, $30, $31
+    $25, $26, $27,
+    $28, $29, $30, $31,
+    $32, $33, $34
 )
 -- Idempotent by request id: the writer may retry, and a second row would double-bill.
 ON CONFLICT (request_id) DO NOTHING
@@ -100,6 +103,9 @@ def _entry(row: asyncpg.Record) -> LedgerEntry:
         usd_per_mtok_out=row["usd_per_mtok_out"],
         usd_cost=row["usd_cost"],
         cost_status=row["cost_status"],
+        budget_status=row["budget_status"],
+        budget_reserved_usd=row["budget_reserved_usd"],
+        budget_settled_usd=row["budget_settled_usd"],
         upstream_latency_ms=row["upstream_latency_ms"],
         ttft_ms=row["ttft_ms"],
         passthrough_overhead_ms=row["passthrough_overhead_ms"],
@@ -177,6 +183,9 @@ class PostgresLedgerStore(LedgerStore):
                 entry.usd_per_mtok_out,
                 entry.usd_cost,
                 entry.cost_status,
+                entry.budget_status,
+                entry.budget_reserved_usd,
+                entry.budget_settled_usd,
                 entry.upstream_latency_ms,
                 entry.ttft_ms,
                 entry.passthrough_overhead_ms,

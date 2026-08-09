@@ -208,6 +208,12 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
         "cache_write_tokens",
         "usd_cost",
         "cost_status",
+        # Phase 4. The budget's account of the same request, for the same reason: on a
+        # 402 the log line and the ledger row are the *only* records that it happened,
+        # because no provider was ever called.
+        "budget_status",
+        "budget_reserved_usd",
+        "budget_settled_usd",
         "error_source",
         "error_reason",
         "upstream_latency_ms",
@@ -217,6 +223,11 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
     }
     assert fields["outcome"] == "ok"
     assert fields["ttft_ms"] is not None
+    # This tenant has no cap, so the gate held nothing — and says so rather than
+    # leaving the field blank, which would be indistinguishable from a request that
+    # never reached the gate at all.
+    assert fields["budget_status"] == "no_budget"
+    assert fields["budget_reserved_usd"] is None
 
 
 async def test_a_recorded_outcome_is_never_overwritten_by_the_backstop(

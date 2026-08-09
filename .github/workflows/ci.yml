@@ -74,7 +74,13 @@ jobs:
       # The service-backed tests must actually run here — a silent skip would make
       # this job a liar about the containers. Since Phase 2 that includes the whole
       # Postgres half of the TenantStore contract suite, which applies `migrations/`
-      # itself, so the schema is proved before the step below re-runs it.
+      # itself, so the schema is proved before the step below re-runs it; since Phase 4
+      # it also includes the DynamoDB half of the BudgetStore contract suite and the
+      # D-019 stampede, which is the one test in this repo that *cannot* run against an
+      # in-memory double. Under H-012, `DYNAMODB_ENDPOINT_URL` being set explicitly
+      # above means an unreachable container fails these tests rather than skipping
+      # them. No AWS credential is set anywhere: the gateway supplies its own dummy
+      # when — and only when — an emulator endpoint is configured.
       - run: uv run pytest -v
       - name: Migrations apply, and applying them twice is a no-op
         run: |
