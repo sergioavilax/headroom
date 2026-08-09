@@ -3287,3 +3287,28 @@ exactly as they did before this phase — which is also, and not by coincidence,
 configuration H-047 pre-registers.
 
 **Operator verification** — the exact commands are in the PR description.
+
+CI on PR-5 ([run 31337135353](https://github.com/sergioavilax/headroom/actions/runs/31337135353)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31337135353 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 130 source files
+pytest (…service containers) | ===== 924 passed, 2 deselected, 1 warning in 25.61s =====
+gateway image builds and serves | gateway healthy
+```
+
+**924 passed, 0 skipped in CI**, on a runner with **no `embed` extra installed** — no
+torch, no model, no network to HuggingFace. Every similarity assertion in this phase still
+ran, against real `bge-small-en-v1.5` numbers, out of the committed corpus. That is the
+whole point of the fixture, and CI is where it is proved rather than claimed.
+
+The `image` job is worth one line too: it builds the container **without** the extra and
+smokes `/healthz`, which is why `LazyEmbedder` had to be lazy in the first place — a
+gateway that imported torch at construction could not have booted there.
