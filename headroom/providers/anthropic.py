@@ -84,4 +84,4 @@ def _build(
     )
 
 
-register_kind("anthropic", _build)
+register_kind("anthropic", _build, dialects=frozenset({"anthropic"}))

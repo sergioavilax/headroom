@@ -14,6 +14,10 @@ Phase 6 needs two instances at once (the kill-a-GPU failover demo), and Phase 8'
 needs one of them alongside Backline's whole stack. Both of those depend on facts in
 here, so it is written before either.
 
+**Updated at the Phase 6 gate (2026-08-09).** The GPU-pinning workaround that shipped here
+as **UNTESTED** has been run and works, and the two-instance topology it exists for is now
+the standing layout — see *GPU selection* and *The standing two-instance topology* below.
+
 ---
 
 ## The known-good launch command — VERIFIED
@@ -32,9 +36,12 @@ docker run --rm --gpus all \
   --limit-mm-per-prompt '{"image": 0, "video": 0}'
 ```
 
-Served at `http://localhost:8010/v1`. Point Headroom at it with either spelling of the
-base URL — with or without the trailing `/v1` — because `normalize_base_url` trims one
-(docs/DECISIONS.md H-011):
+Served at `http://localhost:8010/v1`. This is the single-instance form; for the standing
+**two**-instance layout add `--name` and `-e CUDA_VISIBLE_DEVICES=<UUID>` per the topology
+section below, which is what Phase 6's chain and demo assume.
+
+Point Headroom at it with either spelling of the base URL — with or without the trailing
+`/v1` — because `normalize_base_url` trims one (docs/DECISIONS.md H-011):
 
 ```bash
 make up   # the smoke provisions a tenant and key, and reads its ledger row back
@@ -111,10 +118,10 @@ repo id is on the command line before touching anything else.
 
 ---
 
-## GPU selection is unreliable under this Docker/WSL2 setup
+## GPU selection: `--gpus all` + `CUDA_VISIBLE_DEVICES`, and nothing else
 
-**UNRELIABLE — VERIFIED as broken.** Both documented forms of GPU pinning were tried and
-**both placed the model on the wrong physical card**:
+**Docker's own pinning flags are broken here — VERIFIED as broken.** Both documented
+forms were tried and **both placed the model on the wrong physical card**:
 
 ```bash
 --gpus device=1                                        # wrong card
@@ -125,33 +132,104 @@ The container reported the GPU it was asked for; the memory appeared on the othe
 The cause has not been isolated — it is somewhere in the Docker Desktop / WSL2 GPU
 passthrough layer, where device ordering is not guaranteed to match `nvidia-smi`'s.
 
-### Always verify placement after launch — VERIFIED as the reliable check
-
-```bash
-nvidia-smi --query-gpu=uuid,memory.used --format=csv
-```
-
-Run it from the **host**, after the server reports ready. The card holding ~20 GB is the
-one actually serving. Do not trust the flag, do not trust the container's view, and do
-not build a two-instance demo on an assumption here — check.
-
-### The candidate fix — UNTESTED
+### The fix — **VERIFIED 2026-08-09** (was UNTESTED until Phase 6)
 
 ```bash
 docker run --gpus all -e CUDA_VISIBLE_DEVICES=GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx ...
 ```
 
-Give the container every GPU and let **CUDA** do the selection by UUID inside it, rather
-than asking Docker to pass through a subset. The reasoning: `--gpus device=` filters at
-the container runtime layer, where the ordering appears to be wrong;
+Give the container **every** GPU and let **CUDA** do the selection by UUID inside it,
+rather than asking Docker to pass through a subset. `--gpus device=` filters at the
+container-runtime layer, where the ordering is wrong on this machine;
 `CUDA_VISIBLE_DEVICES` with a UUID is resolved by the CUDA driver itself, which is the
-layer that knows which card is which.
+layer that actually knows which card is which.
 
-**This has not been run.** It has to be settled before **Phase 6**, whose whole demo is
-one instance per physical 4090 with a `kill` in the middle — a demo where both instances
-are secretly on the same card is not a failover demo, it is a very slow single card.
-Verify with the `nvidia-smi` command above, and record the result in `docs/PHASE_LOG.md`
-at the Phase 6 gate whichever way it goes.
+**The model landed on the named card on the first try**, confirmed by the uuid-keyed
+`nvidia-smi` query below. Corroborated during the Phase 6 build session by inspecting
+both running containers: the instance launched this way is pinned to the UUID it names,
+while the instance still launched with `--gpus device=<same UUID>` is demonstrably *not*
+on that card — the two together are the broken form and the working form running side by
+side and landing on different GPUs.
+
+**Use this form for both instances.** `--gpus device=N` and `--gpus device=UUID` are not
+"less reliable" here, they are wrong, and a two-instance demo where both servers are
+secretly on one card is not a failover demo — it is a very slow single card.
+
+### Always verify placement after launch — VERIFIED as the reliable check
+
+```bash
+nvidia-smi --query-gpu=index,uuid,name,memory.used,memory.free --format=csv
+```
+
+Run it from the **host**, after the server reports ready. With both instances up, both
+cards read ~23 GB used and under 1 GB free:
+
+```
+index, uuid, name, memory.used [MiB], memory.free [MiB]
+0, GPU-61bdb28e-…, NVIDIA GeForce RTX 4090, 23736 MiB, 407 MiB
+1, GPU-ad348511-…, NVIDIA GeForce RTX 4090, 23332 MiB, 811 MiB
+```
+
+**`nvidia-smi --query-compute-apps` does not work here — VERIFIED useless.** Under WSL2 it
+reports a single virtual PID against both GPUs with `[N/A]` memory, so it cannot map a
+container to a card. Per-GPU *memory* is the only reliable signal, which is why the query
+above is the one to run.
+
+---
+
+## The standing two-instance topology — VERIFIED
+
+Phase 6's failover chain, and Phase 8's H3 kill demo, both assume this exact layout. It is
+what `config/routing.yaml` ships with as the `vllm_a` → `vllm_b` chain, and what
+`.env.example` documents.
+
+| | host port | GPU | provider name in `config/routing.yaml` | env override |
+|---|---|---|---|---|
+| **Instance A** | `8010` | one 4090 | `vllm_a` (the chain's primary) | `VLLM_BASE_URL` |
+| **Instance B** | `8011` | the other 4090 | `vllm_b` (the fallback) | `VLLM_B_BASE_URL` |
+
+Identical launch flags on both — the pair is deliberately two *independent single-GPU*
+servers rather than one tensor-parallel pair (BUILD_PLAN L5), because that is what makes a
+`docker kill` on one of them a real failover rather than an outage.
+
+```bash
+# read the two UUIDs first; they are what the pinning depends on
+nvidia-smi --query-gpu=index,uuid,memory.free --format=csv
+
+# instance A — the chain's primary, port 8010
+docker run -d --name vllm-a --gpus all \
+  -e CUDA_VISIBLE_DEVICES=GPU-<uuid-of-card-0> \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -p 8010:8000 \
+  vllm/vllm-openai:latest \
+  --model cyankiwi/Qwen3.6-27B-AWQ-INT4 \
+  --gpu-memory-utilization 0.92 --max-model-len 8192 --enforce-eager \
+  --tool-call-parser qwen3_xml --reasoning-parser qwen3 \
+  --limit-mm-per-prompt '{"image": 0, "video": 0}'
+
+# instance B — the fallback, port 8011, same flags, the other card
+docker run -d --name vllm-b --gpus all \
+  -e CUDA_VISIBLE_DEVICES=GPU-<uuid-of-card-1> \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -p 8011:8000 \
+  vllm/vllm-openai:latest \
+  --model cyankiwi/Qwen3.6-27B-AWQ-INT4 \
+  --gpu-memory-utilization 0.92 --max-model-len 8192 --enforce-eager \
+  --tool-call-parser qwen3_xml --reasoning-parser qwen3 \
+  --limit-mm-per-prompt '{"image": 0, "video": 0}'
+```
+
+**Name the containers.** The Phase 6 demo is `docker kill vllm-a`, and a demo that starts
+with "which one of these is the primary again?" is a demo that goes wrong on camera.
+
+Pre-flight both before any demo — this is assumption **A6** in BUILD_PLAN §0.4:
+
+```bash
+for p in 8010 8011; do curl -sS "http://localhost:$p/v1/models" | head -c 120; echo; done
+```
+
+Both must answer with `cyankiwi/Qwen3.6-27B-AWQ-INT4`. **Verified 2026-08-09**, both
+instances serving with the `qwen3_xml` / `qwen3` parser flags above.
 
 ---
 
@@ -218,8 +296,11 @@ Consequences, all of them recorded in `docs/PHASE_LOG.md` under *Live smoke — 
 | `qwen3_xml` is required; `hermes` fails silently on this family | VERIFIED |
 | `--limit-mm-per-prompt` skips vision profiling and frees KV budget | VERIFIED |
 | `drawais/…` crashes vLLM 0.26 with a `Qwen3_5Config` TypeError; `cyankiwi/…` works | VERIFIED |
-| `--gpus device=N` and `--gpus device=UUID` both pin to the wrong card here | VERIFIED (broken) |
+| `--gpus device=N` and `--gpus device=UUID` both pin to the wrong card here | VERIFIED (broken) — **do not use** |
+| **`--gpus all` + `CUDA_VISIBLE_DEVICES=<UUID>` pins to the named card** | **VERIFIED 2026-08-09** (was UNTESTED) |
 | `nvidia-smi --query-gpu=uuid,memory.used --format=csv` shows the real placement | VERIFIED |
-| `--gpus all` + `CUDA_VISIBLE_DEVICES=<UUID>` fixes GPU selection | **UNTESTED** — settle before Phase 6 |
+| `nvidia-smi --query-compute-apps` cannot map a container to a card under WSL2 | VERIFIED (useless) |
+| Two instances, one per 4090: A on 8010, B on 8011, identical flags | VERIFIED 2026-08-09 |
+| Both instances serve with the `qwen3_xml` / `qwen3` parsers (assumption **A6**) | VERIFIED 2026-08-09 |
 | The display card holds ~1.2–5 GB at all times; size against free, not total | VERIFIED |
 | Small `max_tokens` yields empty content with `finish_reason: "length"` | VERIFIED |

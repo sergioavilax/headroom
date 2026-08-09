@@ -30,6 +30,8 @@ from headroom.metering.prices import PriceBook, load_price_book
 from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.policy.budgets import BudgetGate
+from headroom.policy.failover import Failover
+from headroom.policy.health import HealthTracker
 from headroom.policy.limits import RateLimiter
 from headroom.policy.routing import RoutingTable
 
@@ -41,7 +43,7 @@ from headroom.providers import anthropic as _anthropic  # noqa: F401
 from headroom.providers import mock as _mock  # noqa: F401
 from headroom.providers import openai_compat as _openai_compat  # noqa: F401
 from headroom.providers.base import Provider
-from headroom.providers.registry import ProviderRegistry, provider_kinds
+from headroom.providers.registry import ProviderRegistry, kind_dialects, provider_kinds
 
 __all__ = ["Gateway", "build_gateway"]
 
@@ -86,13 +88,23 @@ class Gateway:
     #: and never builds the embedder, so the feature costs a deployment nothing until
     #: somebody asks for it.
     cache: ResponseCache
+    #: Phase 6. What this process has been able to reach, and the breaker built on it.
+    #: In memory and per process on purpose — a breaker is not a fact about the world,
+    #: it is a record of what *this* task can talk to (docs/DECISIONS.md H-052).
+    health: HealthTracker
+    #: Phase 6. The only object in the codebase allowed to call a provider twice for one
+    #: request. It replaces exactly one line of the proxy — the ``provider.open`` call —
+    #: and everything around it is unchanged and unaware.
+    failover: Failover
     admin_token: str | None = None
 
     def provider_for(self, dialect: str, model: str) -> Provider:
-        """Resolve a request to the provider that will serve it.
+        """Resolve a request to the provider a model is routed to — its chain's primary.
 
-        Phase 6 widens this to return a chain; every caller already goes through it,
-        so the failover phase changes this method and not the proxy.
+        Kept as it was (H-013 predicted Phase 6 would widen it; what actually widened is
+        the *rule*, which is better — the name a model resolves to still means the same
+        thing). ``routing.resolve_route`` is the whole decision, chain included, and it
+        is what ``headroom/api/proxy.py`` calls.
         """
         return self.registry.get(self.routing.resolve(dialect, model))
 
@@ -151,6 +163,10 @@ def build_gateway(
                 f"provider {name!r} has unknown kind {spec.kind!r} (registered: {known})"
             )
         registry.add(factory(name, **spec.settings()))
+    _require_same_dialect_routes(resolved)
+    health = HealthTracker()
+    for provider in registry:
+        health.track(provider.name, provider.kind)
     tenant_store = store if store is not None else PostgresTenantStore()
     ledger_store = ledger if ledger is not None else PostgresLedgerStore()
     budget_store = budgets if budgets is not None else DynamoBudgetStore()
@@ -177,5 +193,36 @@ def build_gateway(
         budgets=BudgetGate(store=budget_store, prices=prices),
         limits=RateLimiter(store=bucket_store),
         cache=ResponseCache(store=cache_store, embedder=load_embedder()),
+        health=health,
+        failover=Failover(registry=registry, health=health),
         admin_token=os.environ.get(ADMIN_TOKEN_ENV) or None,
     )
+
+
+def _require_same_dialect_routes(config: GatewayConfig) -> None:
+    """BUILD_PLAN L4, checked rather than trusted: no route may cross a dialect.
+
+    Routing being per dialect already makes a failover chain same-dialect *structurally*
+    — a chain lives inside one dialect's rule list. What it does not stop is an operator
+    writing ``fallbacks: [anthropic]`` under an ``openai:`` route, which would hand an
+    OpenAI-dialect body to the Messages API on exactly the day the primary went down.
+    That is the cross-dialect translation L4 puts permanently out of scope, arriving
+    through a config file instead of through a translation layer.
+
+    Checked here rather than at config load because this is the module that imports the
+    provider kinds (for their registration side effects), and therefore the only one
+    where the kind table is guaranteed populated. Primaries are checked too, not just
+    fallbacks: an asymmetry there would be a rule that only applies to the new feature.
+    """
+    for dialect, rules in config.routes.items():
+        for rule in rules:
+            for name in (rule.provider, *rule.fallbacks):
+                kind = config.providers[name].kind
+                spoken = kind_dialects(kind)
+                if spoken and dialect not in spoken:
+                    raise ConfigurationError(
+                        f"route {dialect}:{rule.prefix!r} names provider {name!r} of kind "
+                        f"{kind!r}, which speaks {', '.join(sorted(spoken))} and not "
+                        f"{dialect!r}. BUILD_PLAN L4 puts cross-dialect translation out "
+                        f"of scope, so a chain must be same-dialect end to end."
+                    )

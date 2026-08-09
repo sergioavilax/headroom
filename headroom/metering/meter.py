@@ -161,6 +161,13 @@ def build_entry(ctx: RequestContext, usage: Usage, breakdown: CostBreakdown) -> 
             None if ctx.cache_similarity is None else Decimal(f"{ctx.cache_similarity:.5f}")
         ),
         cache_source_request_id=ctx.cache_source_request_id,
+        # Phase 6's account of the same request. `provider` above already moved to
+        # whoever served it; these three say what it took to get there, and they are
+        # copied off the context for the same reason the budget's are — the executor has
+        # already decided them, and a second opinion here would be a second story.
+        failover_hops=ctx.failover_hops,
+        failover_from=ctx.failover_from,
+        failover_error=ctx.failover_error,
         upstream_latency_ms=ctx.upstream_latency_ms,
         ttft_ms=ctx.time_to_first_token_ms,
         passthrough_overhead_ms=ctx.passthrough_overhead_ms,

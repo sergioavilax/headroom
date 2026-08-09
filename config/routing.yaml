@@ -15,9 +15,20 @@
 # can carve one model out of a family without rewriting the family's rule. The empty
 # prefix ("") matches everything and is therefore the catch-all.
 #
-# Phase 6 extends a rule with same-dialect fallbacks — routes stay per dialect here
-# because BUILD_PLAN L4 puts cross-dialect translation out of scope, which makes a
-# failover pair same-dialect by construction.
+# ── Failover chains (Phase 6) ──────────────────────────────────────────────────
+# A rule may name `fallbacks:` — same-dialect alternates, tried in order when the
+# primary cannot serve. Routes are per dialect, so a chain is same-dialect by
+# construction (BUILD_PLAN L4); the gateway *also* refuses to start if a chain crosses
+# one, because "by construction" is not a thing a config file can be trusted with.
+#
+# Failover is opt-in and per route. A rule with no `fallbacks` and no `max_attempts`
+# makes exactly one attempt, with no backoff and no circuit-breaker interference —
+# which is why adding this feature changed nothing for `mock-` and `claude-` below.
+#
+# `max_attempts:` (optional, 1..5) is how a *single*-provider route asks to be retried
+# rather than abandoned: above the chain length the attempt sequence wraps, so
+# `max_attempts: 3` on a one-provider rule means a, a, a, and on a two-provider rule
+# means a, b, a — every fresh candidate before any repeat.
 
 providers:
   # Keyless, deterministic, fault-injectable — every test in the project runs on it,
@@ -27,30 +38,53 @@ providers:
   mock:
     kind: mock
 
+  # A second mock, so the *keyless* demo has a chain too. `make up` plus two curls now
+  # shows a failover end to end — with no key, no network, no GPU, and no spend — which
+  # is the same argument that put `mock` in this file at all. A request that injects no
+  # fault never reaches it, so nothing about the Phase 1–5 demo changed.
+  mock_fallback:
+    kind: mock
+
   anthropic:
     kind: anthropic
     base_url: https://api.anthropic.com
     api_key_env: ANTHROPIC_API_KEY
 
-  # The operator's vLLM instance (BUILD_PLAN L5). The endpoint is a per-machine fact,
-  # so it comes from the environment; `base_url` below is the fallback when
-  # VLLM_BASE_URL is unset. Either spelling of the URL works — with or without a
-  # trailing /v1 (docs/DECISIONS.md H-011). Phase 6 adds vllm_b for the second 4090
-  # and the failover chain between them.
-  vllm:
+  # The operator's two vLLM instances (BUILD_PLAN L5) — one per 4090, deliberately two
+  # single-GPU servers rather than one tensor-parallel pair, and the reason Phase 6's
+  # chaos demo costs $0.00: kill one container, watch traffic move to the other card.
+  #
+  # The topology is documented and VERIFIED in docs/vllm.md: instance A on host port
+  # 8010, instance B on 8011, identical launch flags, pinned to a card each with
+  # `--gpus all` plus `CUDA_VISIBLE_DEVICES=<UUID>`.
+  #
+  # Endpoints are per-machine facts, so they come from the environment; the `base_url`
+  # beneath each is the fallback when the variable is unset. Either spelling of the URL
+  # works — with or without a trailing /v1 (docs/DECISIONS.md H-011).
+  vllm_a:
     kind: openai_compat
     base_url_env: VLLM_BASE_URL
-    base_url: http://localhost:8000
+    base_url: http://localhost:8010
+
+  vllm_b:
+    kind: openai_compat
+    base_url_env: VLLM_B_BASE_URL
+    base_url: http://localhost:8011
 
 routes:
   anthropic:
     - prefix: "mock-"
       provider: mock
+      fallbacks: [mock_fallback]
     - prefix: "claude-"
       provider: anthropic
 
   openai:
     - prefix: "mock-"
       provider: mock
+      fallbacks: [mock_fallback]
+    # The kill demo, as configuration. A request served by vllm_a when vllm_a is up;
+    # by vllm_b, with `failover_hops: 1` on its ledger row, the moment it is not.
     - prefix: ""
-      provider: vllm
+      provider: vllm_a
+      fallbacks: [vllm_b]

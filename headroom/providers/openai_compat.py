@@ -75,4 +75,4 @@ def _build(
     )
 
 
-register_kind("openai_compat", _build)
+register_kind("openai_compat", _build, dialects=frozenset({"openai"}))

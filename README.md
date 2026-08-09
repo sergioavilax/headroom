@@ -321,6 +321,92 @@ beyond generating the paraphrases.
 
 Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-040 … H-047.
 
-Running the local vLLM backends: [docs/vllm.md](docs/vllm.md).
+## Failover that refuses to serve a Frankenstein answer
+
+A route may name same-dialect fallbacks, and a request that cannot be served by the
+provider it was routed to is replayed against the next one — transparently, once, inside
+the same admission.
+
+```yaml
+routes:
+  openai:
+    - prefix: ""
+      provider: vllm_a
+      fallbacks: [vllm_b]      # one 4090 each; kill one, the other serves
+      max_attempts: 3          # optional, 1..5 — wraps: a, b, a
+```
+
+**Failover is opt-in per route.** A rule with no `fallbacks` and no `max_attempts` makes
+exactly one attempt, with no retry, no backoff, and no circuit breaker anywhere on its
+path — bit for bit what it did before this existed. That is why adding this changed
+nothing for the `claude-` route that spends real money.
+
+**The line that decides everything is the first byte out.** A fault *before* it — a
+timeout, a connection failure, an upstream 429 or 5xx, even a non-streamed body that dies
+mid-read — is replayed against the fallback and the caller never knows. A fault *after* it
+is **never** retried, because splicing a second provider's answer onto the first one's
+fragment produces a stream that is well formed, terminates cleanly, and that every SDK
+returns as one complete message. There is nothing in it that says two models wrote it.
+`tests/test_failover_boundary.py` runs that naive implementation and measures what it
+serves — *"The capital of France is The capital of Germany is Berlin."*, two
+`message_start` frames, one `message_stop`, no error anywhere — beside the shipped
+gateway's answer to the identical fault, which is a terminal error event the caller's SDK
+raises on.
+
+**What never triggers a hop matters as much as what does.** Headroom's own 429 (rate
+limit) and 402 (budget) are raised before the failover executor exists in the call path,
+so no provider in the chain is called at all — failing over on your own rate limit moves
+a burst instead of shedding it, and failing over on your own budget refusal spends the
+money somewhere else. An upstream 4xx that is not 429 is forwarded rather than retried:
+the next provider would say the same thing one round trip later.
+
+**Backoff is paid to a provider that already failed, not to a fresh one.** Nothing about
+`vllm_a` being down suggests `vllm_b` needs a moment, so moving down a chain costs no
+latency at all; coming *back* to one that already failed this request pays full jitter over
+50 ms, doubling, capped at 2 s — worst case 150 ms across three attempts, published by
+`BackoffPolicy.worst_case_s` and asserted on a recorded clock rather than a real one.
+
+**A circuit breaker takes a sick provider out of rotation and probes it back in.** Rolling
+window of 20, trips at a 0.5 failure ratio once there are 5 samples, 10-second cooldown,
+one probe at a time, and the window is cleared when the probe succeeds. It never skips the
+*last* candidate in a chain: refusing the only remaining upstream would turn a provider's
+outage into the gateway's own. Health lives in memory, per process, on purpose — a breaker
+is a record of what *this* task can reach, not a fact about the world. `GET
+/admin/providers` reports state, window, failure ratio, latency percentiles, and the
+chains each provider sits in; `DELETE /admin/providers/{name}/health` closes a breaker
+immediately, for the moment an operator has just fixed something.
+
+**One request, one row, one reservation — however many providers it took.** The ledger row
+names who served (`provider`), how many candidates were passed over (`failover_hops`), and
+which one first and why (`failover_from`, `failover_error`); the log line carries the whole
+trail as `["vllm_a:upstream_status_529", "vllm_b:ok"]`. A hop consumes no extra rate-limit
+unit and takes no second budget hold, because admission happens above the executor and
+settlement below it — asserted as arithmetic on the tenant's counters, not as a claim about
+the code.
+
+You can see all of it with no key, no network, and no GPU:
+
+```bash
+# the primary serves — no failover headers at all
+curl -sS -D- -o /dev/null localhost:8080/v1/messages -H "Authorization: Bearer $KEY" \
+  -H 'content-type: application/json' \
+  -d '{"model":"mock-model-1","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}'
+
+# now break the primary for one request: the fallback answers, and the response says so
+curl -sS -D- -o /dev/null localhost:8080/v1/messages -H "Authorization: Bearer $KEY" \
+  -H 'content-type: application/json' -H 'x-headroom-mock-script: fault-529@mock' \
+  -d '{"model":"mock-model-1","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}'
+#   x-headroom-failover-hops: 1
+#   x-headroom-failover-from: mock
+```
+
+`fault-529` (any status), `fault-timeout`, `fault-connect`, and `fault-cut` are built into
+the MockProvider so a *running* gateway can be broken on purpose; the `@name` suffix aims
+one at a single instance.
+
+Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-048 … H-053.
+
+Running the local vLLM backends — including the two-instance topology this chain assumes:
+[docs/vllm.md](docs/vllm.md).
 
 MIT licensed.
