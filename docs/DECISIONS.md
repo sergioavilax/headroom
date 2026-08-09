@@ -1276,3 +1276,71 @@ obligation here is the inverse and is met directly:
 asserts the provider received the caller's bytes unchanged, and
 `test_metering_a_stream_does_not_disturb_one_byte_of_it` asserts the response is
 byte-identical to the mock's output while being metered.
+
+---
+
+## H-029 — A live smoke provisions its own identity, in the real control plane (Phase 3, addendum)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** Phase 2 made every `/v1/*` request require a virtual key. The keyless suite
+moved onto the authenticated path in that PR — `GatewayHarness.post` presents a key by
+default — but `tests/test_live_smoke.py` was not touched, because nothing runs it: the
+`live` marker deselects it from every CI job and from every `make test`. Both smokes
+therefore returned 401 `missing_api_key` from the moment PR-2 merged, and the breakage
+surfaced on 2026-08-09, on the first live run after it, a phase and a half later.
+
+Fixing the 401 is one header. The question this entry decides is *where the header's
+value comes from*, and the options are not equivalent: a key pasted into the operator's
+`.env` is a manual setup step that will rot the same way (a key revoked during an
+incident, a volume wiped by `docker compose down -v`), and an in-memory control plane
+built inside the test is self-contained but throws away the row.
+
+**Decision.** **Each live smoke provisions its own tenant and key, through the real
+`TenantStore`, against the compose Postgres.** `tests/support/live.py` creates — or
+reuses — a tenant named `live-smoke`, mints an unrestricted key, drives the request with
+it, asserts the resulting ledger row is attributed to that tenant, prints the request
+id, and revokes the key on the way out.
+
+Three things fall out of that, and each was the reason for it:
+
+* **The operator's setup does not grow.** `make up` plus `ANTHROPIC_API_KEY` /
+  `VLLM_BASE_URL`, exactly as before. Migrations are applied by the helper, idempotently,
+  so a smoke on a fresh volume cannot fail on a missing table *after* spending the money.
+* **The row outlives the process.** The whole point of a paid smoke is to compare
+  Headroom's accounting against the provider's own, and the phase log's verification step
+  is a `curl` at `/admin/usage/<request-id>` on the running container. In-memory stores
+  would make that impossible, so the smoke uses the stores the gateway actually ships
+  with — the first test in the project that does.
+* **The tenant is stable, the key never is.** One name to filter the ledger by, run after
+  run; a fresh key each time because a plaintext key exists exactly once, in the response
+  that created it (H-017), and this store never held it. Revoked on exit: it has served
+  its one request, and a credential nobody can reproduce is tidier dead than alive.
+
+**Alternatives considered.** *A key in `.env`* — a manual step that rots silently, and
+the failure it produces (401 on a paid run) is the one this entry exists to remove.
+*In-memory stores inside the test* — self-contained and unverifiable; deletes the
+artefact. *Provision through `POST /admin/keys` rather than the store* — the same result
+through one more surface, but it would require `HEADROOM_ADMIN_TOKEN` to be set for a
+smoke that otherwise needs no admin credential, which is exactly the kind of extra setup
+step being removed. *Leave the key active* — no benefit; its plaintext is gone when the
+process exits.
+
+**Consequences.** The live smokes now require a reachable control plane, handled by
+H-012's rule (skip when the endpoint was inferred and nothing is listening, fail when
+someone stated it was there) rather than by a new one. They leave one revoked key per
+run under a permanent `live-smoke` tenant, which is the intended paper trail. And the
+`make test` interaction is now documented rather than discovered: the Postgres half of
+the tenant-store contract suite runs `TRUNCATE virtual_keys, tenants CASCADE`, and
+`usage_ledger` references both, so a `make test` between a live smoke and its `curl`
+takes the row with it — the smoke says so on the terminal, in the line after the id.
+
+The mitigation for the *class* of failure is separate and deliberate, because the
+obvious one does not apply: import-time bitrot was never the gap. `-m "not live"`
+deselects **after** collection, so every default run already imports the live module and
+an `ImportError` there fails the suite. What no keyless run could see was *behaviour* —
+whether the request the smoke builds still authenticates. So
+`tests/test_live_smoke_wiring.py` drives the smokes' own provisioning helper through the
+real `Authenticator` on every CI run, and asserts the sabotage (a smoke that sends no
+key) is refused with `MissingCredential`. It cannot prove the live smokes pass; it proves
+the credential they present is one the gateway accepts, which is the thing that broke.

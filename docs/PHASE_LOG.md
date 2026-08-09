@@ -1436,3 +1436,115 @@ $ curl -sS -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" \
 
 **Spend** — $0.00. No provider API was called in this phase; every test ran on the
 MockProvider and the container demo talked to nothing.
+
+### Addendum (2026-08-09) — the live smokes were broken from PR-2's merge until now
+
+**The finding.** Both tests in `tests/test_live_smoke.py` failed with 401
+`missing_api_key` on the operator's first live run after Phase 2 merged. They predate
+tenancy and sent no virtual key; since Phase 2 every `/v1/*` request requires one. PR-2
+moved the keyless suite onto the authenticated path (`GatewayHarness.post` presents a
+key by default) and did not touch these two, so they have been red since 3c0cf63 — the
+whole of Phase 3 — and the Phase 2 and Phase 3 gates both passed with them broken.
+
+**Root cause, stated plainly.** The live smokes exercise the authentication surface and
+are excluded from every automated run: `-m "not live"` deselects them in `make test` and
+in all three CI jobs, and they only execute on the operator's machine, by hand, after a
+phase is otherwise finished. So an auth change can break them and nothing reports it.
+That is not a mistake in PR-2's diff; it is a structural gap in what CI can see, and it
+will recur at every phase that touches the request path (Phase 4's budget gate is the
+next one) unless something keyless stands in for them.
+
+Two things about the gap are worth recording accurately, because the obvious mitigation
+is aimed at the wrong failure:
+
+- **Import-time bitrot was never uncovered.** `-m` deselects *after* collection, so every
+  default run already imports `tests/test_live_smoke.py`; an `ImportError` or a bad
+  decorator there fails `make test` today.
+- **Behaviour was.** Nothing keyless could tell whether the request these tests build
+  still authenticates — and that is exactly what rotted.
+
+**The fix** (`tests/support/live.py`, new). Each live smoke now provisions its own
+identity instead of assuming one: it creates — or reuses — a tenant named `live-smoke`
+through the real `TenantStore`, mints an unrestricted key, sends the request with it, and
+revokes the key on the way out. The operator's setup is unchanged: `make up` plus
+`ANTHROPIC_API_KEY` / `VLLM_BASE_URL`, with migrations applied by the helper so a smoke
+on a fresh volume cannot fail on a missing table after the money is spent. Argued in
+**H-029**.
+
+The stores are the real ones — Postgres, not the in-memory pair the keyless fixture uses
+— because the ledger row is the point: each smoke now asserts a row landed, that it is
+attributed to the smoke tenant and key, and prints the request id, tenant id, tokens,
+cost, and the `curl` to read it back. A live run that spends money and then fails at the
+ledger still hands over the id, because the report is emitted before the assertion.
+
+**The mitigation** (`tests/test_live_smoke_wiring.py`, new — 5 keyless tests). The
+smokes' own provisioning helper is driven through the real `Authenticator` on every CI
+run: a provisioned credential authenticates and stamps the right tenant and key onto the
+context; the sabotage — the headers these tests actually sent before today — raises
+`MissingCredential`; provisioning twice reuses the tenant and mints a fresh key; and a
+deactivated smoke tenant is reactivated rather than becoming an unexplained 401. It
+cannot prove the live smokes pass. It proves the credential they present is one the
+gateway accepts, which is the thing that broke.
+
+**An operational caveat found while verifying this, previously undocumented.** The
+Postgres half of the tenant-store contract suite runs `TRUNCATE virtual_keys, tenants
+CASCADE`, and `usage_ledger` references both tables — so `make test` truncates the
+ledger. Confirmed here: a row written by the dry run below was gone after the next
+`make test`. Read a live smoke's row back *before* running the suite again; the smoke
+prints that warning on the line after the request id.
+
+**Verification.** The paid and GPU halves are still the operator's — the build machine
+reaches neither. What was verified here is all of the new plumbing, for free, by driving
+`live_gateway` at the routable `mock-` model against the running compose stack: real
+gateway, real control plane, real ledger, no provider and no spend. The harness below
+was a throwaway script (not committed — it is `live_gateway` plus a `mock-model-1` body
+and six `print`s); it is deliberately *not* a keyless test, because the control plane has
+no delete and a test that ran on every `make test` would leave a tenant and a ledger row
+behind each time, which 2237d99 went to some trouble to stop.
+
+```
+$ uv run python dryrun_live_wiring.py     # scratch harness, not committed
+status: 200
+request_id: hr_aeec006559904a6599a3e34e60101fa9
+tenant: live-smoke ab6a95b4-0724-45b4-b0e5-91495af0c33e
+key: hk_Lu2kx0Vu 6533685f-1ea8-4eaf-a065-de8245964646
+row: mock-model-1 mock ok 11 7 0.000011500000 priced
+key revoked on exit: True
+
+$ docker compose exec -T db psql -U headroom -d headroom \
+    -c "SELECT request_id, tenant_id, model, outcome, usd_cost, cost_status FROM usage_ledger …"
+             request_id              |              tenant_id               |    model     | outcome |    usd_cost    | cost_status
+-------------------------------------+--------------------------------------+--------------+---------+----------------+-------------
+ hr_aeec006559904a6599a3e34e60101fa9 | ab6a95b4-0724-45b4-b0e5-91495af0c33e | mock-model-1 | ok      | 0.000011500000 | priced
+(1 row)
+
+$ make test          # …and the caveat above, demonstrated
+================= 446 passed, 2 deselected, 1 warning in 5.50s =================
+$ docker compose exec -T db psql -U headroom -d headroom -c "SELECT count(*) FROM usage_ledger"
+ ledger_rows
+-------------
+           0
+```
+
+**Gate.** `make lint typecheck test` on the branch:
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+88 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 88 source files
+
+$ make test
+================= 446 passed, 2 deselected, 1 warning in 5.50s =================
+```
+
+441 → **446**: the five new keyless tests in `tests/test_live_smoke_wiring.py`. The two
+deselected are the live smokes, still excluded, as invariant 4 requires.
+
+**Spend** — $0.00. The dry run above talked to the MockProvider; no provider API was
+called.
