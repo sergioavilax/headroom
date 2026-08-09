@@ -4,10 +4,10 @@ Applies ``migrations/*.sql`` in lexicographic filename order, recording applied
 versions in a ``schema_migrations`` table; each file runs inside a single
 transaction. Chosen over Alembic in docs/DECISIONS.md H-003.
 
-Phase 0 ships zero migrations — the first one lands in Phase 2 with tenants and
-virtual keys — so this runner is a deliberate no-op today: with no files on disk it
-never opens a connection, which keeps ``make migrate`` honest on a fresh clone that
-has not booted the stack yet.
+Phase 0 shipped zero migrations; Phase 2 brought the first one (tenants and virtual
+keys). The no-file short-circuit stays: with nothing on disk this never opens a
+connection, which is what keeps ``make migrate`` honest on a checkout that has not
+booted the stack.
 
 Usage: ``python -m headroom.db.migrate`` (or ``make migrate``); the database URL
 comes from ``DATABASE_URL``, defaulting to the compose stack's Postgres.
@@ -86,7 +86,7 @@ async def run_migrations(
 
 def main() -> int:
     if not discover_migrations():
-        print("migrations: none on disk yet (the first one lands in Phase 2) — nothing to do")
+        print("migrations: none on disk — nothing to do")
         return 0
     applied = asyncio.run(run_migrations())
     if applied:

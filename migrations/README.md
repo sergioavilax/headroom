@@ -27,5 +27,17 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 
 ## Status
 
-Empty by design at Phase 0. The first migration (tenants + virtual keys) lands in
-Phase 2; the ledger in Phase 3; the pgvector semantic-cache tables in Phase 5.
+| File | Phase | What it adds |
+|---|---|---|
+| `0001_tenants_and_virtual_keys.sql` | 2 | `tenants`, `virtual_keys` — the control plane |
+
+Still to come: the cost ledger in Phase 3, the pgvector semantic-cache tables in
+Phase 5.
+
+The shape of `0001` — UUID keys, `revoked_at` as the state rather than a boolean,
+`ON DELETE RESTRICT`, `TEXT[]` scopes where empty means unrestricted — is argued in
+[docs/DECISIONS.md](../docs/DECISIONS.md) H-022. It is applied, so it is immutable:
+a change is `0002_*.sql`.
+
+`make up` applies migrations inside the gateway container once the stack is healthy;
+`make migrate` applies them from the host against `DATABASE_URL`.
