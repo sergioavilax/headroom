@@ -78,6 +78,20 @@ services:
       # must never be garbage-collected, and a bucket item is *safe* to reap since an
       # absent bucket and a full one are the same state (docs/DECISIONS.md H-035).
       HEADROOM_BUCKETS_TABLE: ${HEADROOM_BUCKETS_TABLE:-headroom_buckets}
+      # Phase 5: which model embeds a question for the semantic cache. Passed through
+      # rather than defaulted here, so the *code's* default (BUILD_PLAN L6's
+      # bge-small-en-v1.5) is the one thing to change if it ever changes.
+      #
+      # This image deliberately does NOT carry the `embed` extra — a ~200 MB torch
+      # install in a container whose tenants all have caching disabled by default buys
+      # nothing, and baking the weights is Phase 9's job (L6). So out of the box the
+      # compose gateway does **exact** caching, and asking it for `semantic` answers
+      # 503 naming the extra rather than silently falling back to something else
+      # (docs/DECISIONS.md H-041's neighbour: there is no fallback, on purpose).
+      # `HEADROOM_EMBEDDER=hashing` in `.env` gives a working semantic demo here with
+      # no torch — real lexical similarity, and no ability to tell a paraphrase from a
+      # near-miss, which is exactly why it is not the default.
+      HEADROOM_EMBEDDER: ${HEADROOM_EMBEDDER:-}
       HEADROOM_LOG_LEVEL: ${HEADROOM_LOG_LEVEL:-INFO}
       # The root admin token (Phase 2), referenced from the host shell or the
       # gitignored `.env`, never valued here. Unset is a safe state: the admin API

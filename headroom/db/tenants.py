@@ -17,11 +17,13 @@ committed to. Three habits run through every statement here:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import asyncpg
 
+from headroom.core.cache import CacheSettings
 from headroom.core.limits import RateLimit
 from headroom.core.storage import (
     KeyRecord,
@@ -35,7 +37,8 @@ from headroom.db.pool import DatabasePool
 __all__ = ["PostgresTenantStore"]
 
 _LIMIT_COLUMNS = "requests_per_min, tokens_per_min"
-_TENANT_COLUMNS = f"id, name, active, created_at, updated_at, {_LIMIT_COLUMNS}"
+_CACHE_COLUMNS = "cache_mode, cache_ttl_s, cache_similarity_threshold"
+_TENANT_COLUMNS = f"id, name, active, created_at, updated_at, {_LIMIT_COLUMNS}, {_CACHE_COLUMNS}"
 _KEY_COLUMNS = (
     "id, tenant_id, name, key_prefix, allowed_models, allowed_providers, "
     f"created_at, updated_at, revoked_at, {_LIMIT_COLUMNS}"
@@ -50,6 +53,25 @@ def _limits(row: asyncpg.Record, prefix: str = "") -> RateLimit:
     )
 
 
+def _cache(row: asyncpg.Record, prefix: str = "") -> CacheSettings:
+    """The three cache columns as one record.
+
+    ``cache_similarity_threshold`` is ``NUMERIC`` in the column and a ``float`` here,
+    which is the one place in this codebase a Decimal is deliberately narrowed. A
+    threshold is a comparison bound, not money: it is compared against a cosine that came
+    out of floating-point arithmetic in the first place, and carrying a Decimal to a
+    ``float`` comparison would only move the conversion somewhere less obvious. The
+    ``NUMERIC(5,4)`` column exists so the value an operator PUTs is the value they GET
+    back, which is a round-trip property rather than an arithmetic one.
+    """
+    threshold = row[f"{prefix}cache_similarity_threshold"]
+    return CacheSettings(
+        mode=row[f"{prefix}cache_mode"],
+        ttl_s=row[f"{prefix}cache_ttl_s"],
+        similarity_threshold=None if threshold is None else float(threshold),
+    )
+
+
 def _tenant(row: asyncpg.Record) -> Tenant:
     return Tenant(
         id=str(row["id"]),
@@ -58,6 +80,7 @@ def _tenant(row: asyncpg.Record) -> Tenant:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         limits=_limits(row),
+        cache=_cache(row),
     )
 
 
@@ -270,6 +293,29 @@ class PostgresTenantStore(TenantStore):
         )
         return None if row is None else _key(row)
 
+    # --- cache policy (Phase 5) -------------------------------------------------------
+
+    async def set_cache_settings(self, tenant_id: str, settings: CacheSettings) -> Tenant | None:
+        """Assignment, not COALESCE — the ``set_*_limits`` rule, one policy over."""
+        row = await self._fetch_by_id(
+            f"""
+            UPDATE tenants
+               SET cache_mode                 = $2,
+                   cache_ttl_s                = $3,
+                   cache_similarity_threshold = $4,
+                   updated_at                 = now()
+             WHERE id = $1
+         RETURNING {_TENANT_COLUMNS}
+            """,
+            tenant_id,
+            settings.mode,
+            settings.ttl_s,
+            None
+            if settings.similarity_threshold is None
+            else Decimal(str(settings.similarity_threshold)),
+        )
+        return None if row is None else _tenant(row)
+
     async def find_by_hash(self, key_hash: str) -> KeyRecord | None:
         async with self.pool.connection() as conn:
             row = await conn.fetchrow(
@@ -282,7 +328,12 @@ class PostgresTenantStore(TenantStore):
                        t.created_at       AS tenant_created_at,
                        t.updated_at       AS tenant_updated_at,
                        t.requests_per_min AS tenant_requests_per_min,
-                       t.tokens_per_min   AS tenant_tokens_per_min
+                       t.tokens_per_min   AS tenant_tokens_per_min,
+                       -- Phase 5's policy rides the same join, for H-037's reason: the
+                       -- cache gate reads no configuration of its own.
+                       t.cache_mode                 AS tenant_cache_mode,
+                       t.cache_ttl_s                AS tenant_cache_ttl_s,
+                       t.cache_similarity_threshold AS tenant_cache_similarity_threshold
                   FROM virtual_keys k
                   JOIN tenants t ON t.id = k.tenant_id
                  WHERE k.key_hash = $1
@@ -301,6 +352,7 @@ class PostgresTenantStore(TenantStore):
             created_at=row["tenant_created_at"],
             updated_at=row["tenant_updated_at"],
             limits=_limits(row, "tenant_"),
+            cache=_cache(row, "tenant_"),
         )
         return KeyRecord(key=_key(row), tenant=tenant)
 

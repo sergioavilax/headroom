@@ -90,6 +90,18 @@ ignore_missing_imports = true
 module = ["boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
+# `sentence-transformers` lives behind the `embed` extra, which H-004 deliberately does
+# NOT install in CI — a ~200 MB torch download per job, for a feature most jobs never
+# touch. So the two lazy imports of it (headroom/cache/embedding.py and the corpus
+# generator) resolve on the operator's machine and are unresolvable in CI, and without
+# this override `make typecheck` means two different things in the two places. It ships
+# no py.typed marker either way, so nothing is lost: `SentenceTransformer.encode` is
+# already `Any` at the boundary and its result is converted to `list[list[float]]`
+# immediately. Found by CI on PR-5 — mypy was green locally for the wrong reason.
+[[tool.mypy.overrides]]
+module = ["sentence_transformers.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

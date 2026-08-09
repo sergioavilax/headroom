@@ -11,7 +11,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from headroom.cache.embedding import load_embedder
+from headroom.cache.gate import ResponseCache
 from headroom.core.budgets import BudgetStore
+from headroom.core.cache import ResponseCacheStore
 from headroom.core.config import ADMIN_TOKEN_ENV, GatewayConfig, load_config
 from headroom.core.errors import ConfigurationError
 from headroom.core.ledger import LedgerStore
@@ -19,6 +22,7 @@ from headroom.core.limits import RateLimitStore
 from headroom.core.storage import TenantStore
 from headroom.db.buckets import DynamoRateLimitStore
 from headroom.db.budgets import DynamoBudgetStore
+from headroom.db.cache import PostgresResponseCacheStore
 from headroom.db.ledger import PostgresLedgerStore
 from headroom.db.tenants import PostgresTenantStore
 from headroom.metering.meter import Meter
@@ -76,6 +80,12 @@ class Gateway:
     #: it is the load shedder, and what it sheds is exactly the burst the budget gate
     #: serialises on (docs/DECISIONS.md H-039).
     limits: RateLimiter
+    #: Phase 5. The response cache, consulted between the rate limiter and the budget
+    #: gate (docs/DECISIONS.md H-046). Constructed always and used only by tenants that
+    #: switched it on: a tenant in the default ``disabled`` mode never reaches the store
+    #: and never builds the embedder, so the feature costs a deployment nothing until
+    #: somebody asks for it.
+    cache: ResponseCache
     admin_token: str | None = None
 
     def provider_for(self, dialect: str, model: str) -> Provider:
@@ -94,6 +104,9 @@ class Gateway:
         # The rate limiter has nothing to drain — a bucket consumption never settles —
         # so this only releases its client's thread pool.
         await self.limits.aclose()
+        # Nor has the cache: a store is awaited on the request's own path, so nothing is
+        # ever in flight at shutdown. This releases the pool it was given.
+        await self.cache.aclose()
         # The writer next, and deliberately: it drains its queue into the ledger
         # store, so closing the store out from under it would throw away exactly the
         # rows a graceful shutdown exists to save (docs/DECISIONS.md H-027).
@@ -111,6 +124,7 @@ def build_gateway(
     ledger: LedgerStore | None = None,
     budgets: BudgetStore | None = None,
     limits: RateLimitStore | None = None,
+    cache: ResponseCacheStore | None = None,
 ) -> Gateway:
     """Construct a gateway from config (loaded from disk when not supplied).
 
@@ -145,6 +159,12 @@ def build_gateway(
     # pool would let a slow budget item queue behind a burst of bucket writes on exactly
     # the path where the limiter exists to keep latency bounded.
     bucket_store = limits if limits is not None else DynamoRateLimitStore()
+    # Postgres again, and the same pool discipline: lazy, so building a gateway opens
+    # nothing. The embedder is lazier still — `load_embedder` records a *name*, and the
+    # model is not imported, let alone loaded, until a tenant with semantic caching
+    # actually sends a request. That is what keeps CI's image job (no `embed` extra
+    # installed) able to build this container and smoke `/healthz`.
+    cache_store = cache if cache is not None else PostgresResponseCacheStore()
     prices: PriceBook = load_price_book()
     return Gateway(
         config=resolved,
@@ -156,5 +176,6 @@ def build_gateway(
         meter=Meter(prices=prices, writer=LedgerWriter(ledger_store)),
         budgets=BudgetGate(store=budget_store, prices=prices),
         limits=RateLimiter(store=bucket_store),
+        cache=ResponseCache(store=cache_store, embedder=load_embedder()),
         admin_token=os.environ.get(ADMIN_TOKEN_ENV) or None,
     )

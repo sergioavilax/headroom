@@ -219,6 +219,15 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
         # possible buckets refused, which no HTTP status can carry.
         "rate_limit_status",
         "rate_limit_scope",
+        # Phase 5. Every proxied request that reaches the gate carries a disposition,
+        # including the ones whose answer is "this tenant has caching off" — so "was the
+        # cache involved" is answerable for every line rather than only the interesting
+        # ones. `cache_reason` is the field that says *why* when the answer is nothing.
+        "cache_disposition",
+        "cache_reason",
+        "cache_similarity",
+        "cache_avoided_usd",
+        "cache_source_request_id",
         "error_source",
         "error_reason",
         "upstream_latency_ms",
@@ -228,6 +237,10 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
     }
     assert fields["outcome"] == "ok"
     assert fields["ttft_ms"] is not None
+    # The harness tenant has caching off — the shipped default — so the disposition
+    # states that rather than being absent, which would be indistinguishable from a
+    # request that never reached the cache at all.
+    assert fields["cache_disposition"] == "cache_disabled"
     # This tenant has no cap, so the gate held nothing — and says so rather than
     # leaving the field blank, which would be indistinguishable from a request that
     # never reached the gate at all.

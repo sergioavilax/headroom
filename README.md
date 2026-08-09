@@ -244,6 +244,83 @@ Three more things worth knowing:
 
 Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-035 … H-039.
 
+## The cache that is allowed to say no
+
+Two layers behind one interface. **Exact**: a canonical hash of the request. **Semantic**:
+`bge-small-en-v1.5` on CPU, pgvector cosine search over the tenant's own namespace, hit
+above a per-tenant threshold. Caching is **off for every tenant until somebody switches it
+on** — the column default, not a convention:
+
+```bash
+curl -sS -X PUT localhost:8080/admin/cache/$TENANT -H "$ADMIN" \
+     -H 'content-type: application/json' \
+     -d '{"mode": "semantic", "similarity_threshold": 0.9, "ttl_s": 86400}'
+
+curl -sS -H "$ADMIN" localhost:8080/admin/cache/$TENANT
+# {"mode":"semantic","similarity_threshold":0.9,"effective_ttl_s":86400,
+#  "embedding_model":"BAAI/bge-small-en-v1.5","entries":12,"semantic_entries":12, …}
+```
+
+A hit carries its own provenance, so an answer can always be traced to the question it was
+actually produced for:
+
+```
+x-headroom-cache: cache_hit_semantic
+x-headroom-cache-source: hr_9f2c…          <- the request that populated the entry
+x-headroom-cache-similarity: 0.98012
+x-headroom-cache-age: 41
+```
+
+**The interesting part of a cache is what it refuses.** Invariant 6 exists because
+Backline's D-021 served content that did not belong to the question asked, and one bad
+write here is served forever. So:
+
+- **A truncated answer is never stored.** `stop_reason: max_tokens` / `finish_reason:
+  length` is a *complete stream* of an *incomplete answer*, and it is the case that looks
+  perfectly healthy from the outside — 200, well-formed body, `message_stop` present.
+  Neither is a cut stream, a stream that simply stops, an upstream error, a timeout, or a
+  response carrying a tool call.
+- **A request with tools is never cached, even when no tool has been called.** The same
+  words with tools available may legitimately produce a tool call instead of prose.
+- **Single-turn, text-only, `temperature ≤ 0.2`, one completion.** Conservative on purpose:
+  a false negative costs a cache miss, a false positive costs a wrong answer served with
+  confidence, repeatedly.
+- **A reasoning model's answer is cacheable *exactly* and never *semantically*** — replay
+  hands the caller the original chain of thought, and reasoning performed on a different
+  question's text has no business being served against this one.
+
+`tests/test_cache_poison.py` drives every one of those through the real gateway and
+asserts the cache is still empty.
+
+**No entry ever crosses a tenant**, and the isolation is two mechanisms rather than one:
+the tenant salts the exact key *and* leads every index and predicate.
+`tests/test_cache_isolation.py` removes both — one patch, because both are downstream of
+one function — and asserts the leak really happens, so the tests protecting the property
+are known to be capable of failing.
+
+**A hit is not an upstream call wearing a hat.** Its ledger row has a NULL
+`upstream_status`, a NULL `provider`, no token counts, `usd_cost` of `0` with
+`not_billable` beside it, and the saving in a column of its own (`cache_avoided_usd`)
+where it cannot be mistaken for spend. Timings are honest: `ttft_ms` is real and small,
+`passthrough_overhead_ms` is NULL because there was no upstream byte to measure from.
+
+**Replay is byte-identical**, which is a stricter claim than the live path can make. The
+transport is part of the key, so an entry is replayed rather than converted, and no code
+exists that assembles a message from frames or synthesises frames from a message.
+
+**The threshold is per tenant because [§P8.H1](BUILD_PLAN.md) is going to sweep it.**
+The shipped default is **0.90**, and it was measured rather than picked: on the committed
+corpus (`tests/fixtures/semantic_corpus.json` — 12 questions, 24 paraphrases, real
+`bge-small` vectors), a paraphrase scores at worst **0.9237** against its own question and
+at best **0.8511** against any other. 0.90 sits in that gap, closer to the top, because a
+false hit and a false miss are not equally bad. That corpus is §P8.H1 in miniature: same
+templates-crossed-with-entities shape, same provenance-as-answer-key, and
+`tests/test_cache_semantic.py` already replays the admission decision across 0.70 → 0.99
+offline — which is the mechanism that will make the headline experiment cost nothing
+beyond generating the paraphrases.
+
+Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-040 … H-047.
+
 Running the local vLLM backends: [docs/vllm.md](docs/vllm.md).
 
 MIT licensed.

@@ -117,9 +117,26 @@ class LedgerEntry:
     passthrough_overhead_ms: float | None = None
     total_ms: float | None = None
 
-    # --- seams for later phases, written by them, present from now -----------------
-    #: Phase 5 sets ``exact`` / ``semantic`` / ``miss`` and records the avoided cost.
+    # --- what the cache did (Phase 5) ------------------------------------------------
+    #: ``cache_hit_exact`` | ``cache_hit_semantic`` | ``cache_miss`` | ``cache_bypass``
+    #: | ``cache_disabled``. Every proxied request that reached the gate has one.
+    #:
+    #: On a hit the row is deliberately *unlike* an upstream call in every way that
+    #: matters: ``upstream_status`` and ``provider`` are NULL because no upstream was
+    #: involved, the token counts are NULL because nothing was generated, ``usd_cost``
+    #: is a measured ``0`` with ``not_billable`` beside it, and the saving lives in its
+    #: own column below rather than borrowing one that means spend.
     cache_disposition: str | None = None
+    #: What this hit would have cost, from the entry's own recorded cost. NULL when that
+    #: cost was never known, so a savings total can never quietly add a zero (H-025).
+    cache_avoided_usd: Decimal | None = None
+    #: Cosine similarity of a semantic hit; NULL for exact. §P8.H1 reads this column.
+    cache_similarity: Decimal | None = None
+    #: The request that populated the entry — the provenance that makes a semantic hit
+    #: auditable after the fact, and the answer key for cache correctness.
+    cache_source_request_id: str | None = None
+
+    # --- seams for later phases, written by them, present from now -----------------
     #: Phase 6 counts fallback attempts. Zero means the primary served it.
     failover_hops: int = 0
 

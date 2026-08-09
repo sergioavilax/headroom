@@ -35,6 +35,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
+from headroom.core.cache import CacheSettings
 from headroom.core.context import RequestContext
 from headroom.core.errors import (
     InactiveTenant,
@@ -116,6 +117,15 @@ class Principal:
     #: change. Note what is *not* cached: the buckets themselves, which are never read.
     tenant_limits: RateLimit = field(default_factory=RateLimit)
     key_limits: RateLimit = field(default_factory=RateLimit)
+    #: Phase 5. The tenant's cache policy, riding the same lookup for the same reason —
+    #: and with one consequence worth stating: switching caching **off** for a tenant is
+    #: effective on the next request in the process that did it, and within
+    #: ``AUTH_CACHE_TTL_S`` seconds everywhere else. For up to five seconds after an
+    #: operator disables it, another process may still serve a hit. That window is
+    #: acceptable because every entry it can serve was already eligible and already
+    #: stored; what it must never do is *widen*, which is why disabling also purges
+    #: (``headroom/api/cache.py``) rather than merely flipping a flag.
+    tenant_cache: CacheSettings = field(default_factory=CacheSettings)
 
     @classmethod
     def of(cls, record: KeyRecord) -> Principal:
@@ -128,6 +138,7 @@ class Principal:
             allowed_providers=tuple(record.key.allowed_providers),
             tenant_limits=record.tenant.limits,
             key_limits=record.key.limits,
+            tenant_cache=record.tenant.cache,
         )
 
     # --- scope --------------------------------------------------------------------

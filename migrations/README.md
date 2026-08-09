@@ -33,8 +33,9 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 | `0002_usage_ledger.sql` | 3 | `usage_ledger` — one priced, attributed row per request |
 | `0003_ledger_budget_columns.sql` | 4 | `budget_status`, `budget_reserved_usd`, `budget_settled_usd` on `usage_ledger` |
 | `0004_rate_limits.sql` | 4b | `requests_per_min`, `tokens_per_min` on `tenants` and `virtual_keys` |
+| `0005_response_cache.sql` | 5 | `CREATE EXTENSION vector`; `response_cache`; cache policy on `tenants`; the avoided-cost columns on `usage_ledger` |
 
-Still to come: the pgvector semantic-cache tables in Phase 5.
+All five are applied, so all five are immutable: a change is `0006_*.sql`.
 
 **Budgets themselves are not here, and neither are token buckets.** Per-tenant caps,
 their counters, their live reservations, and the buckets' `tat` values live on
@@ -60,7 +61,16 @@ free) — H-024 and H-025. `0003` keeps both of those rules for the two amounts 
 and is additive-only: existing rows genuinely had no budget outcome, so NULL is the
 truthful value rather than a gap to backfill. `0004` is additive and nullable for the
 same reason — every existing row reads as unlimited, which is exactly the behaviour
-before it ran. All four are applied, so all four are immutable: a change is `0005_*.sql`.
+before it ran.
+
+`0005` is where the `vector` extension finally gets created — the image has offered it
+since Phase 0 (H-001) and nothing needed it until now. Two of its choices are worth
+knowing before reading the file. `cache_mode` on `tenants` is `NOT NULL DEFAULT
+'disabled'`, so every existing tenant and every future one caches nothing until somebody
+says otherwise; a cache that switches itself on is a cache nobody consented to. And the
+`usage_ledger` columns it adds are *avoided* cost and provenance, deliberately **not** the
+existing token and cost columns: a cache hit generates nothing and is billed nothing, so
+every `SUM(output_tokens)` written before this migration keeps meaning what it meant.
 
 `make up` applies migrations inside the gateway container once the stack is healthy;
 `make migrate` applies them from the host against `DATABASE_URL`.
