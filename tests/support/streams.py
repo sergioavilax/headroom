@@ -14,7 +14,13 @@ from typing import Any
 
 from headroom.core.sse import iter_sse_events
 
-__all__ = ["anthropic_text", "event_pairs", "openai_finish_reasons", "openai_text"]
+__all__ = [
+    "anthropic_text",
+    "event_pairs",
+    "openai_finish_reasons",
+    "openai_reasoning_text",
+    "openai_text",
+]
 
 
 def event_pairs(raw: bytes) -> list[tuple[str | None, str]]:
@@ -48,6 +54,28 @@ def openai_text(raw: bytes) -> str:
             delta = choice.get("delta")
             if isinstance(delta, dict) and isinstance(delta.get("content"), str):
                 parts.append(delta["content"])
+    return "".join(parts)
+
+
+def openai_reasoning_text(raw: bytes, field: str = "reasoning_content") -> str:
+    """The chain of thought a reasoning-aware client would accumulate.
+
+    This helper lives here and only here on purpose. No module under ``headroom/``
+    mentions ``reasoning_content`` or ``reasoning``, and that ignorance is precisely
+    what ``tests/test_reasoning_passthrough.py`` asserts: the field survives because
+    the proxy forwards bytes, not because anything was taught to handle it.
+    """
+    parts: list[str] = []
+    for event in iter_sse_events(raw):
+        payload: Any = event.json()
+        if not isinstance(payload, dict):
+            continue
+        for choice in payload.get("choices") or []:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta")
+            if isinstance(delta, dict) and isinstance(delta.get(field), str):
+                parts.append(delta[field])
     return "".join(parts)
 
 
