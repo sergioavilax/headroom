@@ -2075,5 +2075,42 @@ operator should be alarming on in Phase 9.
   VERIFIED: the budget gate reads the request body but never rebuilds it, and the 576
   tests that prove passthrough fidelity all still run through the gate.
 
+### CI
+
+CI on PR-4 ([run 31305643286](https://github.com/sergioavilax/headroom/actions/runs/31305643286)),
+all three jobs green on the first run, no annotations:
+
+```
+$ gh run view 31305643286 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 100 source files
+pytest (…service containers) | ====== 576 passed, 2 deselected, 1 warning in 15.23s ======
+pytest (…service containers) | tests/test_budget_stampede.py::test_the_stampede PASSED
+pytest (…service containers) | tests/test_budget_stampede.py::test_the_sabotage_blows_the_budget PASSED
+pytest (…service containers) | tests/test_budget_stampede.py::test_a_landed_only_gate_blows_the_budget_even_though_it_is_atomic PASSED
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**576 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+DynamoDB half of the budget-store contract suite **and the stampede** executed against the
+service container rather than skipping. That is the half of this gate a green pytest alone
+would not prove: under H-012 an explicitly-configured but unreachable endpoint fails
+rather than skipping, and CI sets `DYNAMODB_ENDPOINT_URL` explicitly. **The D-019 stampede
+and both of its sabotages now run on every pull request.**
+
+No AWS credential is set anywhere in the workflow. The gateway supplies its own dummy
+when — and only when — an emulator endpoint is configured, which is why the job is still
+fully keyless (invariant 4).
+
+The `image` job continues to prove the lazy clients: it builds the container and smokes
+`/healthz` with **no Postgres and no DynamoDB anywhere in the job**, which a gateway that
+connected to either at startup could not do.
+
 **Spend** — $0.00. No provider API was called in this phase; every test ran on the
 MockProvider, and the container demo talked to nothing outside the compose network.
