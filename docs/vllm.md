@@ -37,8 +37,15 @@ base URL — with or without the trailing `/v1` — because `normalize_base_url`
 (docs/DECISIONS.md H-011):
 
 ```bash
+make up   # the smoke provisions a tenant and key, and reads its ledger row back
 VLLM_BASE_URL=http://localhost:8010 uv run pytest -m live -k vllm -v
 ```
+
+Since 2026-08-09 the smoke needs the compose stack as well as the URL: it creates (or
+reuses) a `live-smoke` tenant, mints itself a virtual key — Phase 2 made one mandatory on
+every `/v1/*` request — and asserts the ledger row it produced is attributed to that
+tenant. It prints the request id and the `curl` to read the row back; do that *before*
+the next `make test`, which truncates the ledger (docs/DECISIONS.md H-029).
 
 From **inside** the compose gateway container, `localhost` is the container. Use
 `host.docker.internal:8010`, which `docker-compose.yml` already maps.

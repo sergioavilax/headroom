@@ -30,14 +30,17 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 | File | Phase | What it adds |
 |---|---|---|
 | `0001_tenants_and_virtual_keys.sql` | 2 | `tenants`, `virtual_keys` — the control plane |
+| `0002_usage_ledger.sql` | 3 | `usage_ledger` — one priced, attributed row per request |
 
-Still to come: the cost ledger in Phase 3, the pgvector semantic-cache tables in
-Phase 5.
+Still to come: the pgvector semantic-cache tables in Phase 5.
 
 The shape of `0001` — UUID keys, `revoked_at` as the state rather than a boolean,
 `ON DELETE RESTRICT`, `TEXT[]` scopes where empty means unrestricted — is argued in
-[docs/DECISIONS.md](../docs/DECISIONS.md) H-022. It is applied, so it is immutable:
-a change is `0002_*.sql`.
+[docs/DECISIONS.md](../docs/DECISIONS.md) H-022. `0002` copies the rates it billed at
+into every row so a price change can never re-bill history, stores money as `NUMERIC`
+rather than `DOUBLE PRECISION`, and keeps NULL (unknown) distinct from 0 (provably
+free) — H-024 and H-025. Both are applied, so both are immutable: a change is
+`0003_*.sql`.
 
 `make up` applies migrations inside the gateway container once the stack is healthy;
 `make migrate` applies them from the host against `DATABASE_URL`.

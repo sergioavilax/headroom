@@ -35,6 +35,22 @@ deployment routes it, and a key cannot be used to enumerate the routing table. T
 provider scope is checked last, because it is the only one that needs the route
 resolved. Each of the three raises, and the existing ``HeadroomError`` handler below
 turns it into the caller's own dialect (docs/DECISIONS.md H-020).
+
+Phase 3 adds metering, at the three points where a request can end:
+
+**Every exit meters exactly once.** ``_buffered_response`` reads the usage block out of
+a complete body, ``_passthrough`` reads it out of the stream it is already observing,
+and ``_error_response`` meters a request that never got that far. The call is
+synchronous and the row goes to a queue (``headroom/metering/writer.py``), so no
+caller ever waits on a database — and it happens *after* ``ctx.complete``, so a row
+carries the same outcome and timings the log line does.
+
+The streaming loop changed shape for this in one visible way: it now feeds the SSE
+observer for the *whole* response rather than stopping once the terminal marker is
+seen. That is not tidying — in the OpenAI dialect the chunk bearing ``finish_reason``
+arrives **before** the usage-only chunk, so a loop that stopped at the terminal event
+metered nothing at all. Nothing about the forwarded bytes changed; the tap simply keeps
+tapping (H-007).
 """
 
 from __future__ import annotations
@@ -70,10 +86,11 @@ from headroom.core.errors import (
     InvalidRequestBody,
     ProviderError,
 )
-from headroom.core.sse import SSEObserver
+from headroom.core.sse import SSEEvent, SSEObserver
 from headroom.dialects.anthropic import ANTHROPIC
 from headroom.dialects.base import Dialect
 from headroom.dialects.openai import OPENAI
+from headroom.metering.usage import Usage
 from headroom.providers.base import UpstreamRequest, UpstreamResponse
 
 __all__ = ["router"]
@@ -106,7 +123,7 @@ async def proxy(request: Request, dialect: Dialect, gateway: Gateway) -> Respons
     try:
         return await _proxy(request, dialect, gateway, ctx)
     except HeadroomError as exc:
-        return _error_response(dialect, ctx, exc)
+        return _error_response(dialect, ctx, exc, gateway)
 
 
 async def _proxy(
@@ -150,8 +167,8 @@ async def _proxy(
     # An error status means there is no stream to forward, whatever the caller asked
     # for — both providers answer a failed streaming request with a plain JSON error.
     if upstream.status_code >= 400 or not ctx.stream:
-        return await _buffered_response(ctx, upstream)
-    return _streaming_response(dialect, ctx, upstream)
+        return await _buffered_response(dialect, ctx, upstream, gateway)
+    return _streaming_response(dialect, ctx, upstream, gateway)
 
 
 def _parse_body(raw: bytes) -> dict[str, Any]:
@@ -171,13 +188,19 @@ def _parse_body(raw: bytes) -> dict[str, Any]:
     return parsed
 
 
-async def _buffered_response(ctx: RequestContext, upstream: UpstreamResponse) -> Response:
+async def _buffered_response(
+    dialect: Dialect, ctx: RequestContext, upstream: UpstreamResponse, gateway: Gateway
+) -> Response:
     """Read the whole upstream body and forward it — status, headers, and bytes.
 
     This is the non-streaming path *and* the upstream-error path. In both cases the
     body is forwarded exactly as received: an upstream 400 explaining which field was
     malformed is far more useful to the caller than anything the gateway could compose,
     and reshaping it would be the "generic 500" failure in a politer costume.
+
+    The usage block is read out of the same bytes, *after* they have been forwarded in
+    full — reading is not rewriting, and the ``Response`` is built from the identical
+    object either way.
     """
     try:
         body = await upstream.aread()
@@ -196,6 +219,9 @@ async def _buffered_response(ctx: RequestContext, upstream: UpstreamResponse) ->
         error_source=SOURCE_UPSTREAM if failed else None,
         error_reason=f"upstream_status_{upstream.status_code}" if failed else None,
     )
+    # An error body has no usage to read, and the meter is told nothing rather than
+    # asked to find something: it prices the request from the upstream status.
+    gateway.meter.record(ctx, Usage() if failed else dialect.usage_from_body(body))
     return Response(
         content=body,
         status_code=upstream.status_code,
@@ -205,11 +231,11 @@ async def _buffered_response(ctx: RequestContext, upstream: UpstreamResponse) ->
 
 
 def _streaming_response(
-    dialect: Dialect, ctx: RequestContext, upstream: UpstreamResponse
+    dialect: Dialect, ctx: RequestContext, upstream: UpstreamResponse, gateway: Gateway
 ) -> StreamingResponse:
     headers = forward_response_headers(upstream.headers)
     return StreamingResponse(
-        _passthrough(dialect, ctx, upstream),
+        _passthrough(dialect, ctx, upstream, gateway),
         status_code=upstream.status_code,
         headers=headers,
         media_type=headers.get("content-type", _SSE_CONTENT_TYPE),
@@ -217,7 +243,7 @@ def _streaming_response(
 
 
 async def _passthrough(
-    dialect: Dialect, ctx: RequestContext, upstream: UpstreamResponse
+    dialect: Dialect, ctx: RequestContext, upstream: UpstreamResponse, gateway: Gateway
 ) -> AsyncIterator[bytes]:
     """Forward upstream bytes unchanged while watching whether the stream completes.
 
@@ -229,21 +255,35 @@ async def _passthrough(
     intact because nothing here decodes anything.
     """
     observer = SSEObserver()
+    usage = dialect.usage_observer()
     is_sse = _SSE_CONTENT_TYPE in upstream.headers.get("content-type", "")
     saw_terminal = False
     failure: str | None = None
     failure_message = ""
 
+    def watch(events: list[SSEEvent]) -> None:
+        """Steer completion detection and metering off the same events.
+
+        Note what this does *not* short-circuit: the usage observer is fed after the
+        terminal marker too. In the OpenAI dialect the usage-only chunk arrives after
+        the frame carrying ``finish_reason``, so stopping early would meter nothing.
+        """
+        nonlocal saw_terminal
+        for event in events:
+            if not saw_terminal and dialect.is_terminal(event):
+                saw_terminal = True
+            usage.feed(event)
+
     try:
         async for chunk in upstream.aiter_bytes():
             if not chunk:
                 continue
-            if is_sse and not saw_terminal:
-                saw_terminal = any(dialect.is_terminal(event) for event in observer.feed(chunk))
+            if is_sse:
+                watch(observer.feed(chunk))
             ctx.mark_first_token_out()
             yield chunk
-        if is_sse and not saw_terminal:
-            saw_terminal = any(dialect.is_terminal(event) for event in observer.close())
+        if is_sse:
+            watch(observer.close())
     except ProviderError as exc:
         # The connection died with bytes already on the wire. The status line is spent,
         # so this cannot be an HTTP error — it has to be said inside the stream.
@@ -253,6 +293,10 @@ async def _passthrough(
         # close may not get the chance to finish — and Phase 4 settles reservations on
         # exactly this path.
         ctx.complete(OUTCOME_CLIENT_DISCONNECT, error_source=SOURCE_GATEWAY)
+        # The upstream generated whatever it generated before we stopped reading, so
+        # the row is written with whatever usage arrived — usually none, which is
+        # recorded as unknown rather than as free.
+        gateway.meter.record(ctx, usage.usage)
         raise
     finally:
         with contextlib.suppress(Exception):
@@ -269,6 +313,7 @@ async def _passthrough(
 
     if failure is None:
         ctx.complete(OUTCOME_OK)
+        gateway.meter.record(ctx, usage.usage)
         return
 
     # Marked before `complete`, not after: the terminal event is itself a byte the
@@ -276,12 +321,19 @@ async def _passthrough(
     # before its first output. On a cut this is the only path that ever sets the mark.
     ctx.mark_first_token_out()
     ctx.complete(failure, error_source=SOURCE_UPSTREAM, error_reason=failure)
+    # Metered with whatever the provider managed to report. A stream cut before its
+    # totals leaves the output count unknown, and the row says so — it is not billed
+    # as a complete answer, and it is not billed as a free one either (invariant 6,
+    # one layer down: an amputated answer must not look finished to the invoice).
+    gateway.meter.record(ctx, usage.usage)
     yield dialect.terminal_error_event(
         reason=failure, message=failure_message, request_id=ctx.request_id
     )
 
 
-def _error_response(dialect: Dialect, ctx: RequestContext, exc: HeadroomError) -> Response:
+def _error_response(
+    dialect: Dialect, ctx: RequestContext, exc: HeadroomError, gateway: Gateway
+) -> Response:
     """A failure with no upstream body to forward, said in the caller's dialect.
 
     The status is chosen by the error class (see ``headroom.core.errors``), the body is
@@ -296,6 +348,11 @@ def _error_response(dialect: Dialect, ctx: RequestContext, exc: HeadroomError) -
         error_source=exc.source,
         error_reason=exc.reason,
     )
+    # No provider ran, so there is no usage to read. The meter decides what that costs
+    # from the upstream status — zero for a refusal or an unroutable model, unknown for
+    # a timeout, which was sent and may have been billed by someone we cannot ask. A
+    # request that never authenticated has no tenant and gets no row at all (H-025).
+    gateway.meter.record(ctx, Usage())
     return Response(
         content=dialect.error_body(
             status_code=exc.status_code,

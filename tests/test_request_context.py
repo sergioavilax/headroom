@@ -197,6 +197,17 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
         "outcome",
         "status",
         "upstream_status",
+        # Phase 3. These are here rather than only on the ledger row on purpose: the
+        # log line is written before the row is queued, so it is what a lost row is
+        # reconstructed from (docs/DECISIONS.md H-027).
+        "stop_reason",
+        "input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "usd_cost",
+        "cost_status",
         "error_source",
         "error_reason",
         "upstream_latency_ms",

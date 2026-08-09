@@ -956,3 +956,391 @@ short lists that are always read together), *`JSONB` scopes* (no array operators
 adds the ledger with foreign keys onto both tables, which is why RESTRICT matters now
 rather than later. The truncate-based test fixture (H-021) must be updated when Phase 3
 adds tables that reference these.
+
+---
+
+## H-023 — Prices are a dated history; mock models are flat, deliberately (Phase 3)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN Phase 3 says `config/models.yaml` carries dated price schedules
+and that the D-017 lesson is "a founding feature here, not a bugfix". Backline's D-017
+was a cost meter that kept billing at sticker prices after a vendor published new ones,
+and the reason it could is structural: it had a *price* where it needed a *history*. So
+the schema is settled first and the arithmetic second.
+
+What the plan does not settle is three things this file had to decide: how a rate is
+written down, where a history starts, and whether the models the test suite uses get
+histories at all.
+
+**Decision.**
+
+- **A model has an ordered list of `(effective_from, usd_per_mtok_in,
+  usd_per_mtok_out)` rows**, and a request resolves to the latest row whose date is on
+  or before the request's own date. A price change is an **append**. It cannot reach
+  backwards, because a row dated later was never a candidate.
+- **Rates are quoted strings, and the loader refuses a float.** An unquoted `3.00` is a
+  YAML float, and a float is the one representation of money that is wrong by
+  construction. The refusal names the field and says what to write instead, so the rule
+  is enforced by the parser rather than by whoever reviews the diff.
+- **Mock models are FLAT: exactly one row, effective from the epoch.** This is a
+  deliberate asymmetry with the real models and it is the load-bearing half of the
+  decision. Every exact-cost assertion in the suite prices against these numbers; a
+  second row with a later date would make those assertions start failing on the day it
+  took effect, and a suite that goes red on a Tuesday for reasons nobody changed is a
+  suite people learn to interrupt. `tests/test_prices.py` asserts the flatness rather
+  than trusting it. Rates are $0.25/$1.25 per MTok, chosen so the canonical 11-in/7-out
+  fixture lands on `$0.0000115` — a terminating decimal, so no expected cost anywhere in
+  the suite needs a tolerance.
+- **Real models start their history on 2026-08-08**, the day the rates were read off
+  Anthropic's published pricing and written down. Earlier history is **not** modelled: a
+  request dated before the first row is `unpriced_model` with a NULL cost. Headroom has
+  never billed a request before that date, and inventing a start date is the same class
+  of mistake as inventing a rate.
+- **`claude-sonnet-5` ships with two rows, and the boundary is real.** Anthropic
+  published it at an introductory $2/$10 per MTok **through 2026-08-31**, reverting to
+  $3/$15. So the committed config contains a genuine vendor-published price boundary,
+  and the identical request costs different money on either side of it. The D-017
+  property is therefore exercised against reality, not only against a fixture.
+- **The operator's vLLM models are priced at an honest zero**, stated rather than left
+  to the unpriced fallback, so a `$0.00` row means "free" and not "we have no idea".
+- **Matching is exact-first, then longest prefix** — the routing table's rule (H-013),
+  which is what lets one `mock-` entry price a whole family.
+
+**Alternatives considered.** *One current price per model with an `updated_at`* — the
+D-017 design, restated. *Giving mock models dated tiers for symmetry* — symmetry bought
+with a suite that breaks on a calendar day. *Back-dating the real models to the epoch so
+nothing is ever unpriced* — a fabricated claim about what a request cost in 2024, which
+is exactly the lie this file exists to prevent. *Numeric YAML rates with a float check
+downstream* — the check would live one layer away from the mistake. *A flat file of
+rates with no dates at all, deferring dating to a later phase* — the plan names dating as
+the founding feature; deferring it would be building the thing that failed.
+
+**Consequences.** `config/` now holds two files and both are loaded at startup (H-014's
+split extended: routes are policy, prices are reference data). A model added to routing
+and not to prices serves traffic and writes NULL-cost rows — loudly, via `cost_status`,
+but it is a real operational trap and the README says so. The mock rates are now a
+published number the suite depends on: `tests/test_prices.py` pins them in one place so
+a change fails with a message about the rate rather than as arithmetic noise across a
+dozen files. When Anthropic's introductory Sonnet 5 window closes on 2026-08-31, no code
+changes — the second row is already there, which is the entire point.
+
+---
+
+## H-024 — A ledger row carries the price it was billed at (Phase 3)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** H-023 makes a price resolvable by date. That alone does not make a landed
+cost safe: if a ledger row referenced its price rather than containing it, then editing
+`config/models.yaml` — correcting a typo, adding a model, fixing a start date — would
+silently re-bill every historical request that resolved through the edited entry. D-017
+and its mirror image are the same mistake seen from two sides: treating the price as a
+property of the *model* rather than of the *transaction*.
+
+**Decision.** `migrations/0002_usage_ledger.sql` copies the applied rates into the row:
+`price_effective_from`, `usd_per_mtok_in`, `usd_per_mtok_out`, alongside the computed
+`usd_cost`. A row is an invoice line and is self-contained; nothing outside it is needed
+to explain it, and nothing outside it can change it.
+
+Supporting choices in the same migration:
+
+- **Money is `NUMERIC`, never `DOUBLE PRECISION`.** `usd_cost` is `NUMERIC(24, 12)` — a
+  millionth of a cent — sized so the smallest realistic charge is exact with room to
+  spare: one output token at $1/MTok is `0.000001`, six places. Rates are
+  `NUMERIC(20, 10)`. A float column would reintroduce at the last step the error the
+  whole pipeline is arranged to avoid.
+- **NULL and 0 are different facts**, and `cost_status` says which: `priced` (exact),
+  `partial` (a bound — see H-026), `unpriced_model` (NULL), `usage_unknown` (NULL),
+  `not_billable` (0, and that zero is a measurement). A meter that writes `0.00` for
+  "we do not know" passes every arithmetic test ever written and is still wrong.
+- **`request_id` is UNIQUE**, which is what makes the writer's retry safe (H-027).
+- **Foreign keys are `ON DELETE RESTRICT`** onto `tenants` and `virtual_keys`, matching
+  H-022. No cascades: a row that vanished would turn a historical invoice into an orphan.
+- **`cache_disposition` and `failover_hops` ship empty**, for Phases 5 and 6. The shape
+  of a ledger row stops changing after this migration (invariant 7).
+- **`started_at` is the request's own arrival time** and is what the price resolves
+  against; `created_at` is when the row was written. The gap between them is the
+  delivery guarantee, made visible.
+
+**Alternatives considered.** *A `price_id` foreign key onto a prices table* — normalised,
+and it makes a landed cost mutable by an `UPDATE` somebody runs at 2 a.m. *Storing only
+`usd_cost` and re-deriving the rates for display* — the cost survives, and "why did this
+cost that" becomes unanswerable the moment prices move. *`DOUBLE PRECISION` for cost*
+("it is only fractions of a cent") — fractions of a cent summed over a quarter is the
+number a customer disputes. *Deriving cost at read time from tokens × current price* —
+D-017 with extra steps.
+
+**Consequences.** The row is wide, and deliberately: 33 columns, most of them nullable.
+Re-pricing history is now impossible *by design*, which also means a genuine mispricing
+can only be corrected by a documented, deliberate migration — the right amount of
+friction for money. Phase 9's nightly rollup Lambda reads this table and inherits the
+same guarantee for free.
+
+---
+
+## H-025 — Which requests get a ledger row, and what a failure costs (Phase 3)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN Phase 3 says failed and errored requests are also rows, "zero or
+partial cost as honesty dictates — decide and log the H-entry", because P8.H2 publishes
+overhead percentiles and error accounting from this table. An error-free ledger would
+make both meaningless. But "every request gets a row" and "every row is attributable"
+cannot both be true, and the cost of a failure is not one answer.
+
+**Decision.**
+
+**Who gets a row.** Every request that **authenticated and named a model**. That is the
+line, and it is drawn where it is because the ledger's entire job is attribution: a row
+for a request that never identified itself has no tenant and no key, and `tenant_id` is
+`NOT NULL` for exactly that reason. The 401 family is therefore *not* in the ledger — it
+is in the structured log line, which already records all five reasons (H-020). A
+malformed body from a known tenant is likewise not a row: it never named a model, so
+there was never anything to price.
+
+**What a failure costs**, decided from the **upstream status** rather than from the
+outcome, because the outcome describes what the caller saw and the status describes what
+a provider did:
+
+| Situation | Cost | `cost_status` |
+|---|---|---|
+| Provider answered < 400 | priced from usage | `priced` / `partial` |
+| Provider answered ≥ 400 (429, 5xx) | **0** | `not_billable` |
+| Never reached a provider (unroutable, scope refusal, connect failure) | **0** | `not_billable` |
+| **Timeout** — sent, no answer | **NULL** | `usage_unknown` |
+| Stream cut / client disconnect after tokens flowed | **NULL** unless usage arrived | `usage_unknown` |
+
+The timeout row is the one that earns the table. `ProviderTimeout` already documents the
+honest position — "the request may well have been accepted and billed upstream; the
+caller is told the truth (we do not know)" — and billing it at zero would be a
+comfortable lie in the one place a lie compounds. A connection that never opened, by
+contrast, provably generated nothing, so its zero is a measurement.
+
+**Alternatives considered.** *Rows for 401s with a null tenant* — makes the attribution
+column nullable, which makes every `GROUP BY tenant` in Phase 7 and every rollup in
+Phase 9 quietly wrong-by-omission; and the log line already has them. *No rows for any
+failure* — kills H2's error accounting and hides exactly the requests an operator is
+looking for. *Billing a timeout at zero* — tidy, and an undercount that grows with
+provider flakiness. *Estimating a cut stream's output from the bytes forwarded* — the
+Phase 1 reasoning finding says content and billed tokens are not the same quantity;
+estimating here would be the very inference this phase forbids.
+
+**Consequences.** A tenant's ledger row count is *not* their request count — anonymous
+401s are missing by design, and the README says so. `outcome`, `error_reason`, and the
+five `cost_status` values are stable identifiers from here, because Phase 7 charts them
+and Phase 8 reports on them. `unpriced_requests` is surfaced beside every total so a sum
+can never quietly present itself as complete.
+
+---
+
+## H-026 — Prompt-cache tokens are recorded, not priced (Phase 3)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** Anthropic bills prompt-cache reads and cache writes as separate token
+classes at rates that are neither the input rate nor the output rate. The phase brief
+specifies a price row of `(effective_from, usd_per_mtok_in, usd_per_mtok_out)`, which has
+nowhere to put them. Ignoring the usage block's cache fields entirely would leave a
+request with heavy prompt caching **under-billed** on the Anthropic dialect (whose
+`input_tokens` excludes cached tokens) and **over-billed** on the OpenAI dialect (whose
+`prompt_tokens` includes them) — silently, in opposite directions.
+
+**Decision.** Record the counts, do not price them, and **label the row**.
+`cache_read_tokens` and `cache_write_tokens` are columns; when either is non-zero on a
+model whose rate is not zero, `cost_status` is `partial` and the cost is documented as a
+**lower bound rather than a total**. A free model cannot be under-billed, so a local vLLM
+reporting prefix-cache hits stays `priced`.
+
+This is invariant 6's instinct applied to money: *a truncated or partial thing is never
+recorded as complete.* D-021's scar was an amputated answer billed as whole; this is the
+same shape, one layer over.
+
+**Alternatives considered.** *Add cache-tier rate fields now* — the complete answer, and
+it widens a schema the brief specified, for a code path no keyless test can exercise and
+no current Headroom traffic reaches; a well-marked seam is the better trade.
+*Bill cache tokens at the input rate* — over-bills reads by ~10× and under-bills writes,
+i.e. wrong twice with no label. *Ignore the fields entirely* — the silent version of the
+same error, and the one that would never be noticed. *Refuse to price such a request at
+all (`usage_unknown`)* — throws away a figure that is correct as far as it goes.
+
+**Consequences.** A deployment using Anthropic prompt caching will see `partial` rows and
+should read them as bounds. The fix is additive — new nullable rate columns and rows in
+`config/models.yaml` — but it cannot repair rows already written (H-024), which is
+correct and is the trade this entry accepts. The rule is asserted in `tests/test_cost.py`
+and end to end in `tests/test_metering.py`.
+
+---
+
+## H-027 — The ledger write is fire-and-forget: at most once, in process (Phase 3)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** The phase brief is explicit: the ledger writer must be async enough that a
+slow database never blocks or delays the stream to the client, *and* the delivery
+guarantee must be decided and documented — specifically, what happens to a row if the
+process dies mid-write. First-token latency is the product; a synchronous `INSERT` after
+the last byte would put a Postgres round trip on the tail of every request, invisible in
+a benchmark and ruinous under the concurrency Phase 8 measures.
+
+**Decision.** A bounded `asyncio.Queue` and one background drain task
+(`headroom/metering/writer.py`). `Meter.record` and `LedgerWriter.submit` are **ordinary
+synchronous functions** — there is no `await` anywhere on the metering path, so there is
+nothing for a slow database to suspend. The guarantee is stated plainly:
+
+> **At most once, in process, best effort.** A row queued when the process dies is lost.
+
+Four things make that a trade rather than a shrug:
+
+1. **A graceful stop loses nothing.** `Gateway.aclose` closes the writer *first*, which
+   drains the queue into the store before the store itself is closed. A deploy, a
+   scale-in, or a `docker compose down` costs no rows; only a `SIGKILL` does.
+2. **A lost row is reconstructible.** The same figures — tokens, cost, cost status,
+   timings — go out on the structured request log line, which is written **before** the
+   row is queued and lands in the container's stdout. That is why Phase 3 grows the log
+   line rather than treating it as superseded by the ledger.
+3. **The write is idempotent** (`ON CONFLICT (request_id) DO NOTHING`, H-024), so a
+   retry after a crash can never double-bill.
+4. **Backpressure is a counted drop, not an unbounded queue.** At 10,000 pending rows
+   the writer discards and increments `dropped`, with a JSON warning naming the request
+   id. An unbounded queue would trade a reporting gap for an out-of-memory kill, which
+   takes the gateway down with it — the ledger's job is not worth the gateway's life. A
+   failing store likewise does not kill the drain task; the next request's row is still
+   worth having.
+
+**Phase 4 is explicitly not allowed to reuse this path.** A stale ledger row is a
+reporting gap; a lost budget reservation is D-019's scar. Budgets settle synchronously on
+DynamoDB conditional writes, in a `finally`, and this entry exists partly to make that
+distinction impossible to blur later.
+
+**Alternatives considered.** *Synchronous write before responding* — durable, and it
+makes the database's p99 the gateway's p99. *A write-ahead log or on-disk spool* — real
+durability, real operational surface (a second store to size, rotate, and recover), for
+rows a log line already carries. *Unbounded queue* — trades a bounded reporting gap for
+an unbounded memory one. *Batched inserts* — a worthwhile optimisation and a strictly
+larger loss window per crash; deferrable, and deferred. *Fire-and-forget with a task per
+row* — no backpressure signal at all, and unbounded task creation under load.
+
+**Consequences.** `writer.dropped` and `writer.failed` are numbers worth alerting on in
+Phase 9; non-zero means the ledger is now an undercount. Tests must `await
+writer.drain()` before asserting a row exists — `GatewayHarness.ledger_row` does it, so
+no test sleeps and hopes. The worker starts lazily on first submit, for the same reason
+the connection pool does: building a gateway must not require a running event loop or a
+reachable database (H-021's lazy-pool rule, one module over).
+
+---
+
+## H-028 — The gateway does not inject `stream_options` to make a request meterable (Phase 3)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** An OpenAI-dialect **streamed** request carries token counts only when the
+caller set `stream_options: {"include_usage": true}`. Without it, no usage chunk is ever
+sent and the response is unmeterable. This is the one gap in Phase 3's coverage:
+Anthropic reports usage in both modes, and non-streamed OpenAI always carries it. The
+phase brief names the choice explicitly — inject the option upstream and strip the extra
+chunk downstream, **or** record the tokens as unknown — and constrains it: whatever is
+chosen, content equality (A4/A5) must survive it.
+
+**Decision.** **Do not inject.** A request without usage is metered as `usage_unknown`
+with a NULL cost, and the gap is reported rather than closed.
+
+The reason is that injection is not a small change; it is the reversal of the property
+the whole proxy is built on. Injecting means parsing the caller's JSON body, adding a
+field, and **re-serializing it** — and H-007's design, the A5 tool-block guarantee, and
+H-016's sabotage-proven fidelity all rest on the fact that *no code exists which could
+rebuild a request body*. Stripping the extra chunk on the way back is the same violation
+on the response side: it would turn the SSE observer from a tap into a filter. Trading
+that for a token count on a minority of requests is a bad trade, and it is one whose
+downside is invisible (a re-escaped character in someone else's tool call) while its
+upside is a number on a dashboard.
+
+The honest alternative is also the more useful one: the dashboard can show *how many*
+requests could not be metered (`unpriced_requests` per total), which is actionable — the
+caller adds one field and the gap closes at the source, permanently, for their traffic.
+
+**Alternatives considered.** *Inject and strip* — closes the gap, forfeits the fidelity
+invariant. *Inject only when the body is already being parsed anyway* — the proxy parses
+a shallow copy and **discards it**; there is no "already". *Estimate tokens from the
+forwarded content* — forbidden by this phase's founding observation: 11 visible
+characters, 63 billed tokens. *Make injection a per-tenant opt-in flag* — a config
+switch that turns off the repo's central guarantee, which is worse than either choice
+made outright; if a future phase wants it, it supersedes this entry rather than hiding
+behind a default.
+
+**Consequences.** OpenAI-dialect streamed traffic from clients that do not ask for usage
+is unmetered, visibly. The README documents the one-line fix for callers. Because the
+gate's "usage-injection fidelity" clause is conditional on choosing injection, the proof
+obligation here is the inverse and is met directly:
+`tests/test_metering.py::test_the_gateway_does_not_add_stream_options_to_the_callers_body`
+asserts the provider received the caller's bytes unchanged, and
+`test_metering_a_stream_does_not_disturb_one_byte_of_it` asserts the response is
+byte-identical to the mock's output while being metered.
+
+---
+
+## H-029 — A live smoke provisions its own identity, in the real control plane (Phase 3, addendum)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** Phase 2 made every `/v1/*` request require a virtual key. The keyless suite
+moved onto the authenticated path in that PR — `GatewayHarness.post` presents a key by
+default — but `tests/test_live_smoke.py` was not touched, because nothing runs it: the
+`live` marker deselects it from every CI job and from every `make test`. Both smokes
+therefore returned 401 `missing_api_key` from the moment PR-2 merged, and the breakage
+surfaced on 2026-08-09, on the first live run after it, a phase and a half later.
+
+Fixing the 401 is one header. The question this entry decides is *where the header's
+value comes from*, and the options are not equivalent: a key pasted into the operator's
+`.env` is a manual setup step that will rot the same way (a key revoked during an
+incident, a volume wiped by `docker compose down -v`), and an in-memory control plane
+built inside the test is self-contained but throws away the row.
+
+**Decision.** **Each live smoke provisions its own tenant and key, through the real
+`TenantStore`, against the compose Postgres.** `tests/support/live.py` creates — or
+reuses — a tenant named `live-smoke`, mints an unrestricted key, drives the request with
+it, asserts the resulting ledger row is attributed to that tenant, prints the request
+id, and revokes the key on the way out.
+
+Three things fall out of that, and each was the reason for it:
+
+* **The operator's setup does not grow.** `make up` plus `ANTHROPIC_API_KEY` /
+  `VLLM_BASE_URL`, exactly as before. Migrations are applied by the helper, idempotently,
+  so a smoke on a fresh volume cannot fail on a missing table *after* spending the money.
+* **The row outlives the process.** The whole point of a paid smoke is to compare
+  Headroom's accounting against the provider's own, and the phase log's verification step
+  is a `curl` at `/admin/usage/<request-id>` on the running container. In-memory stores
+  would make that impossible, so the smoke uses the stores the gateway actually ships
+  with — the first test in the project that does.
+* **The tenant is stable, the key never is.** One name to filter the ledger by, run after
+  run; a fresh key each time because a plaintext key exists exactly once, in the response
+  that created it (H-017), and this store never held it. Revoked on exit: it has served
+  its one request, and a credential nobody can reproduce is tidier dead than alive.
+
+**Alternatives considered.** *A key in `.env`* — a manual step that rots silently, and
+the failure it produces (401 on a paid run) is the one this entry exists to remove.
+*In-memory stores inside the test* — self-contained and unverifiable; deletes the
+artefact. *Provision through `POST /admin/keys` rather than the store* — the same result
+through one more surface, but it would require `HEADROOM_ADMIN_TOKEN` to be set for a
+smoke that otherwise needs no admin credential, which is exactly the kind of extra setup
+step being removed. *Leave the key active* — no benefit; its plaintext is gone when the
+process exits.
+
+**Consequences.** The live smokes now require a reachable control plane, handled by
+H-012's rule (skip when the endpoint was inferred and nothing is listening, fail when
+someone stated it was there) rather than by a new one. They leave one revoked key per
+run under a permanent `live-smoke` tenant, which is the intended paper trail. And the
+`make test` interaction is now documented rather than discovered: the Postgres half of
+the tenant-store contract suite runs `TRUNCATE virtual_keys, tenants CASCADE`, and
+`usage_ledger` references both, so a `make test` between a live smoke and its `curl`
+takes the row with it — the smoke says so on the terminal, in the line after the id.
+
+The mitigation for the *class* of failure is separate and deliberate, because the
+obvious one does not apply: import-time bitrot was never the gap. `-m "not live"`
+deselects **after** collection, so every default run already imports the live module and
+an `ImportError` there fails the suite. What no keyless run could see was *behaviour* —
+whether the request the smoke builds still authenticates. So
+`tests/test_live_smoke_wiring.py` drives the smokes' own provisioning helper through the
+real `Authenticator` on every CI run, and asserts the sabotage (a smoke that sends no
+key) is refused with `MissingCredential`. It cannot prove the live smokes pass; it proves
+the credential they present is one the gateway accepts, which is the thing that broke.

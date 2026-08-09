@@ -1011,3 +1011,540 @@ startup could not do.
 
 **Spend** — $0.00. No provider API was called in this phase; every test ran on the
 MockProvider and the container demo talked to nothing.
+
+---
+
+## Phase 3 — Metering: the ledger that matches the invoice (2026-08-08)
+
+**Shipped**
+
+- **`config/models.yaml`, with dated price schedules** — the D-017 lesson as schema, not
+  as a bugfix. A model has an *ordered history* of `(effective_from, usd_per_mtok_in,
+  usd_per_mtok_out)` rows; a request resolves to the latest row on or before its own
+  date; a price change is an append that cannot reach backwards. Rates are **quoted
+  strings** and the loader refuses a YAML float by name — money in binary floating point
+  is wrong before anything multiplies it. Matching is exact-first then longest-prefix
+  (the H-013 rule). **H-023.**
+- **A real dated boundary in the committed file.** Anthropic published Claude Sonnet 5
+  at an introductory **$2/$10 per MTok through 2026-08-31**, $3/$15 after — so the
+  shipped config contains a genuine vendor-published price change, and
+  `tests/test_prices.py` asserts the identical request resolves to each rate on either
+  side of that midnight. The D-017 property is exercised against reality, not only a
+  fixture.
+- **Mock models are FLAT-priced**, exactly one row from the epoch, deliberately
+  asymmetric with the real models: every exact-cost assertion in the suite prices
+  against them, and a dated tier would make the suite start failing on a calendar day.
+  $0.25/$1.25 per MTok, chosen so the canonical 11-in/7-out fixture lands on
+  **$0.0000115** — a terminating decimal, so no expected cost anywhere needs a
+  tolerance. The flatness is asserted, not trusted. The operator's vLLM model is priced
+  at an **honest zero** so a $0.00 row means "free" and not "no idea". **H-023.**
+- **`migrations/0002_usage_ledger.sql`** — one row per completed request. It copies the
+  **rates it billed at** into the row (`price_effective_from`, `usd_per_mtok_in`,
+  `usd_per_mtok_out`), so editing the price file can never re-bill history. Money is
+  `NUMERIC(24, 12)` — a millionth of a cent — never `DOUBLE PRECISION`. `NULL` and `0`
+  are kept distinct and `cost_status` says which. `request_id` is UNIQUE (the writer's
+  retry safety); the foreign keys are `ON DELETE RESTRICT` onto Phase 2's tables, whose
+  never-delete design (H-022) this is what made load-bearing. `cache_disposition` and
+  `failover_hops` ship empty for Phases 5 and 6, so the shape of a row stops changing
+  here. **H-024.**
+- **Usage extraction per dialect, from the usage block only.** Anthropic assembles
+  `message_start` + `message_delta`; the OpenAI dialect reads the trailing usage chunk —
+  which arrives *after* the frame carrying `finish_reason`, and is why the passthrough
+  loop now feeds its observer past the terminal marker. Non-streamed forms for both.
+  Reasoning tokens are recorded as the *breakdown* of `completion_tokens` they are,
+  never added to it.
+- **The placeholder trap, closed.** `message_start` reports `output_tokens: 0` before a
+  single token exists. The observer ignores it, so a stream cut mid-answer honestly
+  reports "output unknown" instead of billing a severed answer as a complete free one.
+- **Exact cost in `Decimal`, end to end** (`headroom/metering/cost.py`). Rates parse from
+  strings, arithmetic is decimal, storage is `NUMERIC`, serialization is a string —
+  including in the log line, because JSON's only numeric type is a double. Five cost
+  statuses, each meaning something different: `priced`, `partial`, `unpriced_model`,
+  `usage_unknown`, `not_billable`.
+- **Error accounting with decided semantics** (**H-025**): an upstream ≥400 and a request
+  that never reached a provider cost **0** (a measurement); a **timeout** costs **NULL**,
+  because it was sent and may well have been billed by someone we cannot ask; a
+  mid-stream cut costs NULL unless its usage arrived first. Anonymous 401s get **no row
+  at all** — they have no tenant, and an unattributable row in an attribution table is
+  worse than none.
+- **Prompt-cache tiers recorded, not priced** (**H-026**). `cache_read_tokens` /
+  `cache_write_tokens` are columns; a non-zero value on a non-free model marks the row
+  `partial` — an honest lower bound rather than a total that looks complete. Invariant
+  6's instinct applied to money.
+- **A fire-and-forget writer with a stated guarantee** (**H-027**):
+  *at most once, in process, best effort.* `Meter.record` and `LedgerWriter.submit` are
+  ordinary synchronous functions — there is no `await` on the metering path at all, so
+  no slow database can suspend a response. A graceful stop drains the queue; a full
+  queue drops and **counts**; a failing store does not kill the drain task; the insert
+  is idempotent so a retry cannot double-bill. Phase 4's budget reservations are
+  explicitly forbidden from reusing this path.
+- **`LedgerStore`: one interface, two implementations, one contract suite** — the H-021
+  shape applied to money. `PostgresLedgerStore` and `InMemoryLedgerStore`, with
+  `tests/test_ledger_store.py` parametrised over both (42 tests), plus Postgres-only
+  proofs that the RESTRICT keys and the `NUMERIC` scale are real.
+- **`/admin/usage`** (`headroom/api/usage.py`): `GET /admin/usage` (filterable by tenant,
+  key, model, provider, outcome, time window, with paging), `GET /admin/usage/totals`
+  (per tenant, optionally split by model), `GET /admin/usage/{request_id}`. Read-only —
+  every other verb is a 405 — behind the same root admin token. Money leaves as a
+  string, and **every total publishes `unpriced_requests`** so a sum can never present
+  itself as complete when it is not.
+- **The request log line grew six fields** — `stop_reason`, the token counts, `usd_cost`,
+  `cost_status` — written *before* the row is queued, which is what makes a lost row
+  reconstructible (H-027's second leg).
+- **Tests: 441 keyless** (280 → 441), 2 live-marked and deselected by default. New files
+  — `test_ledger_store` (42), `test_metering` (32), `test_prices` (23),
+  `test_usage_extraction` (22), `test_cost` (17), `test_admin_usage` (17),
+  `test_ledger_writer` (8). Every Phase 0/1/2 test still green.
+- **Docs**: H-023 … H-028 in `docs/DECISIONS.md`; README gains a *The cost ledger*
+  section; `migrations/README.md` status table; `.env.example` documents
+  `HEADROOM_MODELS_CONFIG`.
+
+**Deferred**
+
+- Nothing from the Phase 3 scope. Explicitly *not* built, per the plan: rate limits and
+  budgets (P4), the cache disposition and avoided-cost fields (P5), failover hops (P6),
+  the dashboard that reads all of this (P7). The seams exist and are columns already in
+  migration 0002, so those phases add code and not a schema change.
+- **Prompt-cache tier *pricing* is deferred and labelled** (H-026), not silently
+  omitted: the tokens are recorded and any row affected by them is marked `partial`.
+
+**Deviations**
+
+1. **`config/models.yaml` gained a `match: prefix` mode** the plan's description does not
+   mention. One `mock-` entry prices every mock model the suite invents, which is what
+   keeps a new fixture from silently becoming unpriced. Exact ids still win; the rule is
+   the routing table's (H-013), so there is no second convention to learn.
+2. **Real models' price history starts on 2026-08-08 rather than at some earlier date.**
+   A request dated before that is `unpriced_model` with a NULL cost. Guessing when a
+   published rate began is the same class of error as guessing the rate, and this repo
+   has never billed a request before that day. **H-023.**
+3. **The Phase 1 passthrough loop changed shape**: it now feeds the SSE observer for the
+   whole response instead of stopping at the dialect's terminal marker. Not tidying —
+   in the OpenAI dialect the usage chunk arrives *after* the `finish_reason` frame, so
+   the old loop metered nothing at all there. Sabotage E below is that old shape,
+   restored briefly to prove the tests notice. **No forwarded byte changed**; the tap is
+   still a tap.
+4. **Cache-tier token columns and the `partial` status are additions** the plan's Phase 3
+   text does not enumerate. Without them an Anthropic request using prompt caching would
+   be silently under-billed on one dialect and over-billed on the other. **H-026.**
+5. **Anonymous 401s are deliberately absent from the ledger**, so a tenant's row count is
+   not their request count. The plan says failed requests are rows; this is the one class
+   that cannot be, because it has no tenant. **H-025**, and the README says so.
+6. **`Decimal` money is serialized with `format(value, "f")`, not `str()`.** Found in the
+   container run: `str(Decimal("0.000000000000"))` is `"0E-12"` — correct, parseable, and
+   a surprise in a JSON field a dashboard is about to render. One shared `format_usd`
+   now serves the API and the log line, with a test at both.
+7. **One Phase 1 test changed**, because the log-field set it pins grew:
+   `test_request_context.py::test_the_log_shape_is_complete`. No Phase 1 *behaviour*
+   changed.
+8. **`HEADROOM_MODELS_CONFIG` joins `HEADROOM_ROUTING_CONFIG`** in `core/config.py` —
+   environment-variable names live there (the Phase 2 precedent), while the loader lives
+   in `metering/`, because routes are policy and prices are reference data (H-014's
+   split, extended).
+
+**Gate** — *a scripted mock conversation's metered cost matches a hand-computed figure to
+the cent; a dated-price boundary test (same request, two dates, two prices); one live
+smoke where Headroom's metered usage equals the provider's own reported usage exactly.*
+
+Run on the operator's machine with the compose stack up and **nothing exported**:
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+86 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 86 source files
+
+$ make test
+================= 441 passed, 2 deselected, 1 warning in 5.71s =================
+
+$ uv run pytest -m live -q --collect-only
+2/443 tests collected (441 deselected) in 0.07s
+```
+
+**441 passed, 0 skipped** — `grep -c SKIPPED` over the run returns `0`, so the Postgres
+half of *both* contract suites executed against the compose containers rather than
+skipping (H-012).
+
+Per-file counts from the same run:
+
+```
+44 tests/test_tenant_store.py         14 tests/test_error_mapping.py
+42 tests/test_ledger_store.py         11 tests/test_request_context.py
+32 tests/test_metering.py             10 tests/test_reasoning_passthrough.py
+29 tests/test_auth_matrix.py          10 tests/test_auth_cache.py
+27 tests/test_virtual_keys.py          8 tests/test_ledger_writer.py
+25 tests/test_admin_api.py             8 tests/test_key_secrecy.py
+23 tests/test_prices.py                6 tests/test_non_streaming.py
+22 tests/test_usage_extraction.py      6 tests/test_mid_stream_cut.py
+19 tests/test_provider_clients.py      5 tests/test_tool_blocks.py
+17 tests/test_sse.py                   5 tests/test_logging.py
+17 tests/test_routing.py               4 tests/test_no_buffering.py
+17 tests/test_cost.py                  3 tests/test_pytest_policy.py
+17 tests/test_admin_usage.py           3 tests/test_migrations.py
+14 tests/test_streaming_passthrough.py 2 tests/test_services.py
+                                       1 tests/test_healthz.py
+```
+
+**The gate's three clauses, individually.**
+
+*Exact price, hand-computed.* 11 prompt tokens at $0.25/MTok plus 7 generated at
+$1.25/MTok is $0.00000275 + $0.00000875 = **$0.0000115**, and that is the figure the
+ledger holds — in both dialects and both transports, because a price that depended on
+the transport would be a bug:
+
+```
+$ uv run pytest tests/test_metering.py -q -k "exactly_priced or prices_identically"
+....                                                                     [100%]
+4 passed, 28 deselected in 0.03s
+```
+
+A second figure with no decimals to trust at all: 1,000,000 in and 1,000,000 out at the
+same rates is **$1.50**, asserted in
+`test_scripted_token_counts_produce_a_hand_checkable_figure`.
+
+*Dated-price boundary.* One model, two rows ($1/$2 per MTok until 2026-06-01, $10/$20
+from it), the same 4-in/10-out request on each side — $0.000024 and $0.00024:
+
+```
+$ uv run pytest tests/test_metering.py -k boundary -v
+tests/test_metering.py::test_the_same_request_on_either_side_of_a_boundary_gets_each_price[when0-expected0] PASSED [ 50%]
+tests/test_metering.py::test_the_same_request_on_either_side_of_a_boundary_gets_each_price[when1-expected1] PASSED [100%]
+======================= 2 passed, 30 deselected in 0.01s =======================
+```
+
+And the same property against the **shipped** file, where the boundary is Anthropic's
+own published one (`tests/test_prices.py::test_the_real_dated_boundary_in_the_shipped_file`):
+Sonnet 5 resolves to $2/$10 on 2026-08-31 and $3/$15 on 2026-09-01.
+
+*THE D-017 TEST.* Bill a request, replace the entire price book with rates a thousand
+times higher, and read the row back — unmoved, down to the effective date
+(`test_a_price_change_never_reprices_a_row_that_already_landed`). Its pair,
+`test_the_new_price_does_apply_to_the_next_request`, asserts the other half: history is
+immutable, the future is not.
+
+*Reasoning tokens.* `test_a_reasoning_request_is_billed_on_completion_tokens_not_visible_text`
+drives the Phase 1 reasoning fixture through the whole stack and asserts the ledger row
+bills **63** output tokens — 57 of them chain of thought that never appears in
+`delta.content` — while the same response's visible answer is **11 characters** long.
+The row and the text are asserted in the same test, on purpose.
+
+*Live smoke — deferred to the operator*, and it is the only clause not closed in this
+session: the machine that built this cannot reach the operator's vLLM box, and the
+Anthropic half is paid. Commands are in the PR description. Its keyless stand-in is
+`tests/test_usage_extraction.py`, which asserts streamed and non-streamed usage agree in
+both dialects against the mock's scripted blocks.
+
+**The sabotage runs.** Green on the first attempt is when a suite deserves the most
+suspicion, so each of the phase's five claims was tested by breaking the thing it
+protects. All five patches were reverted immediately (`git status` clean of them; the
+suite is 441 green above).
+
+*Sabotage A — the meter bills only the visible part of the answer* (`completion_tokens`
+minus `reasoning_tokens`, which is exactly the mistake a text-aware meter makes):
+
+```
+5 failed, 434 passed, 2 deselected
+FAILED tests/test_metering.py::test_a_reasoning_request_is_billed_on_completion_tokens_not_visible_text
+FAILED tests/test_metering.py::test_an_exhausted_reasoning_budget_is_a_complete_billable_request
+FAILED tests/test_usage_extraction.py::test_reasoning_tokens_are_inside_the_output_count_not_beside_it
+FAILED tests/test_usage_extraction.py::test_reasoning_usage_is_identical_in_the_non_streamed_form
+FAILED tests/test_usage_extraction.py::test_an_exhausted_budget_still_reports_its_usage
+```
+
+*Sabotage B — the row references the price instead of copying it in* (the D-017 shape):
+
+```
+2 failed, 437 passed, 2 deselected
+FAILED tests/test_admin_usage.py::test_a_row_reports_the_rates_it_was_billed_at
+FAILED tests/test_metering.py::test_a_price_change_never_reprices_a_row_that_already_landed
+```
+
+*Sabotage C — an unknown cost is written as `0.00` instead of NULL.* This is the one
+that would be invisible in production: every row has a number, every total sums, and the
+figure is quietly too low.
+
+```
+6 failed, 433 passed, 2 deselected
+FAILED tests/test_admin_usage.py::test_a_total_publishes_what_it_could_not_price
+FAILED tests/test_cost.py::test_a_request_with_no_usage_block_is_unknown_not_free
+FAILED tests/test_cost.py::test_half_a_usage_block_is_still_unknown
+FAILED tests/test_metering.py::test_a_mid_stream_cut_is_a_row_whose_cost_is_unknown_not_zero
+FAILED tests/test_metering.py::test_a_timeout_is_unknown_because_the_provider_may_have_billed_it
+FAILED tests/test_metering.py::test_a_stream_without_include_usage_is_recorded_as_unknown
+```
+
+*Sabotage D — `message_start`'s `output_tokens: 0` placeholder is trusted*, which bills
+a severed stream as a complete, free answer:
+
+```
+2 failed, 437 passed, 2 deselected
+FAILED tests/test_metering.py::test_a_mid_stream_cut_is_a_row_whose_cost_is_unknown_not_zero
+FAILED tests/test_usage_extraction.py::test_a_stream_cut_before_message_delta_leaves_the_output_count_unknown
+```
+
+*Sabotage E — the observer stops at the terminal marker* (the Phase 1 loop shape, before
+deviation 3). Note which dialect notices: Anthropic's usage lands before `message_stop`
+and is unaffected, while every OpenAI-dialect streamed row loses its counts entirely.
+
+```
+4 failed, 435 passed, 2 deselected
+FAILED tests/test_admin_usage.py::test_totals_split_by_model_on_request
+FAILED tests/test_metering.py::test_a_streamed_openai_request_prices_identically
+FAILED tests/test_metering.py::test_a_reasoning_request_is_billed_on_completion_tokens_not_visible_text
+FAILED tests/test_metering.py::test_an_exhausted_reasoning_budget_is_a_complete_billable_request
+```
+
+**End to end through the real container**, on a wiped volume, keyless, no network:
+
+```
+$ docker compose down -v && make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 2 migration(s): 0001_tenants_and_virtual_keys, 0002_usage_ledger
+
+### 2. a non-streamed request
+{"id":"msg_mock_6ca20aa0926a68c6","type":"message","role":"assistant","model":"mock-model-1",
+ "content":[{"type":"text","text":"mock reply from mock-model-1"}],"stop_reason":"end_turn",
+ "usage":{"input_tokens":11,"output_tokens":7}}
+x-headroom-request-id: hr_8836fd9616514df5a4c2b6d3ee972d3a
+
+### 3. the same request, streamed   -> hr_450991253693464aab01922f5d918182
+### 4. an unroutable model, same key -> 404
+### 5. an anonymous request          -> 401
+
+### 6. GET /admin/usage
+{"model":"gpt-5","streamed":false,"outcome":"model_not_routed","status_code":404,
+ "input_tokens":null,"output_tokens":null,"stop_reason":null,"usd_per_mtok_in":null,
+ "usd_per_mtok_out":null,"usd_cost":"0.000000000000","cost_status":"not_billable",
+ "price_effective_from":null}
+{"model":"mock-model-1","streamed":true,"outcome":"ok","status_code":200,
+ "input_tokens":11,"output_tokens":7,"stop_reason":"end_turn","usd_per_mtok_in":"0.2500000000",
+ "usd_per_mtok_out":"1.2500000000","usd_cost":"0.000011500000","cost_status":"priced",
+ "price_effective_from":"1970-01-01"}
+{"model":"mock-model-1","streamed":false,"outcome":"ok","status_code":200,
+ "input_tokens":11,"output_tokens":7,"stop_reason":"end_turn","usd_per_mtok_in":"0.2500000000",
+ "usd_per_mtok_out":"1.2500000000","usd_cost":"0.000011500000","cost_status":"priced",
+ "price_effective_from":"1970-01-01"}
+
+### 7. GET /admin/usage/totals
+[{"tenant_id":"d6b28c1f-c501-49a2-a1ce-e74db2852513","model":null,"requests":3,
+  "input_tokens":22,"output_tokens":14,"reasoning_tokens":0,"usd_cost":"0.000023000000",
+  "unpriced_requests":0,"errored_requests":1}]
+
+### 8. what the database actually holds
+    model     | str |     outcome      | in_t | out_t | usd_per_mtok_in |    usd_cost    | cost_status
+--------------+-----+------------------+------+-------+-----------------+----------------+--------------
+ mock-model-1 | f   | ok               |   11 |     7 |    0.2500000000 | 0.000011500000 | priced
+ mock-model-1 | t   | ok               |   11 |     7 |    0.2500000000 | 0.000011500000 | priced
+ gpt-5        | f   | model_not_routed |      |       |                 | 0.000000000000 | not_billable
+(3 rows)
+
+### 9. the column types money is stored in
+   column_name    | data_type | prec | scale
+------------------+-----------+------+-------
+ usd_cost         | numeric   |   24 |    12
+ usd_per_mtok_in  | numeric   |   20 |    10
+ usd_per_mtok_out | numeric   |   20 |    10
+
+### 10. one request log line
+{"request_id":"hr_450991253693464aab01922f5d918182","route":"/v1/messages","dialect":"anthropic",
+ "tenant_id":"d6b28c1f-…","key_id":"8415fe99-…","model":"mock-model-1","provider":"mock",
+ "stream":true,"outcome":"ok","status":200,"upstream_status":200,"error_source":null,
+ "error_reason":null,"stop_reason":"end_turn","input_tokens":11,"output_tokens":7,
+ "reasoning_tokens":null,"cache_read_tokens":null,"cache_write_tokens":null,
+ "usd_cost":"0.000011500000","cost_status":"priced","upstream_latency_ms":0.698,
+ "ttft_ms":0.74,"passthrough_overhead_ms":0.042,"total_ms":0.833}
+```
+
+Three things in that output are the phase in miniature. The unroutable model has
+`usd_cost` **`0.000000000000`** and `cost_status: not_billable` — a zero that is a
+measurement — while a request whose cost were merely *unknown* would show `null` there.
+The two `mock-model-1` rows are identical whether streamed or not, which is what "the
+transport does not change the price" looks like. And the anonymous 401 has **no row at
+all**: three requests reached the ledger out of four, exactly as H-025 says.
+
+**Assumed-facts register (§0.4)**
+
+- **A3 — VERIFIED (keyless half).** *Both dialects expose usage on streamed responses
+  (Anthropic `message_delta.usage`; OpenAI-compat final chunk with
+  `stream_options: {"include_usage": true}`).* `tests/test_usage_extraction.py` asserts
+  the streamed and non-streamed forms of each dialect report the **same** counts against
+  the mock's scripted blocks, and `tests/test_metering.py` asserts the resulting ledger
+  rows are identical in cost. Two nuances the assumption did not anticipate, both now
+  pinned: Anthropic's `message_start` carries an `output_tokens: 0` *placeholder* that
+  must not be read as a measurement, and the OpenAI usage chunk arrives **after** the
+  terminal `finish_reason` frame, which is why the passthrough loop had to change
+  (deviation 3). The remaining half — *metered tokens from one live smoke match the
+  provider's own reported usage* — is the operator's, below.
+- **A4, A5 — still VERIFIED, and re-proved under a feature that had every reason to
+  break them.** Metering is the first thing in the project that genuinely wants to
+  rewrite bytes (inject `stream_options`, strip the usage chunk). It does not: H-028
+  declines the trade, `test_the_gateway_does_not_add_stream_options_to_the_callers_body`
+  asserts the provider received the caller's bytes verbatim, and
+  `test_metering_a_stream_does_not_disturb_one_byte_of_it` asserts a fully metered
+  reasoning stream is byte-identical to the mock's output.
+- **A1, A2, A6, A7** — not due at this gate, none touched.
+
+CI on PR-3 ([run 31299963043](https://github.com/sergioavilax/headroom/actions/runs/31299963043)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31299963043 --json conclusion,jobs
+success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+lint + typecheck: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 86 source files
+pytest (…service containers) | ===== 441 passed, 2 deselected, 1 warning in 8.08s =====
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**441 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so
+the Postgres halves of both the tenant-store and ledger-store contract suites executed
+against the service container. The `image` job still proves the lazy pool: it builds the
+container and smokes `/healthz` with no Postgres anywhere in the job, which a gateway
+that connected — or loaded a price book from a database — at startup could not do.
+
+**Live smoke — not run in this session, and it is the operator's.** The build machine
+cannot reach the vLLM box, and the Anthropic half spends money. Both are cheap:
+
+```
+# free — the operator's GPU. Compare the ledger row against vLLM's own usage block.
+$ VLLM_BASE_URL=http://<instance>:8000 uv run pytest -m live -k vllm -v
+
+# ~$0.0001 against the $3 P1–P7 bucket.
+$ ANTHROPIC_API_KEY=… uv run pytest -m live -k anthropic -v
+```
+
+Then, with the stack up, read the row back and check it against the provider's own
+reported usage — that comparison is A3's remaining half:
+
+```
+$ curl -sS -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" \
+       localhost:8080/admin/usage/<request-id>
+```
+
+**Spend** — $0.00. No provider API was called in this phase; every test ran on the
+MockProvider and the container demo talked to nothing.
+
+### Addendum (2026-08-09) — the live smokes were broken from PR-2's merge until now
+
+**The finding.** Both tests in `tests/test_live_smoke.py` failed with 401
+`missing_api_key` on the operator's first live run after Phase 2 merged. They predate
+tenancy and sent no virtual key; since Phase 2 every `/v1/*` request requires one. PR-2
+moved the keyless suite onto the authenticated path (`GatewayHarness.post` presents a
+key by default) and did not touch these two, so they have been red since 3c0cf63 — the
+whole of Phase 3 — and the Phase 2 and Phase 3 gates both passed with them broken.
+
+**Root cause, stated plainly.** The live smokes exercise the authentication surface and
+are excluded from every automated run: `-m "not live"` deselects them in `make test` and
+in all three CI jobs, and they only execute on the operator's machine, by hand, after a
+phase is otherwise finished. So an auth change can break them and nothing reports it.
+That is not a mistake in PR-2's diff; it is a structural gap in what CI can see, and it
+will recur at every phase that touches the request path (Phase 4's budget gate is the
+next one) unless something keyless stands in for them.
+
+Two things about the gap are worth recording accurately, because the obvious mitigation
+is aimed at the wrong failure:
+
+- **Import-time bitrot was never uncovered.** `-m` deselects *after* collection, so every
+  default run already imports `tests/test_live_smoke.py`; an `ImportError` or a bad
+  decorator there fails `make test` today.
+- **Behaviour was.** Nothing keyless could tell whether the request these tests build
+  still authenticates — and that is exactly what rotted.
+
+**The fix** (`tests/support/live.py`, new). Each live smoke now provisions its own
+identity instead of assuming one: it creates — or reuses — a tenant named `live-smoke`
+through the real `TenantStore`, mints an unrestricted key, sends the request with it, and
+revokes the key on the way out. The operator's setup is unchanged: `make up` plus
+`ANTHROPIC_API_KEY` / `VLLM_BASE_URL`, with migrations applied by the helper so a smoke
+on a fresh volume cannot fail on a missing table after the money is spent. Argued in
+**H-029**.
+
+The stores are the real ones — Postgres, not the in-memory pair the keyless fixture uses
+— because the ledger row is the point: each smoke now asserts a row landed, that it is
+attributed to the smoke tenant and key, and prints the request id, tenant id, tokens,
+cost, and the `curl` to read it back. A live run that spends money and then fails at the
+ledger still hands over the id, because the report is emitted before the assertion.
+
+**The mitigation** (`tests/test_live_smoke_wiring.py`, new — 5 keyless tests). The
+smokes' own provisioning helper is driven through the real `Authenticator` on every CI
+run: a provisioned credential authenticates and stamps the right tenant and key onto the
+context; the sabotage — the headers these tests actually sent before today — raises
+`MissingCredential`; provisioning twice reuses the tenant and mints a fresh key; and a
+deactivated smoke tenant is reactivated rather than becoming an unexplained 401. It
+cannot prove the live smokes pass. It proves the credential they present is one the
+gateway accepts, which is the thing that broke.
+
+**An operational caveat found while verifying this, previously undocumented.** The
+Postgres half of the tenant-store contract suite runs `TRUNCATE virtual_keys, tenants
+CASCADE`, and `usage_ledger` references both tables — so `make test` truncates the
+ledger. Confirmed here: a row written by the dry run below was gone after the next
+`make test`. Read a live smoke's row back *before* running the suite again; the smoke
+prints that warning on the line after the request id.
+
+**Verification.** The paid and GPU halves are still the operator's — the build machine
+reaches neither. What was verified here is all of the new plumbing, for free, by driving
+`live_gateway` at the routable `mock-` model against the running compose stack: real
+gateway, real control plane, real ledger, no provider and no spend. The harness below
+was a throwaway script (not committed — it is `live_gateway` plus a `mock-model-1` body
+and six `print`s); it is deliberately *not* a keyless test, because the control plane has
+no delete and a test that ran on every `make test` would leave a tenant and a ledger row
+behind each time, which 2237d99 went to some trouble to stop.
+
+```
+$ uv run python dryrun_live_wiring.py     # scratch harness, not committed
+status: 200
+request_id: hr_aeec006559904a6599a3e34e60101fa9
+tenant: live-smoke ab6a95b4-0724-45b4-b0e5-91495af0c33e
+key: hk_Lu2kx0Vu 6533685f-1ea8-4eaf-a065-de8245964646
+row: mock-model-1 mock ok 11 7 0.000011500000 priced
+key revoked on exit: True
+
+$ docker compose exec -T db psql -U headroom -d headroom \
+    -c "SELECT request_id, tenant_id, model, outcome, usd_cost, cost_status FROM usage_ledger …"
+             request_id              |              tenant_id               |    model     | outcome |    usd_cost    | cost_status
+-------------------------------------+--------------------------------------+--------------+---------+----------------+-------------
+ hr_aeec006559904a6599a3e34e60101fa9 | ab6a95b4-0724-45b4-b0e5-91495af0c33e | mock-model-1 | ok      | 0.000011500000 | priced
+(1 row)
+
+$ make test          # …and the caveat above, demonstrated
+================= 446 passed, 2 deselected, 1 warning in 5.50s =================
+$ docker compose exec -T db psql -U headroom -d headroom -c "SELECT count(*) FROM usage_ledger"
+ ledger_rows
+-------------
+           0
+```
+
+**Gate.** `make lint typecheck test` on the branch:
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+88 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 88 source files
+
+$ make test
+================= 446 passed, 2 deselected, 1 warning in 5.50s =================
+```
+
+441 → **446**: the five new keyless tests in `tests/test_live_smoke_wiring.py`. The two
+deselected are the live smokes, still excluded, as invariant 4 requires.
+
+**Spend** — $0.00. The dry run above talked to the MockProvider; no provider API was
+called.
