@@ -2900,6 +2900,19 @@ $ uv run pytest -m live -q --collect-only
 half of *all three* contract suites, including the new pgvector one, executed against the
 compose containers rather than skipping (H-012).
 
+**And the same 924 pass with no torch installed at all**, which is the claim the whole
+committed-corpus design rests on. CI proved that first, by failing — see below — and it is
+now checked locally by reproducing CI's environment rather than trusting it:
+
+```
+$ uv sync                       # drop the `embed` extra: this is what CI has
+$ uv run mypy
+Success: no issues found in 130 source files
+$ uv run pytest -q
+================ 924 passed, 2 deselected, 1 warning in 15.84s =================
+$ uv sync --extra embed         # put it back
+```
+
 Per-file counts for the new files, from the same run:
 
 ```
@@ -3083,6 +3096,33 @@ either side of a known 0.82 pair and asserts the hit becomes a miss.
 *Disabled-tenant zero compute.* `test_a_disabled_tenant_does_no_cache_work_at_all` drives
 three requests and asserts `embedder.calls == 0` **and** `store.reads == 0` — read off the
 objects' own counters, not asserted about.
+
+### What CI caught that the operator's machine could not
+
+The first PR-5 run failed `lint + typecheck` on two lines:
+
+```
+headroom/cache/embedding.py:192: error: Cannot find implementation or library stub
+                                 for module named "sentence_transformers"  [import-not-found]
+tests/support/build_semantic_corpus.py:153: error: Cannot find implementation or library
+                                 stub for module named "sentence_transformers"  [import-not-found]
+```
+
+Both files import `sentence_transformers` lazily, inside a function, and both were green
+locally — because the machine that built this phase had run `uv sync --extra embed` to
+generate the corpus. H-004 deliberately does **not** install that extra in CI, so
+`make typecheck` quietly meant two different things in the two places, and the *keyless*
+one was the one nobody was running.
+
+Fixed with a `[[tool.mypy.overrides]]` for `sentence_transformers.*`, the same shape and
+the same reason as the existing `boto3` one: the package ships no `py.typed` marker, its
+`encode` result is converted to `list[list[float]]` at the boundary, and nothing is lost
+by ignoring its missing stubs. Verified by *reproducing* CI's environment locally
+(`uv sync`, typecheck, test, `uv sync --extra embed`) rather than by pushing and hoping —
+which is also how the "924 pass with no torch" line above got measured.
+
+Worth stating plainly: this is CI doing the job H-004 built it for. A keyless job that
+only ever runs the same environment the operator has is a keyless job in name.
 
 ### The bug the container run found
 
