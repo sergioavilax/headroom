@@ -1392,6 +1392,29 @@ all**: three requests reached the ledger out of four, exactly as H-025 says.
   reasoning stream is byte-identical to the mock's output.
 - **A1, A2, A6, A7** — not due at this gate, none touched.
 
+CI on PR-3 ([run 31299963043](https://github.com/sergioavilax/headroom/actions/runs/31299963043)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31299963043 --json conclusion,jobs
+success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+lint + typecheck: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 86 source files
+pytest (…service containers) | ===== 441 passed, 2 deselected, 1 warning in 8.08s =====
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**441 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so
+the Postgres halves of both the tenant-store and ledger-store contract suites executed
+against the service container. The `image` job still proves the lazy pool: it builds the
+container and smokes `/healthz` with no Postgres anywhere in the job, which a gateway
+that connected — or loaded a price book from a database — at startup could not do.
+
 **Live smoke — not run in this session, and it is the operator's.** The build machine
 cannot reach the vLLM box, and the Anthropic half spends money. Both are cheap:
 
