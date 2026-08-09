@@ -24,6 +24,17 @@ and knows whether the dialect's terminal marker appeared. If the upstream dies, 
 simply stops without one, the caller gets a terminal error event — never a silent
 truncation. ``tests/test_mid_stream_cut.py``, written before any of this, is the
 specification.
+
+Phase 2 adds one more, and its **order** is the interesting part:
+
+**Identify, then read, then scope.** Authentication runs before the body is even
+parsed, so an anonymous caller gets 401 rather than a 400 that tells them their JSON is
+malformed — a gateway should not debug requests for strangers. The model scope is
+checked before routing, so an out-of-scope model answers 403 whether or not this
+deployment routes it, and a key cannot be used to enumerate the routing table. The
+provider scope is checked last, because it is the only one that needs the route
+resolved. Each of the three raises, and the existing ``HeadroomError`` handler below
+turns it into the caller's own dialect (docs/DECISIONS.md H-020).
 """
 
 from __future__ import annotations
@@ -101,6 +112,11 @@ async def proxy(request: Request, dialect: Dialect, gateway: Gateway) -> Respons
 async def _proxy(
     request: Request, dialect: Dialect, gateway: Gateway, ctx: RequestContext
 ) -> Response:
+    # First, and before the body is even read: who is this? Everything after this line
+    # is attributed to a tenant, which is what Phase 3's ledger and Phase 4's budgets
+    # are built on.
+    principal = await gateway.authenticator.authenticate(request.headers, ctx)
+
     raw_body = await request.body()
     body = _parse_body(raw_body)
 
@@ -109,9 +125,13 @@ async def _proxy(
         raise InvalidRequestBody("request body must name a model")
     ctx.model = model
     ctx.stream = dialect.wants_stream(body)
+    # Before routing, so a key cannot learn which models this deployment serves by
+    # reading 403 against 404.
+    principal.require_model(model)
 
     provider_name = gateway.routing.resolve(dialect.name, model)
     ctx.provider = provider_name
+    principal.require_provider(provider_name)
     provider = gateway.registry.get(provider_name)
 
     upstream_request = UpstreamRequest(

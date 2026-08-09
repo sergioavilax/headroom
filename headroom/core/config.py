@@ -28,7 +28,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from headroom.core.errors import ConfigurationError
 from headroom.policy.routing import RouteRule, RoutingTable
 
-__all__ = ["GatewayConfig", "ProviderSpec", "RouteSpec", "load_config"]
+__all__ = [
+    "ADMIN_TOKEN_ENV",
+    "CONFIG_PATH_ENV",
+    "GatewayConfig",
+    "ProviderSpec",
+    "RouteSpec",
+    "load_config",
+]
 
 #: Where the routing config lives in a source checkout and in the container image.
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "routing.yaml"
@@ -36,6 +43,12 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "routing.
 #: Point this at another file to run a gateway with a different routing table — how
 #: the test suite gets a mock-only gateway without editing the committed config.
 CONFIG_PATH_ENV = "HEADROOM_ROUTING_CONFIG"
+
+#: The root admin credential for ``/admin/*`` (Phase 2), read from the environment and
+#: from nowhere else — invariant 3 again, and the reason it is named here beside the
+#: other environment knobs rather than being a field some YAML could hold. Unset means
+#: the admin API is **off**, not open (docs/DECISIONS.md H-019).
+ADMIN_TOKEN_ENV = "HEADROOM_ADMIN_TOKEN"
 
 
 class ProviderSpec(BaseModel):
