@@ -24,7 +24,9 @@ import httpx
 
 from headroom.api.gateway import Gateway
 from headroom.api.main import app as headroom_app
+from headroom.cache.gate import ResponseCache
 from headroom.core.budgets import Budget, BudgetScope, BudgetStore
+from headroom.core.cache import CacheSettings, ResponseCacheStore
 from headroom.core.config import GatewayConfig, ProviderSpec, RouteSpec
 from headroom.core.context import RequestContext
 from headroom.core.ledger import LedgerEntry, LedgerStore
@@ -34,6 +36,7 @@ from headroom.db.memory import (
     InMemoryBudgetStore,
     InMemoryLedgerStore,
     InMemoryRateLimitStore,
+    InMemoryResponseCacheStore,
     InMemoryTenantStore,
 )
 from headroom.metering.meter import Meter
@@ -48,6 +51,7 @@ from headroom.providers.mock import MockProvider, MockScriptBook
 from headroom.providers.registry import ProviderRegistry
 
 from .asgi import ASGIRun, ContextRecorder, start_request
+from .corpus import CorpusEmbedder
 
 __all__ = ["ADMIN_TOKEN", "GatewayHarness", "gateway_harness", "mock_only_config"]
 
@@ -77,6 +81,7 @@ async def gateway_harness(
     *,
     budgets: BudgetStore | None = None,
     limits: RateLimitStore | None = None,
+    cache: ResponseCacheStore | None = None,
     tenant: str = "acme",
 ) -> AsyncIterator[GatewayHarness]:
     """Build a complete keyless gateway and serve it over ASGI.
@@ -113,6 +118,14 @@ async def gateway_harness(
         store=budgets if budgets is not None else InMemoryBudgetStore(), prices=prices
     )
     limiter = RateLimiter(store=limits if limits is not None else InMemoryRateLimitStore())
+    # The corpus embedder, not the real one: real ``bge-small-en-v1.5`` vectors for the
+    # committed fixture and deterministic hashed ones for everything a test invents, with
+    # no torch anywhere (``tests/support/corpus.py``). Injected rather than resolved from
+    # the environment, so no test can be made to depend on which extras are installed.
+    responses = ResponseCache(
+        store=cache if cache is not None else InMemoryResponseCacheStore(),
+        embedder=CorpusEmbedder(),
+    )
     instance = Gateway(
         config=config,
         registry=registry,
@@ -123,6 +136,7 @@ async def gateway_harness(
         meter=Meter(prices=prices, writer=writer),
         budgets=gate,
         limits=limiter,
+        cache=responses,
         admin_token=ADMIN_TOKEN,
     )
 
@@ -148,6 +162,7 @@ async def gateway_harness(
                 writer=writer,
                 budgets=gate,
                 limits=limiter,
+                cache=responses,
             )
     finally:
         await instance.aclose()
@@ -184,6 +199,10 @@ class GatewayHarness:
     #: consumption is synchronous and never settles, so there is nothing in flight to
     #: wait for — the asymmetry with the budget gate above is the design, not an omission.
     limits: RateLimiter
+    #: Phase 5. The response cache and the store behind it, so a test can switch caching
+    #: on for the harness tenant, read entries back, and — via the embedder's own call
+    #: counter — assert that a disabled tenant embedded nothing at all.
+    cache: ResponseCache
     admin_token: str = ADMIN_TOKEN
 
     # --- proxy requests -----------------------------------------------------------
@@ -379,3 +398,32 @@ class GatewayHarness:
             limit_per_min=limit_per_min,
             when=when if when is not None else datetime.now(UTC),
         )
+
+    # --- the response cache -----------------------------------------------------------
+
+    async def set_cache(
+        self,
+        mode: str,
+        *,
+        ttl_s: int | None = None,
+        similarity_threshold: float | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
+        """Switch caching on (or off) for a tenant, effective immediately.
+
+        The invalidation is not decoration: the policy rides the ``Principal`` (H-037's
+        placement), so a test that set a mode without dropping the cached principal would
+        be asserting against the previous request's configuration — the same trap
+        :meth:`set_limits` documents.
+        """
+        target = tenant_id if tenant_id is not None else self.tenant.id
+        await self.store.set_cache_settings(
+            target,
+            CacheSettings(mode=mode, ttl_s=ttl_s, similarity_threshold=similarity_threshold),
+        )
+        self.authenticator.cache.invalidate_tenant(target)
+
+    async def cache_entries(self, tenant_id: str | None = None) -> int:
+        """How many entries a tenant owns. The poison attempts' assertion, in one call."""
+        stats = await self.cache.store.stats(tenant_id if tenant_id is not None else self.tenant.id)
+        return stats.entries

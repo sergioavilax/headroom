@@ -27,8 +27,9 @@ import json
 from collections.abc import Mapping
 from typing import Any, Final
 
+from headroom.core.cache import CacheProbe
 from headroom.core.sse import SSEEvent, format_sse
-from headroom.dialects.base import Dialect, register_dialect
+from headroom.dialects.base import Dialect, redact_message, register_dialect, text_of_content
 from headroom.metering.usage import Usage, UsageObserver
 
 __all__ = ["ANTHROPIC", "AnthropicDialect"]
@@ -93,6 +94,26 @@ class AnthropicDialect(Dialect):
 
     def usage_observer(self) -> UsageObserver:
         return _AnthropicUsageObserver()
+
+    def cache_probe(self, body: Mapping[str, Any]) -> CacheProbe | None:
+        """Exactly one user message, text only. The system prompt stays in the context.
+
+        The Messages API keeps ``system`` as a **top-level field**, so it is untouched by
+        the redaction below and lands in ``context_hash`` intact — which is what stops two
+        tenants' identically-worded questions under different system prompts matching each
+        other. Anything else about the conversation makes this ``None``: a second turn is
+        history the probe would not see, and a ``tool_result`` block is not text.
+        """
+        messages = body.get("messages")
+        if not isinstance(messages, list) or len(messages) != 1:
+            return None
+        message = messages[0]
+        if not isinstance(message, Mapping) or message.get("role") != "user":
+            return None
+        text = text_of_content(message.get("content"))
+        if text is None or not text.strip():
+            return None
+        return CacheProbe(text=text, redacted=redact_message(body, messages, 0))
 
     def error_payload(
         self, *, status_code: int, reason: str, message: str, request_id: str

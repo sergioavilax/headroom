@@ -2691,3 +2691,624 @@ before the code that reads it exists.
 No AWS credential is set anywhere in the workflow (`grep -c AWS_ACCESS` over the log
 returns `0`). The gateway supplies its own dummy when — and only when — an emulator
 endpoint is configured, which is why the job is still fully keyless (invariant 4).
+
+---
+
+## Phase 5 — The cache: exact, semantic, and never poisoned (2026-08-09)
+
+**Shipped**
+
+- **`migrations/0005_response_cache.sql`** — `CREATE EXTENSION vector` (the image has
+  offered it since Phase 0 and nothing needed it until now, H-001), the `response_cache`
+  table with a `vector(384)` column and an HNSW cosine index, the per-tenant cache policy
+  as three columns on `tenants`, and three columns on `usage_ledger` for the *avoided*
+  cost and the provenance of a hit. `cache_mode` is `NOT NULL DEFAULT 'disabled'`, which
+  is the feature rather than a detail: no existing tenant and no future one caches
+  anything until somebody says so.
+- **Two layers behind one interface.** **Exact**: SHA-256 over the canonicalised request,
+  salted with the namespace. **Semantic**: `bge-small-en-v1.5` on CPU (BUILD_PLAN L6),
+  pgvector cosine over the tenant's own namespace, hit above a per-tenant threshold.
+  Semantic is a strict superset — the exact hash is tried first, because it is cheaper
+  *and* safer than the search that would otherwise follow it, and an exact hit never pays
+  for an embedding.
+- **Isolation is a value, not a habit** (**H-040**). `CacheNamespace` is the only address
+  the cache has; it salts the exact key *and* leads every index and predicate, and both
+  are downstream of one function called from one place. `tests/test_cache_isolation.py`
+  removes it — one patch, both mechanisms — and asserts the leak really happens, so the
+  tests protecting the property are known to be capable of failing. That sabotage lives
+  **permanently in the suite** rather than as a one-off run recorded here.
+- **Eligibility as the safety case** (**H-041**). Single-turn text only; `temperature ≤
+  0.2`; one completion; and **no tools in any form** — a request that merely *declares*
+  `tools` is refused even though nothing has been called, because the same words with
+  tools available may legitimately produce a tool call. The tool scan is a structural walk
+  of the whole body looking at keys and typed markers, never at free text, so it cannot be
+  fooled by a block type nobody anticipated and cannot be tripped by a user asking a
+  question *about* tool use.
+- **Invariant 6, enforced at the one place a truncated answer could become permanent.**
+  Only a response that ended `ok`, with an upstream status under 400 and a **complete**
+  stop reason (`end_turn` / `stop_sequence` / `stop`), is ever written. `max_tokens` and
+  `length` are explicitly not that — they are a complete *stream* of a truncated *answer*,
+  the distinction H-008 drew, and the case that looks perfectly healthy from outside.
+- **The transport is part of the key; an entry is replayed, never converted** (**H-043**).
+  A streaming caller is served by an entry a streaming request populated, byte for byte —
+  which is a *stricter* claim than A4's content equality, and it is available only because
+  no code here assembles a message from frames or synthesises frames from a message. The
+  demo moment survives: stream a question twice and the second one's first token is
+  already there.
+- **A reasoning response is cacheable exactly and never semantically** (**H-044**). Replay
+  hands the caller the original chain of thought, which is right for an identical question
+  and is a category of wrongness beyond "the answer is wrong" for a near-miss. Two
+  booleans, `store` and `embed`, rather than one.
+- **A hit is not an upstream call wearing a hat** (**H-045**). NULL `upstream_status`,
+  NULL `provider`, NULL token counts, NULL `passthrough_overhead_ms` (there was no
+  upstream byte to measure from), `usd_cost = 0` with `not_billable` beside it — H-025's
+  existing rule for a request that never reached a provider, not a sixth status — and the
+  saving in `cache_avoided_usd`, a column of its own, taken from the entry's own recorded
+  cost so it is a fact rather than a re-priced hypothetical. `ttft_ms` and `total_ms` are
+  real, because they happened.
+- **Its position in the pipeline, decided** (**H-046**, the question H-039 left open):
+  after the rate limiter — a hit costs this process a connection, a search, and on the
+  semantic path a CPU embedding, so a tenant that could serve unlimited traffic by
+  repeating itself would have a denial of service for the asking — and **before** the
+  budget gate, taking no reservation at all. The consequence is stated rather than
+  discovered: **a tenant over its cap still gets its cached answers**, because a budget
+  bounds spend and a hit does not spend.
+- **`/admin/cache`** (`headroom/api/cache.py`): `GET`/`PUT`/`DELETE /admin/cache/{tenant}`
+  and a listing, behind the same root token. `PUT` replaces, and an absent field means
+  *the documented default* rather than *unchanged*. Enabling `semantic` **loads the model
+  in the request that asked for it**, so a missing extra is a 503 naming the fix rather
+  than a silent bypass on somebody's traffic an hour later. `DELETE` disables **and**
+  purges, in that order.
+- **Two embedders, chosen by name, never by what happens to be importable**
+  (`headroom/cache/embedding.py`). `BGEEmbedder` is the real one; `HashingEmbedder` is
+  deterministic, dependency-free, and a genuine lexical similarity function rather than a
+  stub. There is deliberately **no fallback**: a gateway that silently degraded would keep
+  answering, keep hitting, and quietly stop being the system anybody measured. The model
+  id is part of the semantic namespace, so a swap can never cross-serve.
+- **A committed, content-hashed semantic corpus** (`tests/fixtures/semantic_corpus.json`,
+  generated by `tests/support/build_semantic_corpus.py`): 12 canonical questions from 4
+  templates crossed with 3 artists, 24 paraphrases, each probe naming its source question,
+  every vector produced by the **real** `bge-small-en-v1.5`. §P8.H1's shape in miniature —
+  the dangerous collision class ships with the corpus, so no "hard negative" had to be
+  invented or tuned until a test passed. CI replays real similarity arithmetic with no
+  torch, no model, and no network.
+- **The default threshold is 0.90, measured rather than picked.** On that corpus a
+  paraphrase scores at worst **0.9237** against its own question and at best **0.8511**
+  against any other. 0.90 sits in the gap asymmetrically on purpose — 0.049 above the
+  wrong band, 0.024 below the right one — because a false hit is a wrong answer served
+  with confidence and a false miss is an upstream call somebody was going to make anyway.
+  `tests/test_cache_semantic.py` asserts both bands and asserts the constant against them,
+  so the number cannot drift away from its own justification.
+- **The offline sweep §P8.H1 needs, already working.** `search(threshold=0.0, limit=k)` is
+  the neighbour-list primitive; `cache_similarity` and `cache_source_request_id` are
+  ledger columns; and a keyless test already replays the admission decision across
+  0.70 → 0.99 from one similarity matrix. At the shipped default: 24 hits, **0 wrong**.
+- **Tests: 924 keyless** (670 → 924), 2 live-marked and deselected by default. New files —
+  `test_cache_eligibility` (53), `test_cache_store` (46, the contract suite over both
+  implementations), `test_cache_keys` (33), `test_embedding` (23), `test_admin_cache` (23),
+  `test_cache_gate` (21), `test_cache_poison` (18), `test_cache_replay` (16),
+  `test_cache_semantic` (15), `test_cache_isolation` (6). Every Phase 0/1/2/3/4/4b test
+  still green, and **one** of them changed (deviation 3).
+- **Docs**: H-040 … H-047 in `docs/DECISIONS.md`; the **BUILD_PLAN §P8.H2 amendment**
+  (below); README gains *The cache that is allowed to say no*; `.env.example` documents
+  `HEADROOM_EMBEDDER` and why there is no fallback; `docker-compose.yml` passes it
+  through; `migrations/README.md` status table.
+
+**The BUILD_PLAN amendment (deliverable, not a note)**
+
+BUILD_PLAN §P8.H2 now carries, verbatim: *"H2 runs against a tenant with caching disabled
+entirely; overhead is measured on pure passthrough."* Logged as **H-047**. A cached hit
+answers in microseconds without touching a provider, so a suite run against a
+cache-enabled tenant would report an "overhead" figure that is really a hit-rate figure —
+flattering the gateway by exactly the amount Backline's 133 questions happen to repeat
+themselves. Amended **before any data exists**, per invariant 8, and made checkable three
+ways: it is the shipped default, the pre-flight asserts it via `GET /admin/cache/{tenant}`,
+and every ledger row carries `cache_disposition` so the report can state that the count of
+non-`cache_disabled` rows is zero.
+
+**Deferred**
+
+- **The compose image does not carry the `embed` extra**, deliberately. A ~200 MB torch
+  install in a container whose tenants all have caching disabled by default buys nothing,
+  and baking the weights is Phase 9's job (L6). Out of the box the compose gateway does
+  **exact** caching and answers 503 to a request for `semantic`, naming the fix — which is
+  demonstrated in the container run below rather than described. `HEADROOM_EMBEDDER=hashing`
+  gives a working semantic path locally with no torch; `uv sync --extra embed` and running
+  the gateway on the host gives the real one, which is how the semantic evidence below was
+  produced.
+- **Nothing else from the Phase 5 scope.** Explicitly *not* built, per the plan: failover
+  and the `failover_hops` column (P6), the savings counter and the cache panel (P7), the
+  H1 corpus at full scale (P8). The seams exist and are columns already: `cache_similarity`
+  and `cache_source_request_id` are what P8's sweep reads, and `/admin/cache` is the config
+  surface it sweeps.
+- **Cache entries have a TTL and no size cap.** `delete_expired` exists and is called by
+  nothing on a schedule — every read already excludes expired rows, so a sweep that never
+  runs costs disk and never costs a wrong answer. Phase 9 gets to schedule it beside the
+  rollup Lambda.
+
+**Deviations**
+
+1. **`cache_disposition` has five values, not the three migration 0002's comment
+   anticipated.** That comment said `exact | semantic | miss`; the shipped values are
+   `cache_hit_exact`, `cache_hit_semantic`, `cache_miss`, `cache_bypass`, `cache_disabled`
+   — the first two spelled as BUILD_PLAN §P5's own gate text spells them. The two extra
+   values exist because an operator needs to tell "I turned it off" from "it is on and
+   never applies to my traffic": those have completely different fixes, and collapsing them
+   would hide the more common one. The comment is a comment; `0002` is not edited (H-003).
+2. **`migrations/0005` adds three columns to `usage_ledger`**, which H-024's closing remark
+   said would stop happening after `0002`. The same answer Phase 4's deviation 2 gave: that
+   sentence was about the Phase 5 and 6 *seams*, which really are already present as
+   columns, and the avoided cost is a fact about the row that has nowhere else to live. A
+   second table joined on `request_id` would put "what did this hit save" one join away from
+   the row that saved it. Additive, nullable, and `0002` is untouched.
+3. **One Phase 1 test changed**, because the log-field set it pins grew:
+   `test_request_context.py::test_the_log_shape_is_complete`. The same class of change as
+   Phase 3's deviation 7 and Phase 4's deviation 4. No Phase 1 *behaviour* changed.
+4. **`Dialect` gained `cache_probe`**, a sixth question a dialect answers: *is this one
+   plain question, and where is it?* It is a dialect method rather than shared code because
+   Anthropic keeps `system` as a top-level field while the OpenAI dialect keeps it in
+   `messages` — a single implementation that blanked "the messages" would drop the OpenAI
+   system prompt out of `context_hash` and let two different system prompts share an entry.
+   Read-only and additive; it validates nothing.
+5. **Canonicalising a request parses and re-serialises it**, which is the thing H-028 and
+   H-007 refuse to do. The distinction is enforced by where the output goes: the canonical
+   bytes are hashed and thrown away, and nothing produced in `headroom/cache/keys.py` is
+   ever sent, stored, or returned. Argued in **H-042**, because a reader who has internalised
+   the earlier rule should not have to work that out.
+6. **The streaming path keeps a copy of the response** — the only new work on the hot loop.
+   It happens **only when there is a live cache plan** (so a disabled tenant, an ineligible
+   request, and a hit all copy nothing), it sits beside the observer feed on the same side
+   of the `yield` where a parse already happens, and it is abandoned mid-stream if the
+   response outgrows 1 MiB. The write itself is after the last byte, so it delays the client
+   by nothing at all on that path.
+7. **Additions the plan's Phase 5 text does not enumerate**, all additive: `cache_bypass` /
+   `cache_disabled` and `cache_reason` (an operator needs to know *why* a cache is doing
+   nothing); the `x-headroom-cache*` response headers; `HEADROOM_EMBEDDER` and the two-
+   embedder resolution with no fallback; `/admin/cache`'s embedder probe; and the committed
+   semantic corpus with its generator.
+
+---
+
+**Gate** — *exact hit/miss matrix; semantic hit on a committed paraphrase fixture and
+miss on a committed hard-negative fixture (same template, different entity); streamed
+replay fixture; the poison-attempt test; ledger rows correctly marked `cache_hit_exact` /
+`cache_hit_semantic` with cost $0 and the avoided cost recorded.* Plus the brief's
+additions: isolation sabotage, D-021 poison attempts, threshold config round-trip,
+disabled-tenant zero-compute proof, disposition ledger tests, replay fidelity.
+
+Run on the operator's machine with the compose stack up and **nothing exported**:
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+130 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 130 source files
+
+$ make test
+================ 924 passed, 2 deselected, 1 warning in 17.20s =================
+
+$ uv run pytest -m live -q --collect-only
+2/926 tests collected (924 deselected) in 0.15s
+```
+
+**924 passed, 0 skipped** — `grep -c SKIPPED` over the run returns `0`, so the Postgres
+half of *all three* contract suites, including the new pgvector one, executed against the
+compose containers rather than skipping (H-012).
+
+**And the same 924 pass with no torch installed at all**, which is the claim the whole
+committed-corpus design rests on. CI proved that first, by failing — see below — and it is
+now checked locally by reproducing CI's environment rather than trusting it:
+
+```
+$ uv sync                       # drop the `embed` extra: this is what CI has
+$ uv run mypy
+Success: no issues found in 130 source files
+$ uv run pytest -q
+================ 924 passed, 2 deselected, 1 warning in 15.84s =================
+$ uv sync --extra embed         # put it back
+```
+
+Per-file counts for the new files, from the same run:
+
+```
+53 tests/test_cache_eligibility.py     18 tests/test_cache_poison.py
+46 tests/test_cache_store.py           16 tests/test_cache_replay.py
+33 tests/test_cache_keys.py            15 tests/test_cache_semantic.py
+23 tests/test_embedding.py              6 tests/test_cache_isolation.py
+23 tests/test_admin_cache.py
+21 tests/test_cache_gate.py
+```
+
+### THE ISOLATION SABOTAGE — permanent, not a one-off
+
+The brief asks for a sabotage that *"removes the tenant scoping and proves cross-tenant
+leakage, then restores"*. It is in the suite rather than in this log, because a sabotage
+that runs once and is written down decays into a claim about a machine nobody has.
+`tests/test_cache_isolation.py` patches `namespace_for` so the namespace no longer carries
+the tenant — the realistic bug, which is not "somebody deleted a WHERE clause" but
+"somebody decided the namespace did not need the tenant in it" — and that one patch takes
+out **both** mechanisms, the hash salt and the SQL predicate, because both are downstream
+of it.
+
+```
+$ uv run pytest tests/test_cache_isolation.py -v
+tests/test_cache_isolation.py::test_an_exact_entry_never_crosses_a_tenant_boundary PASSED
+tests/test_cache_isolation.py::test_a_semantic_entry_never_crosses_a_tenant_boundary PASSED
+tests/test_cache_isolation.py::test_the_namespace_is_what_separates_them PASSED
+tests/test_cache_isolation.py::test_sabotage_removing_the_tenant_scoping_leaks_an_exact_entry PASSED
+tests/test_cache_isolation.py::test_sabotage_removing_the_tenant_scoping_leaks_a_semantic_entry PASSED
+tests/test_cache_isolation.py::test_the_store_itself_still_refuses_when_asked_correctly PASSED
+6 passed in 0.04s
+```
+
+The two `sabotage` tests **assert the leak happens**: under the patch, tenant B receives
+tenant A's answer, on the exact layer and — worse — on a *paraphrase* through the semantic
+layer, where no request B sent was ever byte-identical to anything A sent. The two tests
+above them assert the opposite on the same fixtures. A leak test that could only defeat one
+of two defences would prove nothing about the other.
+
+### THE SABOTAGE RUNS — seven, each reverted immediately
+
+Green on the first attempt is when a suite deserves the most suspicion, so each claim was
+tested by breaking the thing it protects. All seven patches were reverted; `git status` is
+clean of them and the 924 above is the re-run.
+
+*Sabotage A — the truncation guard is removed.* **D-021, exactly**: a complete stream of a
+truncated answer becomes a permanent entry.
+
+```
+9 failed, 911 passed, 2 deselected
+FAILED tests/test_cache_eligibility.py::test_a_response_that_did_not_finish_is_never_stored[anthropic_truncation]
+FAILED tests/test_cache_eligibility.py::test_a_response_that_did_not_finish_is_never_stored[openai_truncation]
+FAILED tests/test_cache_eligibility.py::test_a_response_that_did_not_finish_is_never_stored[a_tool_call]
+FAILED tests/test_cache_eligibility.py::test_a_response_that_did_not_finish_is_never_stored[filtered]
+FAILED tests/test_cache_eligibility.py::test_a_response_that_did_not_finish_is_never_stored[refused]
+FAILED tests/test_cache_eligibility.py::test_a_response_that_did_not_finish_is_never_stored[never_reported]
+FAILED tests/test_cache_poison.py::test_an_answer_truncated_by_max_tokens_is_never_cached
+FAILED tests/test_cache_poison.py::test_a_streamed_answer_truncated_by_max_tokens_is_never_cached
+FAILED tests/test_cache_poison.py::test_the_openai_length_finish_reason_is_never_cached
+```
+
+The last three are the ones that matter: they drive the real gateway, not a predicate.
+
+*Sabotage B — the outcome check is removed*, so a cut stream and a client disconnect are
+storable:
+
+```
+5 failed, 915 passed, 2 deselected
+FAILED tests/test_cache_eligibility.py::test_a_request_that_did_not_end_ok_is_never_stored[upstream_stream_cut]
+FAILED tests/test_cache_eligibility.py::test_a_request_that_did_not_end_ok_is_never_stored[upstream_stream_incomplete]
+FAILED tests/test_cache_eligibility.py::test_a_request_that_did_not_end_ok_is_never_stored[client_disconnect]
+FAILED tests/test_cache_eligibility.py::test_a_request_that_did_not_end_ok_is_never_stored[upstream_error]
+FAILED tests/test_cache_poison.py::test_a_stream_that_simply_stops_is_never_cached
+```
+
+*Sabotage C — the transport leaves the cache key:*
+
+```
+2 failed, 918 passed, 2 deselected
+FAILED tests/test_cache_keys.py::test_dialect_model_and_transport_are_all_in_the_namespace
+FAILED tests/test_cache_keys.py::test_a_streaming_request_and_a_body_request_are_different_entries
+```
+
+Only the key-level tests notice, and that is **honest rather than a gap**: `stream` is also
+inside the request body, so the exact hash separates the two transports even without the
+namespace's help. The namespace's `transport` is defence in depth, and its value is that a
+dialect signalling streaming out of band would stay separated by construction. Recorded in
+H-043 rather than papered over.
+
+*Sabotage D — the semantic search ignores `context_hash`*, so a different system prompt
+matches. *Sabotage E — the embedding model leaves the filter*, so two vector spaces are
+compared. Both fail in both store implementations, which is the contract suite paying for
+itself:
+
+```
+2 failed, 918 passed   FAILED tests/test_cache_store.py::test_a_different_context_never_matches[memory]
+                       FAILED tests/test_cache_store.py::test_a_different_context_never_matches[postgres]
+
+2 failed, 918 passed   FAILED tests/test_cache_store.py::test_a_different_embedding_model_never_matches[memory]
+                       FAILED tests/test_cache_store.py::test_a_different_embedding_model_never_matches[postgres]
+```
+
+*Sabotage F — the cache is consulted before the rate limiter* (H-046 run backwards):
+
+```
+2 failed, 918 passed, 2 deselected
+FAILED tests/test_cache_gate.py::test_a_hit_still_consumes_its_rate_limit
+FAILED tests/test_cache_gate.py::test_a_rate_limited_request_never_reaches_the_cache
+```
+
+*Sabotage G — the `disabled` check is removed*, so every tenant caches whether they asked
+or not. This one is worth reading for what it says about the **rest** of the suite:
+
+```
+12 failed, 908 passed, 2 deselected
+FAILED tests/test_admin_cache.py::test_put_switches_caching_on_and_it_bites_immediately
+FAILED tests/test_admin_cache.py::test_delete_disables_and_purges
+FAILED tests/test_admin_usage.py::test_totals_aggregate_a_tenants_spend
+FAILED tests/test_budget_stampede.py::test_every_refusal_is_a_ledger_row_and_no_provider_call
+FAILED tests/test_cache_gate.py::test_a_disabled_tenant_does_no_cache_work_at_all
+FAILED tests/test_cache_gate.py::test_a_disabled_tenants_row_says_so
+FAILED tests/test_metering.py::test_the_new_price_does_apply_to_the_next_request
+FAILED tests/test_rate_limit_gate.py::test_a_requests_per_minute_limit_admits_exactly_its_capacity
+FAILED tests/test_rate_limit_hammer.py::test_the_hammer
+FAILED tests/test_rate_limit_hammer.py::test_the_sabotage_over_admits
+FAILED tests/test_request_context.py::test_the_log_shape_is_complete
+FAILED tests/test_tool_blocks.py::test_escaped_unicode_survives_exactly_as_written
+```
+
+Seven of those twelve belong to **earlier phases** — metering, budgets, rate limits, tool
+fidelity — and they fail because a cache that switches itself on changes what every one of
+those tests observes. That is the clearest available evidence that "off by default" is what
+makes this phase genuinely additive (invariant 7): the 924 green above are green *because*
+no pre-existing test's behaviour moved.
+
+### The gate's clauses, individually
+
+*Exact hit/miss matrix.* `tests/test_cache_gate.py` — a second identical request hits with
+one upstream call for two requests; a different question misses; the two dialects have
+separate namespaces; a streaming caller does not hit a body entry; an `exact` tenant never
+embeds; and an exact hit in `semantic` mode still never embeds.
+
+*Semantic hit on a paraphrase, miss on a hard negative.* Against the committed corpus and
+**real** `bge-small` vectors:
+
+```
+$ uv run pytest tests/test_cache_semantic.py -q
+15 passed in 0.10s
+```
+
+The load-bearing one is `test_every_paraphrase_in_the_corpus_resolves_to_its_own_question`:
+12 seeds and 24 probes through the whole gateway, every hit checked against
+`x-headroom-cache-source` for **which question it actually answers**. At the shipped
+default: 24 hits, 0 resolved to a different source question. The near-miss tests are the
+other half — same template, different artist, provably different answers in the key.
+
+*Streamed replay.* `tests/test_cache_replay.py`, 16 tests: byte-identical bodies and
+streams on both dialects, identical event sequences, `[DONE]` preserved, streams recorded
+from 1-byte chunking replaying intact, the H-016 reasoning fixtures (literal 2-, 3-, and
+4-byte UTF-8) surviving, upstream headers deliberately *not* replayed, and a replayed
+stream writing an ordered context and its own ledger row.
+
+*The poison attempts.* `tests/test_cache_poison.py`, 18 tests, every one driving the real
+gateway with caching on and the request eligible: a cut stream, a stream that simply stops,
+a `max_tokens` truncation (streamed and not), the OpenAI `length` case from Phase 1's live
+smoke, upstream 400/429/500/529, a timeout, a connect failure, a response carrying a tool
+call, a request declaring tools, a tool_result conversation, a budget refusal, and a
+response over the size bound. Each asserts the cache is still empty — and the file ends
+with `test_the_happy_path_really_does_store`, the control without which "the cache is
+empty" would be satisfied by a cache that never stores anything.
+
+*Ledger rows.* `test_a_hits_row_is_distinguishable_from_an_upstream_call` checks every
+column that could imply an upstream call for not implying one, and checks the avoided cost
+equals the source row's actual cost.
+
+*Threshold config round-trip.* `test_the_threshold_round_trips_exactly` (0.7, 0.85, 0.9123,
+0.99 through `NUMERIC(5,4)` and back) and — the half a GET cannot show —
+`test_the_threshold_that_round_trips_is_the_one_the_gate_uses`, which puts a threshold
+either side of a known 0.82 pair and asserts the hit becomes a miss.
+
+*Disabled-tenant zero compute.* `test_a_disabled_tenant_does_no_cache_work_at_all` drives
+three requests and asserts `embedder.calls == 0` **and** `store.reads == 0` — read off the
+objects' own counters, not asserted about.
+
+### What CI caught that the operator's machine could not
+
+The first PR-5 run failed `lint + typecheck` on two lines:
+
+```
+headroom/cache/embedding.py:192: error: Cannot find implementation or library stub
+                                 for module named "sentence_transformers"  [import-not-found]
+tests/support/build_semantic_corpus.py:153: error: Cannot find implementation or library
+                                 stub for module named "sentence_transformers"  [import-not-found]
+```
+
+Both files import `sentence_transformers` lazily, inside a function, and both were green
+locally — because the machine that built this phase had run `uv sync --extra embed` to
+generate the corpus. H-004 deliberately does **not** install that extra in CI, so
+`make typecheck` quietly meant two different things in the two places, and the *keyless*
+one was the one nobody was running.
+
+Fixed with a `[[tool.mypy.overrides]]` for `sentence_transformers.*`, the same shape and
+the same reason as the existing `boto3` one: the package ships no `py.typed` marker, its
+`encode` result is converted to `list[list[float]]` at the boundary, and nothing is lost
+by ignoring its missing stubs. Verified by *reproducing* CI's environment locally
+(`uv sync`, typecheck, test, `uv sync --extra embed`) rather than by pushing and hoping —
+which is also how the "924 pass with no torch" line above got measured.
+
+Worth stating plainly: this is CI doing the job H-004 built it for. A keyless job that
+only ever runs the same environment the operator has is a keyless job in name.
+
+### The bug the container run found
+
+The end-to-end run caught something the whole keyless suite had missed: **the embedder
+probe did not probe.** `PUT /admin/cache {"mode": "semantic"}` called
+`LazyEmbedder.resolve()`, which *built* a `BGEEmbedder` — and constructing one touches no
+weight file. On an image with no `sentence-transformers` installed it returned **200**, and
+an operator would have believed semantic caching was on while every request bypassed
+silently. A probe that does not probe is worse than no probe, because it reads as a
+guarantee.
+
+Fixed by giving `Embedder` a `load()` method that `BGEEmbedder` implements by pulling the
+weights, with `_inner` assigned only after a successful load so a retry really retries. Two
+tests now cover it —
+`test_embedding.py::test_resolving_a_missing_model_raises_rather_than_returning_an_object`
+and `test_admin_cache.py::test_enabling_semantic_without_an_embedder_is_a_503_naming_the_extra`
+— and the corrected behaviour is step 3 of the container run below.
+
+### End to end through the real container, on a wiped volume, keyless
+
+```
+$ docker compose down -v && make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 5 migration(s): 0001_tenants_and_virtual_keys, 0002_usage_ledger,
+                        0003_ledger_budget_columns, 0004_rate_limits, 0005_response_cache
+
+### 2. caching is OFF for a brand-new tenant — the shipped default
+{"mode":"disabled","ttl_s":null,"similarity_threshold":null,"effective_ttl_s":86400,
+ "effective_similarity_threshold":0.9,"embedding_model":"BAAI/bge-small-en-v1.5",
+ "entries":0,"semantic_entries":0,"body_bytes":0}
+
+### 3. ask for SEMANTIC on an image with no embedder — 503, naming the fix
+status=503
+{"error":{"type":"embedder_unavailable","message":"embedder 'BAAI/bge-small-en-v1.5' needs
+ sentence-transformers, which is not installed; run `uv sync --extra embed`, or set
+ HEADROOM_EMBEDDER=hashing"},"headroom":{"reason":"embedder_unavailable", …}}
+
+### 4. switch on EXACT caching (needs no embedder at all)     -> 200, mode: exact
+
+### 5. first request -> miss, and it populates
+x-headroom-request-id: hr_cc298dd31937460da608429e2082d0d9
+
+### 6. the identical request -> HIT, and no provider was called
+x-headroom-cache: cache_hit_exact
+x-headroom-cache-source: hr_cc298dd31937460da608429e2082d0d9
+x-headroom-cache-age: 0
+{"id":"msg_mock_6ca20aa0926a68c6","type":"message","role":"assistant","model":"mock-model-1",
+ "content":[{"type":"text","text":"mock reply from mock-model-1"}],"stop_reason":"end_turn",
+ "usage":{"input_tokens":11,"output_tokens":7}}
+
+### 7. the SAME question with tools declared -> BYPASS, nothing read, nothing written
+"cache_disposition":"cache_bypass","cache_reason":"tools_present"
+
+### 8. the same question STREAMED -> a miss: transport is part of the key
+(no cache header -> not a hit)
+
+### 9. streamed again -> a byte-identical replay, first token already there
+x-headroom-cache: cache_hit_exact
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_mock_6ca20aa0926a68c6", …}}
+
+### 10. what the database actually holds
+  req_hash  | transport | stop_reason | cost_status |    usd_cost    | exact_only | bytes
+------------+-----------+-------------+-------------+----------------+------------+-------
+ a75e23a37c | body      | end_turn    | priced      | 0.000011500000 | t          |   251
+ 0792ace48e | stream    | end_turn    | priced      | 0.000011500000 | t          |  1157
+
+### 11. the ledger — a hit is not an upstream call wearing a hat
+ cache_disposition | provider | up  | in_t | out_t |    usd_cost    | cache_avoided_usd | cost_status  | overhead_ms | ttft_ms
+-------------------+----------+-----+------+-------+----------------+-------------------+--------------+-------------+---------
+ cache_miss        | mock     | 200 |   11 |     7 | 0.000011500000 |                   | priced       |       0.009 | 334.216
+ cache_hit_exact   |          |     |      |       | 0.000000000000 |    0.000011500000 | not_billable |             |   0.893
+ cache_bypass      | mock     | 200 |   11 |     7 | 0.000011500000 |                   | priced       |       0.008 |   6.664
+ cache_miss        | mock     | 200 |   11 |     7 | 0.000011500000 |                   | priced       |       0.046 |   9.074
+ cache_hit_exact   |          |     |      |       | 0.000000000000 |    0.000011500000 | not_billable |             |   1.724
+ cache_hit_exact   |          |     |      |       | 0.000000000000 |    0.000011500000 | not_billable |             |   1.334
+
+### 12. the totals still count only tokens a model produced
+[{"requests":6,"input_tokens":33,"output_tokens":21,"reasoning_tokens":0,
+  "usd_cost":"0.000034500000","unpriced_requests":0,"errored_requests":0}]
+
+### 14. DELETE disables and purges
+{"mode":"disabled","entries":0, …}
+entries left in response_cache: 0
+```
+
+Three things in that output are the phase. **`334.216` → `0.893` ms** is the demo moment,
+measured rather than asserted. **33 in / 21 out over 6 requests** is exactly the three
+upstream calls at 11/7 each — the three hits contributed no tokens, so the totals mean what
+they meant before this phase. And `overhead_ms` is blank on every hit, because
+`passthrough_overhead_ms` is measured *from* a first upstream byte and there was not one.
+
+### The semantic layer against the real model
+
+The container carries no embedder by design, so this is the `uv sync --extra embed` path:
+the gateway on the host, the compose Postgres behind it, and **`BAAI/bge-small-en-v1.5`
+loaded on CPU by the `PUT` that asked for semantic caching**.
+
+```
+### 1. semantic caching on, at the shipped default threshold (0.90)
+
+### 2. seed the cache
+    Q: What was Radiohead's total streaming revenue in 2019?     -> miss, one upstream call
+
+### 3. a PARAPHRASE — different words, same question
+    Q: In 2019, how much streaming revenue did Radiohead bring in overall?
+x-headroom-cache: cache_hit_semantic
+x-headroom-cache-source: hr_a2f7dac0691941f0967fb14050beda11
+x-headroom-cache-similarity: 0.97643
+
+### 4. a NEAR-MISS — same template, different artist. The dangerous class.
+    Q: What was Coldplay's total streaming revenue in 2019?
+    (no cache header -> MISS: it went upstream, as it must)
+
+### 5. empty the cache, drop the threshold to 0.70, and seed ONLY Radiohead
+1 entry, probe: What was Radiohead's total streaming revenue in 2019?
+    now ask the near-miss:  What was Coldplay's total streaming revenue in 2019?
+x-headroom-cache: cache_hit_semantic
+x-headroom-cache-similarity: 0.83732
+
+### 6. WHICH question did that answer come from? Checked, not narrated.
+ cache_disposition  | cache_similarity |                 answers_the_question
+--------------------+------------------+-------------------------------------------------------
+ cache_hit_semantic |          0.83732 | What was Radiohead's total streaming revenue in 2019?
+
+### 7. the ledger rows, with the similarity of every hit
+ cache_disposition  | cache_similarity |   served_by    | provider |    usd_cost    | cache_avoided_usd
+--------------------+------------------+----------------+----------+----------------+-------------------
+ cache_miss         |                  |                | mock     | 0.000011500000 |
+ cache_hit_semantic |          0.97643 | hr_a2f7dac0691 |          | 0.000000000000 |    0.000011500000
+ cache_miss         |                  |                | mock     | 0.000011500000 |
+ cache_miss         |                  |                | mock     | 0.000011500000 |
+ cache_hit_semantic |          0.83732 | hr_5dc9a94feb2 |          | 0.000000000000 |    0.000011500000
+```
+
+Step 6 is the whole project in one table: a Coldplay question answered from a Radiohead
+entry, at a threshold somebody chose. **That is §P8.H1's silent wrong answer**, reproduced
+on purpose on real hardware, and the reason the threshold is per-tenant configuration
+rather than a constant.
+
+The first version of that demo got step 5 **wrong** and it is worth recording. It lowered
+the threshold and re-asked the near-miss *without purging* — but step 4's miss had already
+populated a Coldplay entry of its own, so the 0.98 hit that followed was Coldplay's own
+answer to Coldplay's question. Correct behaviour, narrated as poison. The purge is now the
+control, and the claim is checked by joining the ledger row to the entry's `probe` rather
+than asserted in prose.
+
+**Assumed-facts register (§0.4)** — nothing was due at this gate. One adjacent fact was
+verified in passing: `pgvector/pgvector:pg16` ships pgvector **0.8.6**, so `hnsw` with
+`vector_cosine_ops` is available and the index in `0005` is created rather than skipped
+(H-001's promise, cashed four phases later).
+
+**Spend** — $0.00. Every test above ran on the MockProvider; the semantic evidence ran on
+`bge-small-en-v1.5` on the operator's own CPU. No provider API was called in this phase.
+
+**Live smokes** — untouched and unaffected. They provision their own tenant (H-029), which
+now means a tenant with caching **disabled**, so both smokes exercise pure passthrough
+exactly as they did before this phase — which is also, and not by coincidence, the H2
+configuration H-047 pre-registers.
+
+**Operator verification** — the exact commands are in the PR description.
+
+CI on PR-5 ([run 31337135353](https://github.com/sergioavilax/headroom/actions/runs/31337135353)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31337135353 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 130 source files
+pytest (…service containers) | ===== 924 passed, 2 deselected, 1 warning in 25.61s =====
+gateway image builds and serves | gateway healthy
+```
+
+**924 passed, 0 skipped in CI**, on a runner with **no `embed` extra installed** — no
+torch, no model, no network to HuggingFace. Every similarity assertion in this phase still
+ran, against real `bge-small-en-v1.5` numbers, out of the committed corpus. That is the
+whole point of the fixture, and CI is where it is proved rather than claimed.
+
+The `image` job is worth one line too: it builds the container **without** the extra and
+smokes `/healthz`, which is why `LazyEmbedder` had to be lazy in the first place — a
+gateway that imported torch at construction could not have booted there.

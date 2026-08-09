@@ -37,7 +37,8 @@ _COLUMNS = """
     price_effective_from, usd_per_mtok_in, usd_per_mtok_out, usd_cost, cost_status,
     budget_status, budget_reserved_usd, budget_settled_usd,
     upstream_latency_ms, ttft_ms, passthrough_overhead_ms, total_ms,
-    cache_disposition, failover_hops, started_at, created_at
+    cache_disposition, cache_avoided_usd, cache_similarity, cache_source_request_id,
+    failover_hops, started_at, created_at
 """
 
 _INSERT = f"""
@@ -48,7 +49,8 @@ INSERT INTO usage_ledger (
     price_effective_from, usd_per_mtok_in, usd_per_mtok_out, usd_cost, cost_status,
     budget_status, budget_reserved_usd, budget_settled_usd,
     upstream_latency_ms, ttft_ms, passthrough_overhead_ms, total_ms,
-    cache_disposition, failover_hops, started_at
+    cache_disposition, cache_avoided_usd, cache_similarity, cache_source_request_id,
+    failover_hops, started_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11, $12, $13, $14,
@@ -56,7 +58,8 @@ INSERT INTO usage_ledger (
     $20, $21, $22, $23, $24,
     $25, $26, $27,
     $28, $29, $30, $31,
-    $32, $33, $34
+    $32, $33, $34, $35,
+    $36, $37
 )
 -- Idempotent by request id: the writer may retry, and a second row would double-bill.
 ON CONFLICT (request_id) DO NOTHING
@@ -111,6 +114,9 @@ def _entry(row: asyncpg.Record) -> LedgerEntry:
         passthrough_overhead_ms=row["passthrough_overhead_ms"],
         total_ms=row["total_ms"],
         cache_disposition=row["cache_disposition"],
+        cache_avoided_usd=row["cache_avoided_usd"],
+        cache_similarity=row["cache_similarity"],
+        cache_source_request_id=row["cache_source_request_id"],
         failover_hops=row["failover_hops"],
         started_at=row["started_at"],
         created_at=row["created_at"],
@@ -191,6 +197,9 @@ class PostgresLedgerStore(LedgerStore):
                 entry.passthrough_overhead_ms,
                 entry.total_ms,
                 entry.cache_disposition,
+                entry.cache_avoided_usd,
+                entry.cache_similarity,
+                entry.cache_source_request_id,
                 entry.failover_hops,
                 entry.started_at,
             )
