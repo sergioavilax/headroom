@@ -47,6 +47,22 @@ from headroom.core.budgets import (
     window_for,
 )
 from headroom.core.ledger import LedgerEntry, LedgerQuery, LedgerStore, UsageTotals
+from headroom.core.limits import (
+    NANOS_PER_S,
+    REFUSED_EXCEEDS_CAPACITY,
+    REFUSED_RATE_LIMITED,
+    BucketKey,
+    BucketState,
+    Consumption,
+    RateLimit,
+    RateLimitStore,
+    available_units,
+    burst_ns,
+    emission_interval_ns,
+    from_ns,
+    reset_after_s,
+    to_ns,
+)
 from headroom.core.storage import (
     KeyRecord,
     Tenant,
@@ -55,7 +71,12 @@ from headroom.core.storage import (
     VirtualKey,
 )
 
-__all__ = ["InMemoryBudgetStore", "InMemoryLedgerStore", "InMemoryTenantStore"]
+__all__ = [
+    "InMemoryBudgetStore",
+    "InMemoryLedgerStore",
+    "InMemoryRateLimitStore",
+    "InMemoryTenantStore",
+]
 
 
 def _now() -> datetime:
@@ -113,6 +134,7 @@ class InMemoryTenantStore(TenantStore):
             active=current.active if active is None else active,
             created_at=current.created_at,
             updated_at=_now(),
+            limits=current.limits,
         )
         self._tenants[tenant_id] = updated
         return updated
@@ -179,6 +201,7 @@ class InMemoryTenantStore(TenantStore):
             created_at=current.created_at,
             updated_at=_now(),
             revoked_at=current.revoked_at,
+            limits=current.limits,
         )
         self._keys[key_id] = updated
         return updated
@@ -200,9 +223,26 @@ class InMemoryTenantStore(TenantStore):
             created_at=current.created_at,
             updated_at=_now(),
             revoked_at=_now(),
+            limits=current.limits,
         )
         self._keys[key_id] = revoked
         return revoked
+
+    async def set_tenant_limits(self, tenant_id: str, limits: RateLimit) -> Tenant | None:
+        current = self._tenants.get(tenant_id)
+        if current is None:
+            return None
+        updated = replace(current, limits=limits, updated_at=_now())
+        self._tenants[tenant_id] = updated
+        return updated
+
+    async def set_key_limits(self, key_id: str, limits: RateLimit) -> VirtualKey | None:
+        current = self._keys.get(key_id)
+        if current is None:
+            return None
+        updated = replace(current, limits=limits, updated_at=_now())
+        self._keys[key_id] = updated
+        return updated
 
     async def find_by_hash(self, key_hash: str) -> KeyRecord | None:
         key_id = self._by_hash.get(key_hash)
@@ -506,6 +546,82 @@ class InMemoryBudgetStore(BudgetStore):
             window_id=window_id,
             expires_at=datetime.fromtimestamp(expires, tz=UTC),
         )
+
+
+class InMemoryRateLimitStore(RateLimitStore):
+    """Token buckets in a dict, with the DynamoDB store's semantics and none of its races.
+
+    One number per bucket, exactly as the real store holds one attribute per item: the
+    theoretical arrival time in epoch nanoseconds. Every rule the two conditional writes
+    encode is reimplemented here in the obvious way — the clamp that stops an idle bucket
+    accumulating credit is a ``max()``, which is precisely the term DynamoDB cannot
+    express and therefore precisely the reason the real store has two branches.
+
+    What it cannot reproduce is the thing that makes the DynamoDB implementation correct:
+    that refill and consumption are one operation. Nothing here can be interleaved, so a
+    hammer run against it would prove nothing. See the module docstring.
+    """
+
+    __slots__ = ("_tats",)
+
+    def __init__(self) -> None:
+        #: bucket id -> theoretical arrival time, epoch nanoseconds.
+        self._tats: dict[str, int] = {}
+
+    async def consume(
+        self, key: BucketKey, *, limit_per_min: int, cost: int, when: datetime
+    ) -> Consumption:
+        interval = emission_interval_ns(limit_per_min)
+        capacity_ns = burst_ns(limit_per_min)
+        charge = cost * interval
+        now = to_ns(when)
+        tat = self._tats.get(key.id, now)
+
+        if charge > capacity_ns:
+            return Consumption(
+                key=key,
+                admitted=False,
+                limit_per_min=limit_per_min,
+                available=available_units(tat, now, limit_per_min),
+                refusal=REFUSED_EXCEEDS_CAPACITY,
+                cost=cost,
+            )
+
+        ceiling = now + capacity_ns - charge
+        if tat > ceiling:
+            return Consumption(
+                key=key,
+                admitted=False,
+                limit_per_min=limit_per_min,
+                available=available_units(tat, now, limit_per_min),
+                retry_after_s=max(1, -(-(tat - ceiling) // NANOS_PER_S)),
+                refusal=REFUSED_RATE_LIMITED,
+                cost=cost,
+            )
+
+        updated = max(tat, now) + charge
+        self._tats[key.id] = updated
+        return Consumption(
+            key=key,
+            admitted=True,
+            limit_per_min=limit_per_min,
+            available=available_units(updated, now, limit_per_min),
+            cost=cost,
+        )
+
+    async def state(self, key: BucketKey, *, limit_per_min: int, when: datetime) -> BucketState:
+        now = to_ns(when)
+        tat = max(self._tats.get(key.id, now), now)
+        return BucketState(
+            key=key,
+            limit_per_min=limit_per_min,
+            available=available_units(tat, now, limit_per_min),
+            reset_after_s=reset_after_s(tat, now),
+            reset_at=from_ns(tat),
+        )
+
+    async def clear(self, key: BucketKey) -> bool:
+        return self._tats.pop(key.id, None) is not None
 
 
 def _matches(entry: LedgerEntry, query: LedgerQuery) -> bool:

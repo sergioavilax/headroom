@@ -257,7 +257,7 @@ class DynamoBudgetStore(BudgetStore):
         return self._client
 
     async def _ready(self) -> None:
-        await self._client.ensure_table(self._table)
+        await self._client.ensure_table(self._table, partition_key="scope_id")
 
     async def _update(self, **kwargs: Any) -> dict[str, Any]:
         """One ``UpdateItem``, always asking for the item a failed condition saw.

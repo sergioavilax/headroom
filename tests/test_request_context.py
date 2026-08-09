@@ -214,6 +214,11 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
         "budget_status",
         "budget_reserved_usd",
         "budget_settled_usd",
+        # Phase 4b. Two fields, not five: a token bucket never settles, so there is no
+        # "what it ended up costing" to record. On a 429 these say which of the four
+        # possible buckets refused, which no HTTP status can carry.
+        "rate_limit_status",
+        "rate_limit_scope",
         "error_source",
         "error_reason",
         "upstream_latency_ms",
@@ -228,6 +233,10 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
     # never reached the gate at all.
     assert fields["budget_status"] == "no_budget"
     assert fields["budget_reserved_usd"] is None
+    # And no limit applied, which is a *third* state beyond ok/limited: the gate ran and
+    # found nothing configured, so it consumed nothing and wrote nothing.
+    assert fields["rate_limit_status"] is None
+    assert fields["rate_limit_scope"] is None
 
 
 async def test_a_recorded_outcome_is_never_overwritten_by_the_backstop(

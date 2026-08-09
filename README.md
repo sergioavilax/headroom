@@ -190,6 +190,60 @@ Three more things worth knowing:
 
 Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-030 … H-034.
 
+## Rate limits that cannot be raced either
+
+The same discipline, one primitive over. Limits are **requests per minute and tokens per
+minute, per key and per tenant**, and a scope is unlimited until you say otherwise:
+
+```bash
+curl -sS -X PUT localhost:8080/admin/limits/tenant/$TENANT -H "$ADMIN" \
+     -H 'content-type: application/json' -d '{"requests_per_min": 60, "tokens_per_min": 100000}'
+
+curl -sS -H "$ADMIN" localhost:8080/admin/limits/tenant/$TENANT
+# {"requests_per_min":60,"tokens_per_min":100000,
+#  "buckets":[{"dimension":"requests","available":57,"reset_after_s":3, …}, …]}
+```
+
+`PUT` **replaces**: an omitted dimension is *unlimited*, not *unchanged*. `DELETE` clears
+the limits and empties the buckets — the incident-response route.
+
+**A token bucket cannot be stored as a count of tokens.** The obvious item — `tokens`
+plus `refilled_at` — has to be read, refilled in application code, checked, and written
+back, which is D-019 again in a different noun. So the bucket is stored as **a time**:
+one number, the moment it will next be full. Admission becomes a bare comparison, and
+therefore one conditional write:
+
+```
+ConditionExpression: tat <= :now + capacity_ns - :charge_ns
+UpdateExpression:    SET tat = tat + :charge_ns
+```
+
+`tests/test_rate_limit_hammer.py` fires 64 concurrent requests at a bucket holding 5, on
+DynamoDB Local, and asserts exactly 5 are served — then reruns it against **three**
+broken limiters. The first over-admits and proves the hammer works. The other two *pass
+the hammer* and fail elsewhere, which is the more useful lesson: a fixed-window counter
+is perfectly atomic and admits twice the limit across every minute boundary, and a GCRA
+without its clamp is perfectly atomic and admits an hour's worth of traffic after an hour
+of quiet. **Atomicity is necessary and it is not sufficient.** The numbers are in
+[docs/PHASE_LOG.md](docs/PHASE_LOG.md).
+
+Three more things worth knowing:
+
+- **A refusal is `429` with `retry-after`** — the case that status was invented for, and
+  the exact opposite of the budget's `402`: a rate limit heals with time and the amount
+  of time is known, so the honest thing is to say so.
+- **Headroom's 429 is distinguishable from a provider's**, which Phase 6's failover logic
+  will need: `x-headroom-error-source: gateway`, `x-headroom-ratelimit-scope`, and
+  `headroom.reason: rate_limited`. The header is the load-bearing marker, because the
+  whole `x-headroom-*` namespace is stripped from every upstream response — an upstream
+  cannot claim to be the gateway.
+- **Nothing settles.** A budget is a stock and a rate limit is a flow: an over-charge
+  against a bucket is erased by the bucket's own refill, so there is no compensating
+  release anywhere on the path — and therefore no operation whose absence breaks an
+  invariant.
+
+Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-035 … H-039.
+
 Running the local vLLM backends: [docs/vllm.md](docs/vllm.md).
 
 MIT licensed.

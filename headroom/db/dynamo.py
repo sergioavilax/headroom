@@ -43,9 +43,11 @@ from botocore.exceptions import BotoCoreError, ClientError
 from headroom.core.errors import ControlPlaneUnavailable
 
 __all__ = [
+    "BUCKETS_TABLE_ENV",
     "BUDGETS_TABLE_ENV",
     "DYNAMODB_ENDPOINT_ENV",
     "DynamoClient",
+    "buckets_table_name",
     "budgets_table_name",
     "dynamodb_endpoint_url",
 ]
@@ -57,6 +59,15 @@ DYNAMODB_ENDPOINT_ENV: Final = "DYNAMODB_ENDPOINT_URL"
 #: The table holding budget scopes. One name, one table, both locally and on AWS.
 BUDGETS_TABLE_ENV: Final = "HEADROOM_BUDGETS_TABLE"
 DEFAULT_BUDGETS_TABLE: Final = "headroom_budgets"
+
+#: The table holding token buckets (Phase 4b). A *second* table rather than a second
+#: item shape in the first one: the two have nothing in common but a datastore. Budget
+#: items are long-lived, one per budgeted tenant, and must never be garbage-collected;
+#: bucket items are ephemeral, one per scope per dimension, and are *safe* to delete
+#: because an absent bucket and a full bucket are the same state (docs/DECISIONS.md
+#: H-035). One table cannot have both retention policies.
+BUCKETS_TABLE_ENV: Final = "HEADROOM_BUCKETS_TABLE"
+DEFAULT_BUCKETS_TABLE: Final = "headroom_buckets"
 
 #: Region when nothing states one. Only reached on the emulator path — a real
 #: deployment has a region from its environment or its task metadata.
@@ -99,6 +110,11 @@ def dynamodb_endpoint_url() -> str | None:
 def budgets_table_name() -> str:
     """The budgets table's name."""
     return os.environ.get(BUDGETS_TABLE_ENV) or DEFAULT_BUDGETS_TABLE
+
+
+def buckets_table_name() -> str:
+    """The token-bucket table's name."""
+    return os.environ.get(BUCKETS_TABLE_ENV) or DEFAULT_BUCKETS_TABLE
 
 
 def _client_kwargs(endpoint_url: str | None) -> dict[str, Any]:
@@ -220,23 +236,28 @@ class DynamoClient:
 
     # --- the table -------------------------------------------------------------------
 
-    async def ensure_table(self, table: str) -> None:
-        """Create the budgets table if it is not there. Idempotent, memoized per client.
+    async def ensure_table(self, table: str, *, partition_key: str) -> None:
+        """Create a table if it is not there. Idempotent, memoized per client.
 
-        One code path for compose, CI, and AWS. In Phase 9 the table is created by
+        One code path for compose, CI, and AWS. In Phase 9 the tables are created by
         Terraform, so the ``DescribeTable`` succeeds and nothing here creates anything —
         which is why this is a lazy check rather than a startup step, and why the
         creation branch is written to survive losing a race with another process.
+
+        ``partition_key`` is named by the caller rather than defaulted, because there
+        are now two tables with two different keys (``scope_id`` for budgets,
+        ``bucket_id`` for token buckets) and a default would silently create the wrong
+        schema for whichever store forgot to pass it.
         """
         if table in self._table_ready:
             return
         async with self._lock:
             if table in self._table_ready:
                 return
-            await self._create_if_missing(table)
+            await self._create_if_missing(table, partition_key)
             self._table_ready.add(table)
 
-    async def _create_if_missing(self, table: str) -> None:
+    async def _create_if_missing(self, table: str, partition_key: str) -> None:
         try:
             await self.call("describe_table", TableName=table)
             return
@@ -248,10 +269,10 @@ class DynamoClient:
             await self.call(
                 "create_table",
                 TableName=table,
-                AttributeDefinitions=[{"AttributeName": "scope_id", "AttributeType": "S"}],
-                KeySchema=[{"AttributeName": "scope_id", "KeyType": "HASH"}],
-                # On demand. A budget table's traffic is one write per request and
-                # nothing else; provisioning capacity for it would be a number nobody
+                AttributeDefinitions=[{"AttributeName": partition_key, "AttributeType": "S"}],
+                KeySchema=[{"AttributeName": partition_key, "KeyType": "HASH"}],
+                # On demand. These tables' traffic is a handful of writes per request and
+                # nothing else; provisioning capacity for them would be a number nobody
                 # can defend, and Phase 9's cost note says "pennies" for this reason.
                 BillingMode="PAY_PER_REQUEST",
             )

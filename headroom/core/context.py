@@ -112,6 +112,18 @@ class RequestContext:
     #: by the first settlement so a second one cannot move the counters again.
     budget_reservation: Reservation | None = None
 
+    # --- what the rate limiter said (Phase 4b) --------------------------------------
+    # Two fields, not five: a token bucket has no settlement, so there is no "what it
+    # ended up costing" to record here. The live numbers a *caller* needs are on the
+    # 429's headers, where a client can act on them; these two are for the operator
+    # reading a log line and for the Phase 7 dashboard charting which limit bites.
+    #: ok | limited. ``None`` means no limit applied to this request at all — an
+    #: uncapped tenant and key, or a request refused before the gate ran.
+    rate_limit_status: str | None = None
+    #: The bucket that refused, as ``tenant:requests`` / ``key:tokens``. Set only on a
+    #: refusal: on the way through, no single bucket is worth naming.
+    rate_limit_scope: str | None = None
+
     # --- when --------------------------------------------------------------------
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     received_at: float = field(default_factory=time.perf_counter)
@@ -259,6 +271,9 @@ class RequestContext:
             "budget_status": self.budget_status,
             "budget_reserved_usd": format_usd(self.budget_reserved_usd),
             "budget_settled_usd": format_usd(self.budget_settled_usd),
+            # Phase 4b. Which limit applied and, on a refusal, which bucket said no.
+            "rate_limit_status": self.rate_limit_status,
+            "rate_limit_scope": self.rate_limit_scope,
             "upstream_latency_ms": _round(self.upstream_latency_ms),
             "ttft_ms": _round(self.time_to_first_token_ms),
             "passthrough_overhead_ms": _round(self.passthrough_overhead_ms),

@@ -28,14 +28,21 @@ from headroom.core.budgets import Budget, BudgetScope, BudgetStore
 from headroom.core.config import GatewayConfig, ProviderSpec, RouteSpec
 from headroom.core.context import RequestContext
 from headroom.core.ledger import LedgerEntry, LedgerStore
+from headroom.core.limits import SCOPE_TENANT, BucketKey, BucketState, RateLimit, RateLimitStore
 from headroom.core.storage import Tenant, TenantStore, VirtualKey
-from headroom.db.memory import InMemoryBudgetStore, InMemoryLedgerStore, InMemoryTenantStore
+from headroom.db.memory import (
+    InMemoryBudgetStore,
+    InMemoryLedgerStore,
+    InMemoryRateLimitStore,
+    InMemoryTenantStore,
+)
 from headroom.metering.meter import Meter
 from headroom.metering.prices import load_price_book
 from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.policy.budgets import BudgetGate
 from headroom.policy.keys import display_prefix, hash_key, mint_key
+from headroom.policy.limits import RateLimiter
 from headroom.providers.base import UpstreamRequest
 from headroom.providers.mock import MockProvider, MockScriptBook
 from headroom.providers.registry import ProviderRegistry
@@ -67,7 +74,10 @@ def mock_only_config() -> GatewayConfig:
 
 @asynccontextmanager
 async def gateway_harness(
-    *, budgets: BudgetStore | None = None, tenant: str = "acme"
+    *,
+    budgets: BudgetStore | None = None,
+    limits: RateLimitStore | None = None,
+    tenant: str = "acme",
 ) -> AsyncIterator[GatewayHarness]:
     """Build a complete keyless gateway and serve it over ASGI.
 
@@ -102,6 +112,7 @@ async def gateway_harness(
     gate = BudgetGate(
         store=budgets if budgets is not None else InMemoryBudgetStore(), prices=prices
     )
+    limiter = RateLimiter(store=limits if limits is not None else InMemoryRateLimitStore())
     instance = Gateway(
         config=config,
         registry=registry,
@@ -111,6 +122,7 @@ async def gateway_harness(
         ledger=ledger,
         meter=Meter(prices=prices, writer=writer),
         budgets=gate,
+        limits=limiter,
         admin_token=ADMIN_TOKEN,
     )
 
@@ -135,6 +147,7 @@ async def gateway_harness(
                 meter=instance.meter,
                 writer=writer,
                 budgets=gate,
+                limits=limiter,
             )
     finally:
         await instance.aclose()
@@ -166,6 +179,11 @@ class GatewayHarness:
     #: Phase 4. The budget gate and the store behind it, so a test can set a cap, read
     #: the counters back, and drain the settlements a disconnect left detached.
     budgets: BudgetGate
+    #: Phase 4b. The rate limiter and its bucket store, so a test can set a limit and
+    #: read a bucket back. Note what is *absent*: any way to drain it. A bucket
+    #: consumption is synchronous and never settles, so there is nothing in flight to
+    #: wait for — the asymmetry with the budget gate above is the design, not an omission.
+    limits: RateLimiter
     admin_token: str = ADMIN_TOKEN
 
     # --- proxy requests -----------------------------------------------------------
@@ -318,3 +336,46 @@ class GatewayHarness:
     def scope(self) -> BudgetScope:
         """The budget scope of the harness's tenant."""
         return BudgetScope.tenant(self.tenant.id)
+
+    # --- rate limits --------------------------------------------------------------
+
+    async def set_limits(
+        self,
+        *,
+        requests_per_min: int | None = None,
+        tokens_per_min: int | None = None,
+        scope: str = SCOPE_TENANT,
+    ) -> None:
+        """Give the harness's tenant (or its key) a limit, effective immediately.
+
+        The cache invalidation is not decoration: the limits ride the ``Principal``
+        (H-037), so a test that set a limit without dropping the cached principal would
+        be asserting against the previous request's configuration.
+        """
+        limits = RateLimit(requests_per_min=requests_per_min, tokens_per_min=tokens_per_min)
+        if scope == SCOPE_TENANT:
+            await self.store.set_tenant_limits(self.tenant.id, limits)
+            self.authenticator.cache.invalidate_tenant(self.tenant.id)
+            return
+        await self.store.set_key_limits(self.key.id, limits)
+        self.authenticator.cache.invalidate_key(self.key.id)
+
+    def bucket_key(self, dimension: str, *, scope: str = SCOPE_TENANT) -> BucketKey:
+        """The bucket one dimension of one scope consumes from."""
+        scope_id = self.tenant.id if scope == SCOPE_TENANT else self.key.id
+        return BucketKey(scope_kind=scope, scope_id=scope_id, dimension=dimension)
+
+    async def bucket(
+        self,
+        dimension: str,
+        *,
+        limit_per_min: int,
+        scope: str = SCOPE_TENANT,
+        when: datetime | None = None,
+    ) -> BucketState:
+        """A bucket as it stands, for asserting on what a burst left behind."""
+        return await self.limits.store.state(
+            self.bucket_key(dimension, scope=scope),
+            limit_per_min=limit_per_min,
+            when=when if when is not None else datetime.now(UTC),
+        )

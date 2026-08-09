@@ -2114,3 +2114,540 @@ connected to either at startup could not do.
 
 **Spend** — $0.00. No provider API was called in this phase; every test ran on the
 MockProvider, and the container demo talked to nothing outside the compose network.
+
+---
+
+## Phase 4b — Token-bucket rate limits: the other half of Phase 4 (2026-08-09)
+
+The remainder BUILD_PLAN's Phase 4 names and PR-4 deferred, in its own PR
+(`claude/p4b-rate-limits`, GitHub #6). The plan's words are the spec: *"Token-bucket rate
+limits (**requests/min and tokens/min per key and per tenant**) … enforced on DynamoDB
+conditional writes (A1), against dynamodb-local in compose"*, with *"clean 429 responses
+with retry-after"* in the gate.
+
+**Shipped**
+
+- **Token buckets on the same conditional-write discipline as the budget gate**, and the
+  sentence this half rests on is the budget half's, one noun over: **every consumption
+  from a token bucket is a single conditional write to a single item.** No read to be
+  stale, no refill computed in application code, no window in which two racers can both
+  decide they fit.
+- **The bucket is stored as a *time*, not as a count of tokens** — the decision the whole
+  phase turns on (**H-035**). The obvious item, `tokens` plus `refilled_at`, needs
+  `min(capacity, tokens + elapsed*rate) - cost >= 0` evaluated at write time, and a
+  DynamoDB `ConditionExpression` compares an attribute to a value and does **no
+  arithmetic**. So a stored count can only be checked by reading it first, which is D-019
+  in a different noun. The GCRA formulation makes admission a bare comparison:
+
+  ```
+  T          emission interval = ceil(60s / limit)      nanoseconds per unit
+  D          capacity          = T * limit              nanoseconds
+  available  at now            = clamp((now + D - tat) / T, 0, limit)   <- derived
+  admit c    iff  tat <= now + D - c*T
+  on admit   tat := max(tat, now) + c*T
+  ```
+
+  `tat` — the moment the bucket will next be full — **is** the bucket. Everything else on
+  the item is for a human or for the garbage collector.
+- **`max(tat, now)` is recovered with a second conditional write, never a read**
+  (`headroom/db/buckets.py`). It is the one term the expression language cannot express,
+  and dropping it is not cosmetic: an idle bucket would accumulate unbounded credit.
+  Two mutually exclusive branches, each atomic on its own:
+
+  ```
+  hot    cond: tat > :now AND tat <= :ceiling      upd: SET tat = tat + :charge
+  cold   cond: attribute_not_exists(tat) OR tat <= :now
+                                                  upd: SET tat = :now_plus_charge
+  ```
+
+  Hot is attempted first, so under load — the only time a limiter's cost matters — **one
+  write is all that happens**. When it fails, `ReturnValuesOnConditionCheckFailure=ALL_OLD`
+  hands back the item the condition was evaluated against, so "cold" and "genuinely
+  refused" are told apart with **no second read**, and the refusal's `retry-after` is
+  computed from the very `tat` the condition saw. That is H-032's refusal-path trick
+  applied to a different question.
+- **Both scopes and both dimensions, from the first line** — BUILD_PLAN's *"per key and
+  per tenant"*, *"requests/min and tokens/min"* — as four independent items,
+  `key#…#requests`, `key#…#tokens`, `tenant#…#requests`, `tenant#…#tokens`, consumed
+  key-first and requests-first. **The asymmetry with H-033 (which deferred per-key
+  *budgets*) is real rather than inconsistent**: a budget admission takes a *hold* that
+  must be settled, so two of them need a compensating release; a bucket consumption holds
+  nothing and settles never. **H-036.**
+- **Nothing is refunded when a later bucket refuses**, and the argument is the phase's
+  best sentence: **a budget is a stock and a rate limit is a flow.** An over-charge
+  against a budget persists for a month and must be corrected; an over-charge against a
+  bucket is erased by the bucket's own refill within one emission interval — the refill
+  *is* the compensating transaction, it runs continuously, and it costs nothing. Writing a
+  refund would add the one thing this design does not have: an operation whose absence
+  breaks an invariant. Cost, stated and tested: the limiter is fractionally **stricter**
+  than configured, by at most one unit per bucket, for at most one interval. **H-036.**
+- **The limits live in Postgres, on the rows authentication already reads**
+  (`migrations/0004_rate_limits.sql`: `requests_per_min`, `tokens_per_min` on `tenants`
+  and `virtual_keys`, NULL meaning unlimited). BUILD_PLAN L2 settles it — *Postgres for
+  config, DynamoDB for token buckets and budget reservations only* — and the placement
+  pays for itself: `find_by_hash` already joins both rows, so both scopes' limits arrive
+  on the `Principal` with **no second query and no second cache**, inheriting H-018's
+  documented 5-second bound rather than inventing another. A limit change bites on the
+  next request in the process that made it, and within 5 s everywhere else. **H-037.**
+- **A refusal is 429 with `retry-after`** — the mirror image of H-032's 402, and for the
+  mirror reason: this one *does* heal with time and the amount of time is known exactly.
+  Anthropic and OpenAI both spell it `rate_limit_error`; the precision travels in
+  `headroom.reason`. One refusal deliberately carries **no** `retry-after`: a request
+  larger than the bucket's whole capacity, where every value would be a lie
+  (`rate_limit_exceeds_capacity`, reachable only on the tokens dimension). **H-038.**
+- **Headroom's 429 is distinguishable from a provider's, three independent ways**, which
+  is what P6's failover logic will read: `x-headroom-error-source: gateway`,
+  `x-headroom-ratelimit-scope: tenant:requests` (beside `-limit`, `-remaining`, `-reset`),
+  and `headroom.reason: rate_limited`. The headers are load-bearing and are only
+  trustworthy because of the one change that makes this a rule rather than a convention:
+  **`forward_response_headers` now strips the whole `x-headroom-*` namespace from every
+  upstream response**, success path included. It was already stripped from requests
+  (H-010); without the response half, "no provider sends such a header" would be a
+  property of today's providers rather than of this proxy. **H-038.**
+- **Order of gates, decided and pinned by tests** (**H-039**): authenticate (401) → read
+  the body → model scope (403) → route → provider scope (403) → **rate limit (429)** →
+  budget reservation (402) → open the upstream. Rate limit *before* budget for three
+  reasons: a rate-refused request must not take a hold it hands straight back (a
+  compensating action on the hot path is the shape this phase refuses to add); a burst is
+  exactly the traffic the budget gate is worst at, since every request in it serialises on
+  one item, so shedding it earlier is what keeps the cap's latency bounded; and a bucket
+  write contends on a per-scope item where a budget write contends on the tenant's single
+  one. Consequence, stated so it cannot look accidental: a request over *both* answers 429
+  and answers 402 on the retry.
+- **One estimate, two gates.** The limiter needs the request's size in tokens and the
+  budget needs it in dollars; they are the same bound from the same formula (H-034), so
+  `headroom/api/proxy.py` computes it once and hands it to both. `BudgetGate.admit` gained
+  an optional `estimate` parameter and recomputes when it is absent, so every existing
+  caller is unchanged. A pleasant side effect: the tokens limit **works on models the
+  budget cannot see** — an unpriced model estimates $0 and is invisible to the cap
+  (H-034's named trap), but its token counts are real, and the limiter needs no price book
+  at all.
+- **A second DynamoDB table, `headroom_buckets`, with its own TTL attribute.** Not more
+  items in the budgets table: the two have opposite retention rules. A budget item must
+  never be reaped; a bucket item is **safe** to reap, because an absent bucket and a full
+  bucket are the same state to the cold branch — which is also why DynamoDB TTL is right
+  here and was wrong for reservations (H-032 rejects it there). `expires_at` is written on
+  every consumption; *enabling* TTL is Terraform's job in Phase 9 and nothing depends on
+  the reaper running. `DynamoClient.ensure_table` now takes the partition key by name
+  rather than assuming the budget table's.
+- **`/admin/limits`**: `GET`/`PUT`/`DELETE /admin/limits/{scope_kind}/{scope_id}` and
+  `GET /admin/limits`, behind the same root token. The GET **joins two datastores** — the
+  Postgres row that says what the limit is, the DynamoDB item that says what is left of it
+  — because "why is this tenant getting 429s" is answered by neither alone. `PUT`
+  *replaces*: an omitted dimension is unlimited, not unchanged, which is the only reading
+  under which a limit can be removed at all. `DELETE` clears the limits **and** empties the
+  buckets: the incident-response route.
+- **A refusal is a ledger row**, exactly as a budget refusal is, and with **no new
+  migration**: `outcome`, `status_code`, and `error_reason` already carry it
+  (`rate_limited` / `rate_limit_exceeds_capacity`, 429, no upstream status, `not_billable`
+  with a `usd_cost` of zero that is a *measurement*). The log line grew two fields —
+  `rate_limit_status` and `rate_limit_scope` — because four buckets can refuse one request
+  and an HTTP status names none of them. Two fields and not five: a bucket never settles,
+  so there is no "what it ended up costing" to record.
+- **`RateLimitStore`: one interface, two implementations, one contract suite** — the H-021
+  shape, with the same honest caveat the budget store carries and for the same reason:
+  `InMemoryRateLimitStore` reproduces the *semantics*, not the *concurrency*.
+- **Tests: 670 keyless** (576 → 670), 2 live-marked and deselected by default. New files —
+  `test_rate_limit_store` (30, the contract suite over both implementations),
+  `test_rate_limit_gate` (18), `test_admin_limits` (18), `test_rate_limit_hammer` (9),
+  `test_429_distinguishability` (6); `test_tenant_store` grew 12 (44 → 56) for the
+  configuration half, and `test_live_smoke_wiring` one. Every Phase 0/1/2/3/4 test still
+  green, and **one** of them changed (deviation 2).
+- **Docs**: H-035 … H-039 in `docs/DECISIONS.md`; README gains a *Rate limits that cannot
+  be raced either* section; `.env.example` documents `HEADROOM_BUCKETS_TABLE` and the
+  admin call; `migrations/README.md` status table; the CI comment names the new
+  service-backed tests.
+
+**Deferred**
+
+- **A `daily` or per-route dimension.** BUILD_PLAN names requests/min and tokens/min and
+  nothing else. A third dimension is a third bucket per scope on every request.
+- **Concurrency limits** (max in-flight requests per tenant) — a genuinely different
+  primitive: it needs a *decrement on completion*, which is a settlement, which is the
+  budget's shape rather than this one's. Not named by the plan; not built.
+- **A separate `burst` knob.** Capacity is one window's worth of units, deliberately: a
+  second number to explain, a second column to migrate, and a second thing to get wrong,
+  for a case nobody has asked for. A tenant who wants a smaller burst wants a smaller
+  limit.
+- **Enabling DynamoDB TTL on `headroom_buckets`.** The attribute is written; turning the
+  feature on belongs to Phase 9's Terraform, where the table is really created.
+
+**Deviations**
+
+1. **`forward_response_headers` now strips `x-headroom-*` from upstream responses.** The
+   only behaviour change to existing code in this PR, and it is what makes the P6
+   distinction a property of the proxy rather than of today's providers (**H-038**).
+   Additive in effect — no provider sends such a header — and asserted from the hostile
+   direction by `test_429_distinguishability.py`, which has an upstream forge both markers
+   on the success path and the error path.
+2. **One Phase 1 test changed**, because the log-field set it pins grew:
+   `test_request_context.py::test_the_log_shape_is_complete`. The same class of change as
+   Phase 3's deviation 7 and Phase 4's deviation 4. No Phase 1 *behaviour* changed.
+3. **`DynamoClient.ensure_table` gained a required `partition_key` keyword**, because
+   there are now two tables with two different keys and a default would silently create
+   the wrong schema for whichever store forgot to pass it. Two call sites in
+   `tests/test_dynamo_client.py` updated; no behaviour changed.
+4. **`BudgetGate.admit` gained an optional `estimate` parameter.** Additive: passing
+   nothing recomputes exactly as before, which is what every existing caller and every
+   Phase 4 test does. It exists so one request is not measured twice, not so two callers
+   can measure it differently.
+5. **`Tenant` and `VirtualKey` gained a `limits` field**, and `TenantStore` two methods
+   (`set_tenant_limits`, `set_key_limits`). Assignment semantics, not `COALESCE`: on this
+   surface `None` means *clear*, and mixing that into the existing patchers would give one
+   spelling two meanings. `tests/test_tenant_store.py` asserts that renaming a key,
+   revoking it, and deactivating a tenant all preserve limits — uncapping something by
+   accident is invisible until the traffic arrives.
+6. **No new ledger columns**, unlike the budget half's `0003`. A refusal's outcome, status,
+   and reason already say everything the row needs; *which bucket* refused goes to the log
+   line and the response headers. `migrations/0004` touches only `tenants` and
+   `virtual_keys`, and is additive and nullable.
+7. **The plan's Phase 4 gate text is now met in full across the two PRs.** PR-4 met the
+   concurrency hammer and the sabotage for budgets and explicitly did not claim *"clean
+   429 responses with retry-after"*; this PR claims it, with the rate-limit analogue of
+   the stampede and three permanent sabotages.
+
+---
+
+**Gate** — *the hammer: a concurrent burst against a small bucket on dynamodb-local,
+asserting exact admit/refuse counts and bucket arithmetic, plus a sabotaged non-atomic
+variant that over-admits, permanent.*
+
+### THE HAMMER — the headline artifact
+
+64 concurrent requests through the whole gateway, against a bucket holding five, on
+DynamoDB Local. A limit of five per minute is an emission interval of exactly **twelve
+seconds**, and the burst completes in milliseconds — so no unit can refill during it and
+the count is exact rather than approximate. Twelve seconds of margin against a burst
+measured in hundredths is why this test does not flake.
+
+```
+$ uv run pytest tests/test_rate_limit_hammer.py -q -s
+
+ATOMIC BUCKET (shipped)
+  requests fired         64
+  served (200)           5
+  refused (429)          59
+  bucket capacity        5 requests / 60s
+  emission interval      12s per request
+  available after        0
+  full again in          60s
+  served / capacity      1.00x
+```
+
+Five served, fifty-nine refused, the bucket empty and exactly one window from full — five
+admissions at one instant is precisely one window of credit at twelve seconds each. Every
+one of the 64 got a real HTTP answer, every refusal carried a `retry-after` between 1 and
+60, no refused request reached the provider, and all 64 have a ledger row.
+
+### SABOTAGE A — D-019, in the noun every rate limiter uses
+
+The same gateway, the same limit, the same 64 requests. The only difference is a bucket
+that stores a **count**: read the item, add the tokens accrued since `refilled_at`, check,
+write it back. It is what a token bucket looks like in every tutorial, and it passes every
+single-threaded test in this repo.
+
+```
+SABOTAGED (read, refill, decide, write)
+  requests fired         64
+  served (200)           31
+  refused (429)          33
+  bucket capacity        5 requests / 60s
+  emission interval      12s per request
+  served / capacity      6.20x
+```
+
+Six times the bucket's capacity, and every one of those extra admissions really did reach
+a provider — the test asserts that too. (The exact figure varies run to run, which is what
+a race looks like; an earlier run of the identical code served 41. The assertion is
+`served > capacity`, not a number.)
+
+### SABOTAGE B — atomic, and still wrong: the fixed window
+
+The more instructive one, and the reason the hammer alone is not the whole gate. A counter
+per clock-minute, reset when the minute changes: the check and the increment are a
+**single conditional write**, evaluated against committed state, with nothing read.
+Everything sabotage A got wrong is right here. It is the most common "rate limiter" in
+production anywhere. **It passes the hammer:**
+
+```
+SABOTAGED (atomic, but a fixed window)
+  requests fired         64
+  served (200)           5
+  refused (429)          59
+  served / capacity      1.00x
+```
+
+And then, on a controlled clock, two seconds straddling a minute boundary:
+
+```
+BOUNDARY BURST (limit 5/min, two seconds spanning a minute)
+  shipped token bucket   5
+  fixed-window counter   10
+```
+
+**Twice the configured rate, in two seconds, at every minute boundary, forever.** Nothing
+about the implementation is un-atomic — the counter is perfect. It is counting the wrong
+thing. A token bucket has no boundary to straddle because it has no window, only a rate
+and a capacity.
+
+### SABOTAGE C — atomic, one write, and still wrong: no clamp
+
+The tempting simplification of the shipped store, and the reason it has two branches
+instead of one. Drop `max(tat, now)`: the condition and the update become a *single*
+atomic operation, strictly simpler than what ships and one round trip cheaper on an idle
+bucket. **It also passes the hammer** — a fresh bucket has no idle credit to accumulate,
+so on the hammer's own terms it is indistinguishable:
+
+```
+SABOTAGED (atomic, one write, no clamp)
+  requests fired         64
+  served (200)           5
+  refused (429)          59
+  served / capacity      1.00x
+```
+
+Then an hour of quiet, on a controlled clock:
+
+```
+BURST AFTER AN HOUR IDLE (limit 5/min)
+  shipped token bucket   5
+  unclamped GCRA         300
+```
+
+**Sixty times the configured rate**, because `tat` spent that hour falling further behind
+the clock with nothing to stop it. The burst an unclamped bucket admits is proportional to
+how long it was *idle*, not to its capacity. One missing `max()` is what the shipped
+store's second conditional write buys.
+
+All four runs are in one test file and all four are asserted, so the three sabotages are
+permanent: a future change that makes the hammer pass for the wrong reason still fails the
+tests whose job is to fail. **Atomicity is necessary and it is not sufficient** — the
+lesson the budget half's landed-only gate taught, twice over.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+110 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 110 source files
+
+$ make test
+================ 670 passed, 2 deselected, 1 warning in 12.15s =================
+
+$ uv run pytest -m live -q --collect-only
+2/672 tests collected (670 deselected) in 0.12s
+```
+
+**670 passed, 0 skipped** — `grep -c SKIPPED` over the run returns `0`, so the DynamoDB
+half of the rate-limit contract suite and the hammer executed against the container rather
+than skipping.
+
+Per-file counts for the new and changed files, from the same run:
+
+```
+30 tests/test_rate_limit_store.py       9 tests/test_rate_limit_hammer.py
+18 tests/test_rate_limit_gate.py        6 tests/test_429_distinguishability.py
+18 tests/test_admin_limits.py           6 tests/test_live_smoke_wiring.py  (was 5)
+56 tests/test_tenant_store.py (was 44) 11 tests/test_request_context.py
+```
+
+**H-012 still holds with the new DynamoDB tests.** A fresh clone with no stack up runs a
+smaller suite *loudly*, and a stated-but-unreachable endpoint fails rather than skips:
+
+```
+$ docker compose stop dynamodb
+$ uv run pytest -q                          # DYNAMODB_ENDPOINT_URL unset — inferred
+614 passed, 56 skipped, 2 deselected, 1 warning in 8.75s
+
+$ DYNAMODB_ENDPOINT_URL=http://localhost:8001 uv run pytest -q \
+      tests/test_rate_limit_store.py tests/test_rate_limit_hammer.py
+4 failed, 18 passed, 17 errors in 0.21s
+```
+
+### The other sabotage runs
+
+Two more of this PR's claims were tested by breaking the thing they protect. Both were
+applied with the Edit tool and reverted immediately; `diff` against pre-sabotage copies of
+both files reports them identical, and the suite is 670 green above.
+
+*Sabotage D — the gate order is swapped*, so the budget reservation runs before the rate
+limiter. This is the tidy-looking alternative, and it puts a compensating release on the
+hot path:
+
+```
+2 failed, 668 passed, 2 deselected
+FAILED tests/test_rate_limit_gate.py::test_a_rate_limited_request_never_reserves_budget
+FAILED tests/test_rate_limit_gate.py::test_a_request_over_both_limits_answers_429_and_402_on_the_retry
+```
+
+*Sabotage E — the response deny-list keeps its Phase 1 shape*, i.e. `x-headroom-*` is no
+longer stripped from upstream responses. Everything still works, and an upstream can now
+claim to be the gateway — which is exactly the fact Phase 6 would be about to trust:
+
+```
+2 failed, 668 passed, 2 deselected
+FAILED tests/test_429_distinguishability.py::test_an_upstream_cannot_write_in_headrooms_header_namespace[429]
+FAILED tests/test_429_distinguishability.py::test_an_upstream_cannot_write_in_headrooms_header_namespace[200]
+```
+
+### End to end through the real container, on a wiped volume
+
+```
+$ docker compose down -v && make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+applied 4 migration(s): 0001_tenants_and_virtual_keys, 0002_usage_ledger,
+                        0003_ledger_budget_columns, 0004_rate_limits
+
+### 3. no limit yet -> unlimited, and no bucket exists
+{"scope":"tenant#be95eb6a-…","name":"limits-demo","requests_per_min":null,
+ "tokens_per_min":null,"buckets":[]}
+
+### 4. three requests a minute
+{"requests_per_min":3,"tokens_per_min":null,
+ "buckets":[{"dimension":"requests","limit_per_min":3,"available":3,"reset_after_s":0}]}
+
+### 5. six requests
+200 200 200 429 429 429
+
+### 6. the 429, in the Anthropic dialect
+HTTP/1.1 429 Too Many Requests
+x-headroom-ratelimit-scope: tenant:requests
+x-headroom-ratelimit-limit: 3
+x-headroom-ratelimit-remaining: 0
+retry-after: 20
+x-headroom-ratelimit-reset: 20
+x-headroom-error-source: gateway
+{
+    "type": "error",
+    "error": {
+        "type": "rate_limit_error",
+        "message": "this request would exceed the tenant's rate limit of 3 requests per
+                    minute: it needs 1 and 0 are available; retry in 20s"
+    },
+    "headroom": {"reason": "rate_limited", "request_id": "hr_01e9438c438346529473700…"}
+}
+
+### 7. and in the OpenAI dialect
+{
+    "error": {
+        "message": "this request would exceed the tenant's rate limit of 3 requests …",
+        "type": "rate_limit_error", "param": null, "code": "rate_limited"
+    },
+    "headroom": {"reason": "rate_limited", "request_id": "hr_9f82b5ad21314388b8b5008…"}
+}
+
+### 8. the live bucket, beside the limit
+{"requests_per_min":3,"tokens_per_min":null,
+ "buckets":[{"dimension":"requests","limit_per_min":3,"available":0,
+             "reset_after_s":60,"reset_at":"2026-08-09T19:49:15.796967Z"}]}
+
+### 9. a tokens/min limit smaller than one request
+HTTP/1.1 429 Too Many Requests
+x-headroom-ratelimit-scope: tenant:tokens
+x-headroom-ratelimit-limit: 10
+x-headroom-ratelimit-remaining: 10
+x-headroom-error-source: gateway            <- and NO retry-after
+{
+    "type": "error",
+    "error": {
+        "type": "rate_limit_error",
+        "message": "this request needs 60 tokens, which is more than the whole tenant
+                    tokens-per-minute allowance of 10; waiting will not help — raise the
+                    limit or lower max_tokens"
+    },
+    "headroom": {"reason": "rate_limit_exceeds_capacity", "request_id": "hr_ebfd8839…"}
+}
+
+### 10. a per-key limit (1/min), alongside a roomy tenant one (100/min)
+200 429
+[{"scope":"tenant#be95eb6a-…","requests_per_min":100,
+  "buckets":[{"dimension":"requests","limit_per_min":100,"available":99,"reset_after_s":1}]},
+ {"scope":"key#71a68701-…","requests_per_min":1,
+  "buckets":[{"dimension":"requests","limit_per_min":1,"available":0,"reset_after_s":60}]}]
+
+### 11. the raw DynamoDB items
+{"bucket_id": {"S": "key#71a68701-…#requests"}, "dimension": {"S": "requests"},
+ "expires_at": {"N": "1786305016"}, "scope_kind": {"S": "key"},
+ "scope_ref": {"S": "71a68701-…"}, "tat": {"N": "1786304956151432000"},
+ "updated_at": {"S": "2026-08-09T19:48:16.151432+00:00"}}
+{"bucket_id": {"S": "tenant#be95eb6a-…#requests"}, "dimension": {"S": "requests"},
+ "expires_at": {"N": "1786305016"}, "scope_kind": {"S": "tenant"},
+ "scope_ref": {"S": "be95eb6a-…"}, "tat": {"N": "1786304896751432000"},
+ "updated_at": {"S": "2026-08-09T19:48:16.151432+00:00"}}
+
+### 12. what the ledger says
+ok|200|200|priced|4
+rate_limited|429||not_billable|7
+rate_limit_exceeds_capacity|429||not_billable|2
+
+### 13. request log lines (one refused, one served under a limit)
+{"request_id":"hr_96ed4090de2d4d1d8dbd5fa13256786d","model":"mock-model-1",
+ "outcome":"rate_limited","status":429,"upstream_status":null,"error_source":"gateway",
+ "error_reason":"rate_limited","usd_cost":"0.000000000000","cost_status":"not_billable",
+ "budget_status":null,"rate_limit_status":"limited","rate_limit_scope":"key:requests",
+ "upstream_latency_ms":null,"ttft_ms":4.113,"total_ms":4.114}
+{"request_id":"hr_c0c1476bcada4b5d9abc11f0092dfa5f","model":"mock-model-1","outcome":"ok",
+ "status":200,"upstream_status":200,"usd_cost":"0.000011500000","cost_status":"priced",
+ "budget_status":"no_budget","rate_limit_status":"ok","rate_limit_scope":null,
+ "ttft_ms":19.245,"total_ms":19.246}
+
+### 14. DELETE clears the limits and empties the buckets
+{"scope":"key#71a68701-…","requests_per_min":null,"tokens_per_min":null,"buckets":[]}
+next request -> 200
+```
+
+Five things in that output are the phase in miniature.
+
+`"buckets":[]` on an unlimited scope, and `clear` returning nothing afterwards: an
+unconfigured scope is not "a limit of infinity" that gets consumed and always passes — it
+is skipped entirely, so a deployment that caps nobody does no DynamoDB work at all on this
+path. That is what keeps this phase additive for every tenant nobody has limited.
+
+The two `tat` values in step 11 are the whole design visible on the wire:
+`1786304956151432000` and `1786304896751432000` are nanosecond timestamps sixty seconds
+apart, one per bucket, and there is **no token count anywhere in the item**. Available
+capacity is derived from them, never stored, which is precisely what lets admission be a
+single comparison.
+
+Step 9's refusal has `x-headroom-ratelimit-remaining: 10` against a limit of 10 and **no
+`retry-after`**: the bucket is completely full and the request still cannot fit, so waiting
+is not the answer and the honest header is the absent one.
+
+Step 10 is the two scopes doing their separate jobs: the tenant's roomy bucket admits and
+drops to 99, the key's bucket admits once and refuses the second — and `rate_limit_scope`
+on the refused log line says `key:requests`, which is the field an operator needs when four
+buckets could each have been the one.
+
+And the ledger has a row for every refusal, with `upstream_status` NULL and a `usd_cost` of
+zero that is a *measurement* rather than a default — because no model ran. Without those
+rows a rate-limited request would leave no trace anywhere, since nothing upstream ever saw
+it.
+
+**Assumed-facts register (§0.4)**
+
+- **A1 — VERIFIED again, on a second access pattern.** *`amazon/dynamodb-local` in compose
+  behaves like DynamoDB for `ConditionExpression` conditional writes via boto3
+  `endpoint_url`.* Phase 4 verified it for the budget item; this phase exercised primitives
+  it did not: 19-digit nanosecond integers in both a condition and an arithmetic update
+  (`SET tat = tat + :charge`); `attribute_not_exists(x) OR x <= :v` as a disjunctive
+  condition; `if_not_exists` in an arithmetic update (in sabotage C); and
+  `ReturnValuesOnConditionCheckFailure=ALL_OLD` on a *second* table with a different
+  partition key. Each was probed against the pinned `3.1.0` image before the store was
+  written and each is now pinned by a test. No new emulator quirk surfaced — in
+  particular, `dimension`, `tat`, and `expires_at` are **not** reserved words, which was
+  checked rather than assumed after Phase 4 lost time to `scope`.
+- **A2, A3, A4, A5, A6, A7** — not due at this gate, none touched. A4 and A5 stay VERIFIED:
+  the rate limiter reads the estimate the budget gate already computed and never touches
+  the request body, and the 670 tests that prove passthrough fidelity all still run through
+  the new gate.
+
+**Spend** — $0.00. No provider API was called in this phase; every test ran on the
+MockProvider, and the container demo talked to nothing outside the compose network.
