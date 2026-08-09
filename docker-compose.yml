@@ -66,6 +66,21 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
+      HEADROOM_LOG_LEVEL: ${HEADROOM_LOG_LEVEL:-INFO}
+      # Real provider credentials and endpoints, *referenced* from the host shell or
+      # the gitignored `.env` — never a literal value here (invariant 3), and never
+      # defaulted to something that could work by accident. Unset means unset: the
+      # gateway boots fine and only a request that needs the missing key fails, naming
+      # it. Without these three lines the compose gateway can serve mock traffic and
+      # nothing else, which would make the live smoke impossible through the container.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      # NB: `localhost` in here is the *container*. A vLLM running on this machine is
+      # reachable at host.docker.internal (mapped below for native Linux, built in on
+      # Docker Desktop); one on another box wants its LAN address.
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${GATEWAY_PORT:-8080}:8000"
     depends_on:

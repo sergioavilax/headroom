@@ -1,0 +1,56 @@
+# Headroom's routing table: which providers exist, and who serves which model.
+#
+# Read once at startup (headroom/core/config.py). Point HEADROOM_ROUTING_CONFIG at
+# another file to run a gateway with a different table — that is how the test suite
+# gets a mock-only gateway without editing this one.
+#
+# ── No secret ever appears in this file ────────────────────────────────────────
+# A provider names the *environment variable* holding its credential, never the
+# credential (BUILD_PLAN §0.2 invariant 3). There is deliberately no schema field a
+# key could be written into, so the rule is enforced by the loader rather than by
+# whoever reviews the diff. Locally the values live in the gitignored `.env`.
+#
+# ── Matching ───────────────────────────────────────────────────────────────────
+# A model is served by the rule with the longest matching prefix, so a specific rule
+# can carve one model out of a family without rewriting the family's rule. The empty
+# prefix ("") matches everything and is therefore the catch-all.
+#
+# Phase 6 extends a rule with same-dialect fallbacks — routes stay per dialect here
+# because BUILD_PLAN L4 puts cross-dialect translation out of scope, which makes a
+# failover pair same-dialect by construction.
+
+providers:
+  # Keyless, deterministic, fault-injectable — every test in the project runs on it,
+  # and it is routable in the shipped config on purpose: `make up` plus one curl at a
+  # `mock-` model is a working end-to-end demo of the whole path with no key, no
+  # network, and no spend. Phase 2's key scopes can restrict who may reach it.
+  mock:
+    kind: mock
+
+  anthropic:
+    kind: anthropic
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+
+  # The operator's vLLM instance (BUILD_PLAN L5). The endpoint is a per-machine fact,
+  # so it comes from the environment; `base_url` below is the fallback when
+  # VLLM_BASE_URL is unset. Either spelling of the URL works — with or without a
+  # trailing /v1 (docs/DECISIONS.md H-011). Phase 6 adds vllm_b for the second 4090
+  # and the failover chain between them.
+  vllm:
+    kind: openai_compat
+    base_url_env: VLLM_BASE_URL
+    base_url: http://localhost:8000
+
+routes:
+  anthropic:
+    - prefix: "mock-"
+      provider: mock
+    - prefix: "claude-"
+      provider: anthropic
+
+  openai:
+    - prefix: "mock-"
+      provider: mock
+    - prefix: ""
+      provider: vllm
