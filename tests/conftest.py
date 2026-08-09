@@ -22,84 +22,29 @@ gateway ships with, so a fat-fingered rate in the real config fails the suite in
 sailing through it. A test that needs a price *boundary* builds its own book in code —
 the shipped mock entries are flat on purpose, so that test costs never move on a
 calendar day (docs/DECISIONS.md H-023).
+
+Since Phase 4 it also gets its own **budget store**, and by default it is the in-memory
+one with **no cap configured**, which means the gate is a no-op for every test written
+before this phase. That is the whole reason those tests did not have to change: an
+unbudgeted tenant is admitted, nothing is held, and nothing is settled. A test that
+wants a cap asks for one (``harness.set_budget("0.001")``); the stampede builds its own
+harness against DynamoDB Local, because a dict cannot be raced.
+
+The construction itself lives in ``tests/support/harness.py`` so that other fixtures can
+reuse it — see :func:`headroom.tests.support.harness.gateway_harness`.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-import httpx
 import pytest
 
-from headroom.api.gateway import Gateway
-from headroom.api.main import app as headroom_app
-from headroom.db.memory import InMemoryLedgerStore, InMemoryTenantStore
-from headroom.metering.meter import Meter
-from headroom.metering.prices import load_price_book
-from headroom.metering.writer import LedgerWriter
-from headroom.policy.auth import Authenticator
-from headroom.policy.keys import display_prefix, hash_key, mint_key
-from headroom.providers.mock import MockProvider, MockScriptBook
-from headroom.providers.registry import ProviderRegistry
-
-from .support.asgi import ContextRecorder
-from .support.harness import ADMIN_TOKEN, GatewayHarness, mock_only_config
+from .support.harness import GatewayHarness, gateway_harness
 
 
 @pytest.fixture
 async def gateway() -> AsyncIterator[GatewayHarness]:
     """A keyless gateway wired to a fresh MockProvider, served over ASGI."""
-    book = MockScriptBook()
-    provider = MockProvider("mock", book)
-    registry = ProviderRegistry()
-    registry.add(provider)
-    config = mock_only_config()
-
-    store = InMemoryTenantStore()
-    tenant = await store.create_tenant("acme")
-    plaintext = mint_key()
-    key = await store.create_key(
-        tenant_id=tenant.id,
-        name="default",
-        key_hash=hash_key(plaintext),
-        key_prefix=display_prefix(plaintext),
-    )
-    assert key is not None  # the tenant was just created
-
-    ledger = InMemoryLedgerStore()
-    writer = LedgerWriter(ledger)
-    instance = Gateway(
-        config=config,
-        registry=registry,
-        routing=config.routing_table(),
-        store=store,
-        authenticator=Authenticator(store),
-        ledger=ledger,
-        meter=Meter(prices=load_price_book(), writer=writer),
-        admin_token=ADMIN_TOKEN,
-    )
-
-    previous = getattr(headroom_app.state, "gateway", None)
-    headroom_app.state.gateway = instance
-    recorder = ContextRecorder(headroom_app)
-    transport = httpx.ASGITransport(app=recorder)
-    try:
-        async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
-            yield GatewayHarness(
-                app=headroom_app,
-                book=book,
-                provider=provider,
-                client=client,
-                recorder=recorder,
-                store=store,
-                authenticator=instance.authenticator,
-                tenant=tenant,
-                key=key,
-                api_key=plaintext,
-                ledger=ledger,
-                meter=instance.meter,
-                writer=writer,
-            )
-    finally:
-        await instance.aclose()
-        headroom_app.state.gateway = previous
+    async with gateway_harness() as harness:
+        yield harness

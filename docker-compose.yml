@@ -64,8 +64,15 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-headroom}:${POSTGRES_PASSWORD:-headroom}@db:5432/${POSTGRES_DB:-headroom}
       DYNAMODB_ENDPOINT_URL: http://dynamodb:8000
       AWS_REGION: ${AWS_REGION:-us-east-1}
+      # DynamoDB Local requires *a* credential to sign against and validates none of
+      # it. Note the absence of a hyphen — it does parse the access key id out of the
+      # SigV4 credential scope and rejects one containing `-` with an error that reads
+      # exactly like a real AWS auth failure (docs/DECISIONS.md H-030).
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
+      # Phase 4: the budget table. Created on first use here and in CI; created by
+      # Terraform in Phase 9, where this same code finds it already there.
+      HEADROOM_BUDGETS_TABLE: ${HEADROOM_BUDGETS_TABLE:-headroom_budgets}
       HEADROOM_LOG_LEVEL: ${HEADROOM_LOG_LEVEL:-INFO}
       # The root admin token (Phase 2), referenced from the host shell or the
       # gitignored `.env`, never valued here. Unset is a safe state: the admin API

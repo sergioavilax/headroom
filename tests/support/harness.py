@@ -13,25 +13,36 @@ says so explicitly with ``authenticate=False`` or ``api_key=…``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import httpx
 
+from headroom.api.gateway import Gateway
+from headroom.api.main import app as headroom_app
+from headroom.core.budgets import Budget, BudgetScope, BudgetStore
 from headroom.core.config import GatewayConfig, ProviderSpec, RouteSpec
 from headroom.core.context import RequestContext
 from headroom.core.ledger import LedgerEntry, LedgerStore
 from headroom.core.storage import Tenant, TenantStore, VirtualKey
+from headroom.db.memory import InMemoryBudgetStore, InMemoryLedgerStore, InMemoryTenantStore
 from headroom.metering.meter import Meter
+from headroom.metering.prices import load_price_book
 from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
+from headroom.policy.budgets import BudgetGate
+from headroom.policy.keys import display_prefix, hash_key, mint_key
 from headroom.providers.base import UpstreamRequest
 from headroom.providers.mock import MockProvider, MockScriptBook
+from headroom.providers.registry import ProviderRegistry
 
 from .asgi import ASGIRun, ContextRecorder, start_request
 
-__all__ = ["ADMIN_TOKEN", "GatewayHarness", "mock_only_config"]
+__all__ = ["ADMIN_TOKEN", "GatewayHarness", "gateway_harness", "mock_only_config"]
 
 #: The root admin token the test gateway is built with. A literal in a test file, not
 #: a secret: nothing it guards outlives the process (BUILD_PLAN §0.2 invariant 3 is
@@ -52,6 +63,82 @@ def mock_only_config() -> GatewayConfig:
             "openai": [RouteSpec(prefix="mock-", provider="mock")],
         },
     )
+
+
+@asynccontextmanager
+async def gateway_harness(
+    *, budgets: BudgetStore | None = None, tenant: str = "acme"
+) -> AsyncIterator[GatewayHarness]:
+    """Build a complete keyless gateway and serve it over ASGI.
+
+    The body of ``tests/conftest.py``'s ``gateway`` fixture, lifted here so a test that
+    needs a *different* backing store can build its own — which
+    ``tests/test_budget_stampede.py`` does, because the headline test has to run against
+    DynamoDB Local rather than against a dict that cannot interleave.
+
+    Everything else is exactly what every other test gets: one MockProvider, one tenant,
+    one unrestricted key, the committed price book, and its own control plane.
+    """
+    book = MockScriptBook()
+    provider = MockProvider("mock", book)
+    registry = ProviderRegistry()
+    registry.add(provider)
+    config = mock_only_config()
+
+    store = InMemoryTenantStore()
+    created = await store.create_tenant(tenant)
+    plaintext = mint_key()
+    key = await store.create_key(
+        tenant_id=created.id,
+        name="default",
+        key_hash=hash_key(plaintext),
+        key_prefix=display_prefix(plaintext),
+    )
+    assert key is not None  # the tenant was just created
+
+    ledger = InMemoryLedgerStore()
+    writer = LedgerWriter(ledger)
+    prices = load_price_book()
+    gate = BudgetGate(
+        store=budgets if budgets is not None else InMemoryBudgetStore(), prices=prices
+    )
+    instance = Gateway(
+        config=config,
+        registry=registry,
+        routing=config.routing_table(),
+        store=store,
+        authenticator=Authenticator(store),
+        ledger=ledger,
+        meter=Meter(prices=prices, writer=writer),
+        budgets=gate,
+        admin_token=ADMIN_TOKEN,
+    )
+
+    previous = getattr(headroom_app.state, "gateway", None)
+    headroom_app.state.gateway = instance
+    recorder = ContextRecorder(headroom_app)
+    transport = httpx.ASGITransport(app=recorder)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+            yield GatewayHarness(
+                app=headroom_app,
+                book=book,
+                provider=provider,
+                client=client,
+                recorder=recorder,
+                store=store,
+                authenticator=instance.authenticator,
+                tenant=created,
+                key=key,
+                api_key=plaintext,
+                ledger=ledger,
+                meter=instance.meter,
+                writer=writer,
+                budgets=gate,
+            )
+    finally:
+        await instance.aclose()
+        headroom_app.state.gateway = previous
 
 
 @dataclass
@@ -76,6 +163,9 @@ class GatewayHarness:
     #: which means a test that asserted immediately after the response would be racing
     #: it — :meth:`ledger_row` waits properly instead of sleeping and hoping.
     writer: LedgerWriter
+    #: Phase 4. The budget gate and the store behind it, so a test can set a cap, read
+    #: the counters back, and drain the settlements a disconnect left detached.
+    budgets: BudgetGate
     admin_token: str = ADMIN_TOKEN
 
     # --- proxy requests -----------------------------------------------------------
@@ -196,3 +286,35 @@ class GatewayHarness:
         await self.writer.drain()
         resolved = request_id if request_id is not None else self.last_context().request_id
         return await self.ledger.get(resolved)
+
+    # --- the budget ---------------------------------------------------------------
+
+    async def set_budget(
+        self, usd: str | Decimal, *, window: str = "monthly", when: datetime | None = None
+    ) -> Budget:
+        """Give the harness's tenant a cap. Returns it, so a test can assert on it."""
+        return await self.budgets.store.set_budget(
+            self.scope,
+            usd=Decimal(usd) if isinstance(usd, str) else usd,
+            window=window,
+            when=when if when is not None else datetime.now(UTC),
+        )
+
+    async def budget(self, *, when: datetime | None = None) -> Budget:
+        """The tenant's budget as it stands, with settlements already drained.
+
+        Draining first for the same reason :meth:`ledger_row` does: a disconnect leaves
+        its settlement running as a detached task, and a test that read the counters
+        without waiting would be racing it.
+        """
+        await self.budgets.drain()
+        found = await self.budgets.store.get(
+            self.scope, when=when if when is not None else datetime.now(UTC)
+        )
+        assert found is not None, "no budget is configured for the harness tenant"
+        return found
+
+    @property
+    def scope(self) -> BudgetScope:
+        """The budget scope of the harness's tenant."""
+        return BudgetScope.tenant(self.tenant.id)
