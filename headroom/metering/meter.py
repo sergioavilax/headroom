@@ -64,11 +64,14 @@ class Meter:
             billable=_is_billable(ctx),
         )
 
-    def record(self, ctx: RequestContext, usage: Usage) -> CostBreakdown:
-        """Price the request, stamp the context, and queue the ledger row.
+    def measure(self, ctx: RequestContext, usage: Usage) -> CostBreakdown:
+        """Price the request and stamp the context. **Writes nothing.**
 
-        Returns the breakdown so a caller can assert on it. Synchronous and
-        non-blocking by construction: the only I/O it can reach is a queue ``put``.
+        Split out from :meth:`record` in Phase 4 because the budget's settlement sits
+        between the two halves: what a hold settles at is decided from ``cost_status``,
+        which this sets, and the settled figure is a column on the row, which
+        :meth:`commit` writes. Measuring first, settling, then committing is the only
+        order in which the row can carry both.
         """
         breakdown = self.price(ctx, usage)
         ctx.apply_metering(
@@ -81,9 +84,25 @@ class Meter:
             usd_cost=breakdown.usd_cost,
             cost_status=breakdown.status,
         )
+        return breakdown
+
+    def commit(self, ctx: RequestContext, usage: Usage, breakdown: CostBreakdown) -> None:
+        """Queue the ledger row for an already-measured request.
+
+        Synchronous and non-blocking by construction: the only I/O it can reach is a
+        queue ``put`` (H-027).
+        """
         entry = build_entry(ctx, usage, breakdown)
         if entry is not None and self.writer is not None:
             self.writer.submit(entry)
+
+    def record(self, ctx: RequestContext, usage: Usage) -> CostBreakdown:
+        """Measure and commit in one call — everything with no budget to settle.
+
+        Returns the breakdown so a caller can assert on it.
+        """
+        breakdown = self.measure(ctx, usage)
+        self.commit(ctx, usage, breakdown)
         return breakdown
 
 
@@ -125,6 +144,12 @@ def build_entry(ctx: RequestContext, usage: Usage, breakdown: CostBreakdown) -> 
         usd_per_mtok_out=None if price is None else price.usd_per_mtok_out,
         usd_cost=breakdown.usd_cost,
         cost_status=breakdown.status,
+        # Phase 4's account of the same request. Copied off the context rather than
+        # recomputed: the gate has already decided them, and a second opinion here
+        # would be a second source of truth for a number the tenant was charged.
+        budget_status=ctx.budget_status,
+        budget_reserved_usd=ctx.budget_reserved_usd,
+        budget_settled_usd=ctx.budget_settled_usd,
         upstream_latency_ms=ctx.upstream_latency_ms,
         ttft_ms=ctx.time_to_first_token_ms,
         passthrough_overhead_ms=ctx.passthrough_overhead_ms,

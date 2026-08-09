@@ -31,16 +31,25 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 |---|---|---|
 | `0001_tenants_and_virtual_keys.sql` | 2 | `tenants`, `virtual_keys` — the control plane |
 | `0002_usage_ledger.sql` | 3 | `usage_ledger` — one priced, attributed row per request |
+| `0003_ledger_budget_columns.sql` | 4 | `budget_status`, `budget_reserved_usd`, `budget_settled_usd` on `usage_ledger` |
 
 Still to come: the pgvector semantic-cache tables in Phase 5.
+
+**Budgets themselves are not here.** Per-tenant caps, their counters, and their live
+reservations live on **DynamoDB**, not in Postgres (BUILD_PLAN L2) — because the whole
+point is an atomic conditional write, and that is DynamoDB's primitive. `0003` only adds
+what the *ledger* has to say about a request the budget gate saw. See
+[headroom/db/budgets.py](../headroom/db/budgets.py) for the item shape.
 
 The shape of `0001` — UUID keys, `revoked_at` as the state rather than a boolean,
 `ON DELETE RESTRICT`, `TEXT[]` scopes where empty means unrestricted — is argued in
 [docs/DECISIONS.md](../docs/DECISIONS.md) H-022. `0002` copies the rates it billed at
 into every row so a price change can never re-bill history, stores money as `NUMERIC`
 rather than `DOUBLE PRECISION`, and keeps NULL (unknown) distinct from 0 (provably
-free) — H-024 and H-025. Both are applied, so both are immutable: a change is
-`0003_*.sql`.
+free) — H-024 and H-025. `0003` keeps both of those rules for the two amounts it adds,
+and is additive-only: existing rows genuinely had no budget outcome, so NULL is the
+truthful value rather than a gap to backfill. All three are applied, so all three are
+immutable: a change is `0004_*.sql`.
 
 `make up` applies migrations inside the gateway container once the stack is healthy;
 `make migrate` applies them from the host against `DATABASE_URL`.

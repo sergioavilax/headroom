@@ -51,6 +51,22 @@ seen. That is not tidying — in the OpenAI dialect the chunk bearing ``finish_r
 arrives **before** the usage-only chunk, so a loop that stopped at the terminal event
 metered nothing at all. Nothing about the forwarded bytes changed; the tap simply keeps
 tapping (H-007).
+
+Phase 4 adds the budget gate, at the seam Phase 2 and Phase 3 left for it:
+
+**Admission is the last thing before the upstream is opened, and settlement is bolted
+to metering.** ``gateway.budgets.admit`` runs after the scope checks and before
+``provider.open``, so a refused request provably never reaches a provider — there is no
+code path between the raise and the call. Settlement then rides the metering exits,
+because the amount a hold settles at is decided from the cost the meter just computed;
+:func:`_finish` is the three-line sequence *measure, settle, commit* that keeps the
+ledger row carrying both figures.
+
+Nothing else in this file moved. Metering did not become asynchronous — ``measure`` and
+``commit`` are the same synchronous calls ``record`` always made — and the one ``await``
+added per exit is the budget's own conditional write, which H-027 forbids from riding
+the fire-and-forget queue: a lost ledger row is a reporting gap, a lost settlement is
+D-019 growing back.
 """
 
 from __future__ import annotations
@@ -123,7 +139,7 @@ async def proxy(request: Request, dialect: Dialect, gateway: Gateway) -> Respons
     try:
         return await _proxy(request, dialect, gateway, ctx)
     except HeadroomError as exc:
-        return _error_response(dialect, ctx, exc, gateway)
+        return await _error_response(dialect, ctx, exc, gateway)
 
 
 async def _proxy(
@@ -150,6 +166,11 @@ async def _proxy(
     ctx.provider = provider_name
     principal.require_provider(provider_name)
     provider = gateway.registry.get(provider_name)
+
+    # The last gate before anything is spent. It raises 402 rather than returning, so
+    # there is no path from a refusal to `provider.open` — which is the property
+    # `tests/test_budget_gate.py` asserts by checking the mock was never called.
+    await gateway.budgets.admit(ctx, dialect, body, raw_body)
 
     upstream_request = UpstreamRequest(
         dialect=dialect.name,
@@ -221,7 +242,7 @@ async def _buffered_response(
     )
     # An error body has no usage to read, and the meter is told nothing rather than
     # asked to find something: it prices the request from the upstream status.
-    gateway.meter.record(ctx, Usage() if failed else dialect.usage_from_body(body))
+    await _finish(gateway, ctx, Usage() if failed else dialect.usage_from_body(body))
     return Response(
         content=body,
         status_code=upstream.status_code,
@@ -290,13 +311,18 @@ async def _passthrough(
         failure, failure_message = exc.reason, exc.message
     except asyncio.CancelledError:
         # The caller hung up. Recorded before the close below, because a cancelled
-        # close may not get the chance to finish — and Phase 4 settles reservations on
-        # exactly this path.
+        # close may not get the chance to finish — and this is where Phase 4 settles.
         ctx.complete(OUTCOME_CLIENT_DISCONNECT, error_source=SOURCE_GATEWAY)
         # The upstream generated whatever it generated before we stopped reading, so
         # the row is written with whatever usage arrived — usually none, which is
-        # recorded as unknown rather than as free.
-        gateway.meter.record(ctx, usage.usage)
+        # recorded as unknown rather than as free. The budget treats that "unknown"
+        # differently and deliberately: a model ran, so the hold stands (H-031).
+        #
+        # `shielded` because an `await` inside a cancellation handler can be cancelled
+        # again before it lands. The settlement is stamped on the context either way,
+        # so the row and the log line are complete even if the write is not; and if it
+        # never lands, the hold expires and the sweeper releases it.
+        await _finish(gateway, ctx, usage.usage, shielded=True)
         raise
     finally:
         with contextlib.suppress(Exception):
@@ -313,7 +339,7 @@ async def _passthrough(
 
     if failure is None:
         ctx.complete(OUTCOME_OK)
-        gateway.meter.record(ctx, usage.usage)
+        await _finish(gateway, ctx, usage.usage)
         return
 
     # Marked before `complete`, not after: the terminal event is itself a byte the
@@ -325,13 +351,33 @@ async def _passthrough(
     # totals leaves the output count unknown, and the row says so — it is not billed
     # as a complete answer, and it is not billed as a free one either (invariant 6,
     # one layer down: an amputated answer must not look finished to the invoice).
-    gateway.meter.record(ctx, usage.usage)
+    await _finish(gateway, ctx, usage.usage)
     yield dialect.terminal_error_event(
         reason=failure, message=failure_message, request_id=ctx.request_id
     )
 
 
-def _error_response(
+async def _finish(
+    gateway: Gateway, ctx: RequestContext, usage: Usage, *, shielded: bool = False
+) -> None:
+    """Close a request's books: measure, settle, commit — in that order, always.
+
+    The order is the whole point and is not interchangeable. ``measure`` stamps
+    ``cost_status`` and ``usd_cost`` on the context but writes nothing; the budget's
+    settlement is *decided* from ``cost_status`` (H-031) and stamps its own two figures;
+    only then is the ledger row built, so one row carries the cost, the hold, and what
+    the hold became. Settling first would settle against a cost nobody had computed;
+    committing first would write a row missing the column the phase exists to add.
+
+    A request with no live reservation — an unbudgeted tenant, or one refused before a
+    hold was taken — passes through the middle step untouched.
+    """
+    breakdown = gateway.meter.measure(ctx, usage)
+    await gateway.budgets.settle(ctx, shielded=shielded)
+    gateway.meter.commit(ctx, usage, breakdown)
+
+
+async def _error_response(
     dialect: Dialect, ctx: RequestContext, exc: HeadroomError, gateway: Gateway
 ) -> Response:
     """A failure with no upstream body to forward, said in the caller's dialect.
@@ -352,7 +398,11 @@ def _error_response(
     # from the upstream status — zero for a refusal or an unroutable model, unknown for
     # a timeout, which was sent and may have been billed by someone we cannot ask. A
     # request that never authenticated has no tenant and gets no row at all (H-025).
-    gateway.meter.record(ctx, Usage())
+    #
+    # This path also releases a hold taken moments earlier: a request that reserved and
+    # then hit a timeout, an unroutable model, or a transport failure has its budget
+    # handed straight back, because the settlement follows the cost and that cost is 0.
+    await _finish(gateway, ctx, Usage())
     return Response(
         content=dialect.error_body(
             status_code=exc.status_code,

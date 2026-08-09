@@ -1,10 +1,16 @@
 """The stores in a dict — the keyless ones, and real implementations.
 
-Not mocks. They implement the same interfaces as the Postgres stores, and
-``tests/test_tenant_store.py`` and ``tests/test_ledger_store.py`` each run one contract
-suite over both, so a behaviour that holds here holds there or the suite goes red
-(docs/DECISIONS.md H-021). That is the only thing that makes a second implementation
-safe to have.
+Not mocks. They implement the same interfaces as the Postgres and DynamoDB stores, and
+``tests/test_tenant_store.py``, ``tests/test_ledger_store.py``, and
+``tests/test_budget_store.py`` each run one contract suite over both implementations, so
+a behaviour that holds here holds there or the suite goes red (docs/DECISIONS.md H-021).
+That is the only thing that makes a second implementation safe to have.
+
+**One caveat, stated where it cannot be missed:** :class:`InMemoryBudgetStore` reproduces
+the *semantics* of the budget gate, not its *concurrency*. Its operations never suspend,
+so they cannot interleave, so it can never demonstrate that the design is race-free —
+and a stampede test run against it would prove nothing at all. That proof belongs to
+DynamoDB Local, and ``tests/test_budget_stampede.py`` is written against it alone.
 
 Why it exists: BUILD_PLAN §0.2 invariant 4 wants the gate keyless, and the parts of
 Phase 2 that matter most — the 401/403 matrix, the plaintext-appears-once property, the
@@ -21,10 +27,25 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from headroom.core.budgets import (
+    ADMIT_EXCEEDED,
+    ADMIT_NO_BUDGET,
+    ADMIT_RESERVED,
+    RESERVATION_TTL_S,
+    Budget,
+    BudgetScope,
+    BudgetStore,
+    Reservation,
+    ReserveResult,
+    SweepResult,
+    from_picos,
+    to_picos,
+    window_for,
+)
 from headroom.core.ledger import LedgerEntry, LedgerQuery, LedgerStore, UsageTotals
 from headroom.core.storage import (
     KeyRecord,
@@ -34,7 +55,7 @@ from headroom.core.storage import (
     VirtualKey,
 )
 
-__all__ = ["InMemoryLedgerStore", "InMemoryTenantStore"]
+__all__ = ["InMemoryBudgetStore", "InMemoryLedgerStore", "InMemoryTenantStore"]
 
 
 def _now() -> datetime:
@@ -260,6 +281,231 @@ class InMemoryLedgerStore(LedgerStore):
 
     def _matching(self, query: LedgerQuery) -> list[LedgerEntry]:
         return [entry for entry in self._entries.values() if _matches(entry, query)]
+
+
+@dataclass(slots=True)
+class _BudgetItem:
+    """One scope's budget, shaped exactly like the DynamoDB item.
+
+    Counters are integer picodollars here too, and every method below moves
+    ``remaining`` in the same statement as its components — not because a dict needs
+    the discipline, but because the contract suite asserts the identity
+    ``remaining == budget - spent - reserved`` against *both* stores after every
+    operation, and an implementation that kept the number some other way would pass
+    for the wrong reason.
+    """
+
+    scope: BudgetScope
+    budget_picos: int
+    window: str
+    window_id: str
+    window_expires_at: int
+    spent_picos: int = 0
+    reserved_picos: int = 0
+    remaining_picos: int = 0
+    #: request id -> (picos held, expires_at epoch seconds)
+    reservations: dict[str, tuple[int, int]] = field(default_factory=dict)
+    expired_releases: int = 0
+    expired_released_picos: int = 0
+    created_at: datetime = field(default_factory=_now)
+    updated_at: datetime = field(default_factory=_now)
+
+    def view(self) -> Budget:
+        return Budget(
+            scope=self.scope,
+            usd=from_picos(self.budget_picos),
+            window=self.window,
+            window_id=self.window_id,
+            spent=from_picos(self.spent_picos),
+            reserved=from_picos(self.reserved_picos),
+            remaining=from_picos(self.remaining_picos),
+            reservations=len(self.reservations),
+            expired_releases=self.expired_releases,
+            expired_released=from_picos(self.expired_released_picos),
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
+    def rolled_view(self, window_id: str) -> Budget:
+        """How this budget reads once its window has ended, without writing anything."""
+        return replace(
+            self.view(),
+            window_id=window_id,
+            spent=Decimal(0),
+            reserved=Decimal(0),
+            remaining=from_picos(self.budget_picos),
+            reservations=0,
+        )
+
+    def roll(self, window_id: str, expires_at: int) -> None:
+        self.window_id = window_id
+        self.window_expires_at = expires_at
+        self.spent_picos = 0
+        self.reserved_picos = 0
+        self.remaining_picos = self.budget_picos
+        self.reservations.clear()
+
+
+class InMemoryBudgetStore(BudgetStore):
+    """Budgets in a dict, with the DynamoDB store's semantics and none of its races.
+
+    Every rule the conditional writes encode is reimplemented here in the obvious way:
+    a hold is refused when ``remaining`` is short, a settlement is a no-op when the hold
+    is gone, a stale window rolls on first touch, an expired hold is released and
+    counted. What it cannot reproduce is the thing that makes the DynamoDB
+    implementation correct — that the check and the deduction are one operation — since
+    nothing here can be interleaved. See the module docstring.
+    """
+
+    __slots__ = ("_items",)
+
+    def __init__(self) -> None:
+        self._items: dict[str, _BudgetItem] = {}
+
+    async def reserve(
+        self, scope: BudgetScope, *, request_id: str, usd: Decimal, when: datetime
+    ) -> ReserveResult:
+        item = self._items.get(scope.key)
+        if item is None:
+            return ReserveResult(status=ADMIT_NO_BUDGET)
+
+        estimate = to_picos(usd, conservative=True)
+        now = int(when.timestamp())
+
+        held = item.reservations.get(request_id)
+        if held is not None:
+            return ReserveResult(
+                status=ADMIT_RESERVED,
+                reservation=self._handle(scope, request_id, held, item.window_id),
+                budget=item.view(),
+            )
+
+        if item.window_expires_at <= now:
+            window_id, expires_at = window_for(item.window, when)
+            item.roll(window_id, expires_at)
+
+        # The sweep runs before the refusal, not on a timer: a dead process's hold must
+        # never be the reason a live request is turned away.
+        self._release_expired(item, now)
+
+        if item.remaining_picos < estimate:
+            return ReserveResult(status=ADMIT_EXCEEDED, budget=item.view())
+
+        expires = now + RESERVATION_TTL_S
+        item.remaining_picos -= estimate
+        item.reserved_picos += estimate
+        item.reservations[request_id] = (estimate, expires)
+        item.updated_at = when
+        return ReserveResult(
+            status=ADMIT_RESERVED,
+            reservation=self._handle(scope, request_id, (estimate, expires), item.window_id),
+            budget=item.view(),
+        )
+
+    async def settle(self, reservation: Reservation, *, usd: Decimal, when: datetime) -> bool:
+        item = self._items.get(reservation.scope.key)
+        if item is None:
+            return False
+        held = item.reservations.get(reservation.request_id)
+        if held is None or held[0] != to_picos(reservation.usd):
+            return False
+        actual = to_picos(usd)
+        del item.reservations[reservation.request_id]
+        item.reserved_picos -= held[0]
+        item.spent_picos += actual
+        item.remaining_picos += held[0] - actual
+        item.updated_at = when
+        return True
+
+    async def sweep_expired(self, scope: BudgetScope, *, when: datetime) -> SweepResult:
+        item = self._items.get(scope.key)
+        if item is None:
+            return SweepResult()
+        return self._release_expired(item, int(when.timestamp()))
+
+    async def get(self, scope: BudgetScope, *, when: datetime) -> Budget | None:
+        item = self._items.get(scope.key)
+        if item is None:
+            return None
+        # The read sweeps, matching the DynamoDB store: an operator asking what is
+        # reserved gets the live figure, not one inflated by processes that died.
+        self._release_expired(item, int(when.timestamp()))
+        if item.window_expires_at <= int(when.timestamp()):
+            return item.rolled_view(window_for(item.window, when)[0])
+        return item.view()
+
+    async def set_budget(
+        self, scope: BudgetScope, *, usd: Decimal, window: str, when: datetime
+    ) -> Budget:
+        budget = to_picos(usd)
+        window_id, expires_at = window_for(window, when)
+        item = self._items.get(scope.key)
+        if item is None:
+            item = _BudgetItem(
+                scope=scope,
+                budget_picos=budget,
+                window=window,
+                window_id=window_id,
+                window_expires_at=expires_at,
+                remaining_picos=budget,
+                created_at=when,
+                updated_at=when,
+            )
+            self._items[scope.key] = item
+            return item.view()
+
+        if item.window != window or item.window_expires_at <= int(when.timestamp()):
+            # A different window type counts a different thing, so the counters start
+            # again rather than carrying a total that would answer neither question.
+            item.window = window
+            item.budget_picos = budget
+            item.roll(window_id, expires_at)
+        else:
+            # Same window: move `remaining` by the delta so spend and live holds survive.
+            item.remaining_picos += budget - item.budget_picos
+            item.budget_picos = budget
+        item.updated_at = when
+        return item.view()
+
+    async def clear_budget(self, scope: BudgetScope) -> bool:
+        return self._items.pop(scope.key, None) is not None
+
+    async def list_budgets(self, *, when: datetime) -> list[Budget]:
+        now = int(when.timestamp())
+        views = [
+            (
+                item.rolled_view(window_for(item.window, when)[0])
+                if item.window_expires_at <= now
+                else item.view()
+            )
+            for item in self._items.values()
+        ]
+        return sorted(views, key=lambda budget: budget.scope.key)
+
+    def _release_expired(self, item: _BudgetItem, now: int) -> SweepResult:
+        expired = [rid for rid, (_, exp) in item.reservations.items() if exp <= now]
+        total = 0
+        for request_id in expired:
+            amount, _ = item.reservations.pop(request_id)
+            item.reserved_picos -= amount
+            item.remaining_picos += amount
+            item.expired_releases += 1
+            item.expired_released_picos += amount
+            total += amount
+        return SweepResult(released=len(expired), usd=from_picos(total))
+
+    @staticmethod
+    def _handle(
+        scope: BudgetScope, request_id: str, held: tuple[int, int], window_id: str
+    ) -> Reservation:
+        amount, expires = held
+        return Reservation(
+            scope=scope,
+            request_id=request_id,
+            usd=from_picos(amount),
+            window_id=window_id,
+            expires_at=datetime.fromtimestamp(expires, tz=UTC),
+        )
 
 
 def _matches(entry: LedgerEntry, query: LedgerQuery) -> bool:

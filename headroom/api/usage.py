@@ -78,6 +78,13 @@ class LedgerRowView(BaseModel):
     usd_cost: str | None
     cost_status: str
 
+    #: What the budget gate did (Phase 4): whether a cap applied, what was held before
+    #: the provider ran, and what the hold became. On a 402 row this is the only record
+    #: that the request happened at all — no provider was called.
+    budget_status: str | None
+    budget_reserved_usd: str | None
+    budget_settled_usd: str | None
+
     upstream_latency_ms: float | None
     ttft_ms: float | None
     passthrough_overhead_ms: float | None
@@ -118,6 +125,9 @@ class LedgerRowView(BaseModel):
             usd_per_mtok_out=format_usd(entry.usd_per_mtok_out),
             usd_cost=format_usd(entry.usd_cost),
             cost_status=entry.cost_status,
+            budget_status=entry.budget_status,
+            budget_reserved_usd=format_usd(entry.budget_reserved_usd),
+            budget_settled_usd=format_usd(entry.budget_settled_usd),
             upstream_latency_ms=entry.upstream_latency_ms,
             ttft_ms=entry.ttft_ms,
             passthrough_overhead_ms=entry.passthrough_overhead_ms,

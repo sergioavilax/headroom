@@ -62,6 +62,20 @@ class Dialect(ABC):
     def wants_stream(self, body: Mapping[str, Any]) -> bool:
         """Whether the caller asked for a streamed response."""
 
+    @abstractmethod
+    def max_output_tokens(self, body: Mapping[str, Any]) -> int | None:
+        """The caller's own ceiling on generated tokens, or ``None`` if they set none.
+
+        Phase 4 reads this, and only this, to bound what a request can cost *before* it
+        runs: it is the one number in the body that says how much the provider is
+        permitted to generate. ``None`` is a real answer — the OpenAI dialect makes the
+        field optional — and the budget gate substitutes a documented default rather
+        than pretending the request is free (``headroom/policy/budgets.py``).
+
+        Note what this still is not: validation. A nonsensical value is the provider's
+        to reject, and anything not a positive integer reads here as "not stated".
+        """
+
     # --- reading the response stream ----------------------------------------------
 
     @abstractmethod

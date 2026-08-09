@@ -52,6 +52,9 @@ DONE_SENTINEL: Final = "[DONE]"
 _ERROR_TYPES: Final[Mapping[int, str]] = {
     400: "invalid_request_error",
     401: "authentication_error",
+    # OpenAI's own type *and* code for "you exceeded your current quota", which is what
+    # a budget refusal is from the caller's side (Phase 4).
+    402: "insufficient_quota",
     403: "permission_error",
     404: "not_found_error",
     413: "invalid_request_error",
@@ -72,6 +75,17 @@ class OpenAIDialect(Dialect):
 
     def wants_stream(self, body: Mapping[str, Any]) -> bool:
         return body.get("stream") is True
+
+    def max_output_tokens(self, body: Mapping[str, Any]) -> int | None:
+        """``max_completion_tokens``, else the legacy ``max_tokens``, else ``None``.
+
+        Both spellings are in the wild — OpenAI deprecated ``max_tokens`` in favour of
+        ``max_completion_tokens``, vLLM accepts either — and unlike the Anthropic
+        dialect neither is required. A request that states no ceiling is the case the
+        budget gate's documented default exists for.
+        """
+        stated = _positive_int(body.get("max_completion_tokens"))
+        return stated if stated is not None else _positive_int(body.get("max_tokens"))
 
     def is_terminal(self, event: SSEEvent) -> bool:
         data = event.data
@@ -145,6 +159,12 @@ OPENAI: Final = register_dialect(OpenAIDialect())
 def _int(value: Any) -> int | None:
     """A reported count, or ``None``. ``bool`` is excluded because it is an ``int``."""
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _positive_int(value: Any) -> int | None:
+    """A stated ceiling, or ``None`` for anything that is not one."""
+    parsed = _int(value)
+    return parsed if parsed is not None and parsed > 0 else None
 
 
 def _nested_int(payload: Mapping[str, Any], outer: str, inner: str) -> int | None:
