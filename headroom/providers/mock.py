@@ -100,12 +100,34 @@ class MockScript:
         return cls(chunks=_rechunk(chunks, chunk_size), cut_after_chunks=cut_after_chunks)
 
     @classmethod
+    def openai_reasoning_stream(
+        cls,
+        *,
+        cut_after_chunks: int | None = None,
+        chunk_size: int | None = None,
+        **kwargs: Any,
+    ) -> Self:
+        """A reasoning model's stream — chain of thought first, answer second.
+
+        Defaults live in :func:`mock_scripts.openai_reasoning_stream_chunks` rather than
+        being repeated here; ``reasoning``, ``text``, ``reasoning_field`` and the token
+        counts all pass straight through.
+        """
+        chunks = mock_scripts.openai_reasoning_stream_chunks(**kwargs)
+        return cls(chunks=_rechunk(chunks, chunk_size), cut_after_chunks=cut_after_chunks)
+
+    @classmethod
     def anthropic_message(cls, text: str, **kwargs: Any) -> Self:
         return cls(body=mock_scripts.anthropic_message_body(text, **kwargs))
 
     @classmethod
     def openai_completion(cls, text: str, **kwargs: Any) -> Self:
         return cls(body=mock_scripts.openai_completion_body(text, **kwargs))
+
+    @classmethod
+    def openai_reasoning_completion(cls) -> Self:
+        """The non-streamed reasoning reply, byte-literal and adversarially encoded."""
+        return cls(body=mock_scripts.openai_reasoning_body())
 
     @classmethod
     def error(

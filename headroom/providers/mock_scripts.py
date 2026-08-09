@@ -33,6 +33,8 @@ __all__ = [
     "anthropic_tool_use_body",
     "anthropic_tool_use_stream_chunks",
     "openai_completion_body",
+    "openai_reasoning_body",
+    "openai_reasoning_stream_chunks",
     "openai_stream_chunks",
     "split_every",
     "text_deltas",
@@ -359,3 +361,127 @@ def openai_stream_chunks(
         )
     chunks.append(format_sse("[DONE]"))
     return chunks
+
+
+# --------------------------------------------------------------------------------
+# OpenAI dialect — reasoning models
+# --------------------------------------------------------------------------------
+#
+# vLLM served with ``--reasoning-parser`` splits a model's chain of thought out of the
+# answer and into a delta field of its own. Nothing under ``headroom/`` outside this
+# file knows that field exists, and these fixtures do not teach it: they exist so the
+# keyless suite can prove the gateway carries a field it has never heard of, which the
+# live vLLM smoke observed on real hardware first (docs/PHASE_LOG.md, Phase 1).
+
+#: The model id the reasoning fixtures answer to. ``mock-`` prefixed so it routes under
+#: the test gateway's table without widening it.
+REASONING_MODEL: Final = "mock-reasoner-1"
+
+#: A chain of thought built to break anything that re-serializes it: an escaped quote,
+#: a literal non-ASCII character, and a literal astral-plane one — so re-chopping this
+#: stream one byte at a time splits real multi-byte UTF-8, not just frames.
+REASONING_TRACE: Final = 'They want the literal string "headroom ok" — no Björk 𝄞 flourish.'
+
+
+def _dumps_literal(payload: Any) -> str:
+    """Compact JSON leaving non-ASCII literal — how vLLM's FastAPI layer serializes.
+
+    ``_dumps`` escapes it instead (``ensure_ascii`` defaults on). Both are valid JSON
+    for the same string and they are **different bytes**, which is exactly the trap: a
+    proxy that re-serializes swaps one form for the other, and nothing downstream
+    notices until a byte comparison does.
+    """
+    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+
+
+def openai_reasoning_stream_chunks(
+    reasoning: str = REASONING_TRACE,
+    text: str = "headroom ok",
+    *,
+    model: str = REASONING_MODEL,
+    reasoning_field: str = "reasoning_content",
+    prompt_tokens: int = 21,
+    reasoning_tokens: int = 57,
+    completion_tokens: int = 63,
+    finish_reason: str = "stop",
+    include_usage: bool = True,
+) -> list[bytes]:
+    """The chain of thought first, the answer second, usage last, then ``[DONE]``.
+
+    ``reasoning_field`` is a parameter because the wild disagrees with itself: vLLM
+    emits ``reasoning_content``, other OpenAI-compatible servers emit ``reasoning``.
+    The gateway distinguishes them exactly as much as it distinguishes any other key it
+    was never told about — not at all — so a test can assert the same thing for both.
+
+    ``text=""`` with ``finish_reason="length"`` is the shape that broke the live smoke:
+    a model whose whole budget went to reasoning, ending correctly with no answer.
+
+    Key order inside each delta is deliberately not alphabetical, so a dict round trip
+    anywhere in the proxy would reorder it and fail a byte comparison.
+    """
+    completion_id = _stable_id("chatcmpl-mock-", reasoning + text)
+
+    def chunk(choices: list[dict[str, Any]], **extra: Any) -> bytes:
+        payload: dict[str, Any] = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": choices,
+        }
+        payload.update(extra)
+        return format_sse(_dumps_literal(payload))
+
+    chunks = [
+        chunk([{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}])
+    ]
+    chunks.extend(
+        chunk([{"index": 0, "delta": {reasoning_field: delta, "content": None}}])
+        for delta in text_deltas(reasoning)
+    )
+    chunks.extend(
+        chunk([{"index": 0, "delta": {reasoning_field: None, "content": delta}}])
+        for delta in text_deltas(text)
+    )
+    chunks.append(chunk([{"index": 0, "delta": {}, "finish_reason": finish_reason}]))
+    if include_usage:
+        chunks.append(
+            chunk(
+                [],
+                usage={
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                    # Reasoning tokens are *inside* completion_tokens, and no amount of
+                    # reading the visible answer recovers them. Phase 3 meters from
+                    # here; a meter that counts what it can see undercounts by 57.
+                    "completion_tokens_details": {"reasoning_tokens": reasoning_tokens},
+                },
+            )
+        )
+    chunks.append(format_sse("[DONE]"))
+    return chunks
+
+
+#: A non-streamed reasoning reply — the byte-literal fixture.
+#:
+#: The same character appears twice in the trace below: once as a literal ``ö`` and once
+#: as its six-character JSON escape. Both are valid, neither is wrong, and they are
+#: different bytes — so a proxy that re-serializes normalizes one form into the other,
+#: and asserting on both catches it whichever direction it went.
+#: ``reasoning_content`` precedes ``content`` so a dict round trip would also reorder the
+#: keys.
+OPENAI_REASONING_BODY: Final = (
+    b'{"id":"chatcmpl-mock-reasoning-0001","object":"chat.completion","created":0,'
+    b'"model":"mock-reasoner-1","choices":[{"index":0,"message":{"role":"assistant",'
+    b'"reasoning_content":"They want the literal string \\"headroom ok\\" '
+    b'\xe2\x80\x94 no Bj\xc3\xb6rk (or Bj\\u00f6rk) flourish.",'
+    b'"content":"headroom ok"},"finish_reason":"stop"}],'
+    b'"usage":{"prompt_tokens":21,"completion_tokens":63,"total_tokens":84,'
+    b'"completion_tokens_details":{"reasoning_tokens":57}}}'
+)
+
+
+def openai_reasoning_body() -> bytes:
+    """The non-streamed reasoning fixture: a reply whose unknown field must survive."""
+    return OPENAI_REASONING_BODY

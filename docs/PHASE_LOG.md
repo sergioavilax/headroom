@@ -482,8 +482,9 @@ content, with a failure message that tells "ran out of budget" apart from "the g
 broke". `tests/support/streams.py` grew `openai_finish_reasons()` to read it. The paid
 Anthropic smoke is deliberately untouched: `claude-haiku-4-5` is not a reasoning model at
 these settings, `max_tokens: 16` is what holds that call at ~$0.0001, and invariant 5
-outranks symmetry between the two tests. **No gateway behaviour changed** — the diff is a
-test, a test helper, and this note — so there is no H-entry; the reasoning is here.
+outranks symmetry between the two tests. **No gateway behaviour changed anywhere in this
+work** — not by the test fix, and not by the keyless fixture below. The one judgment call
+worth recording is how those fixtures serialize non-ASCII, which is **H-016**.
 
 **A5-adjacent evidence.** The half of that run which *did* work is the interesting half.
 vLLM's reasoning parser splits the model's chain of thought into a delta field of its own
@@ -499,27 +500,81 @@ something outside the fixtures has been through it. Phase 3 inherits the consequ
 reasoning tokens are output tokens the meter cannot see in the content stream, so usage
 must be read from the usage block, never inferred from the text.
 
-**Not yet re-run.** The fixed test has not been executed against the live instance — that
-is the operator's box, and the session that made this change could not reach it. The
-re-run is:
+**And then it stopped being an observation.** An observation on hardware CI cannot reach
+decays into folklore, so the finding was turned into a keyless fixture in the same PR:
+`headroom/providers/mock_scripts.py` gained `openai_reasoning_stream_chunks()` (chain of
+thought first, answer second, `completion_tokens_details.reasoning_tokens` in the usage
+chunk) and `OPENAI_REASONING_BODY` for the non-streamed form, `MockScript` gained two
+builders, and **`tests/test_reasoning_passthrough.py`** — 10 tests — now asserts in CI
+what the operator saw once on a GPU:
+
+- reasoning deltas reach the client **byte-for-byte**, parametrized over *both* spellings
+  in the wild (`reasoning_content` and `reasoning`) — because the point is not that
+  Headroom supports vLLM's field name, it is that no branch exists which could tell them
+  apart;
+- the chain of thought never leaks into `delta.content`, and arrives strictly before it;
+- the token count is knowable **only** from the usage block — 11 visible characters, 63
+  completion tokens, 57 of them reasoning. This is the Phase 3 rule, now enforced;
+- the whole stream survives `split_every(…, 1)`. The trace carries a literal `ö`, `—`,
+  and `𝄞`, so the wire really does hold 2-, 3-, and 4-byte UTF-8 sequences and a 1-byte
+  re-chop really does split characters — the existing fixtures ship non-ASCII
+  pre-escaped, so they never did;
+- **an exhausted budget is a complete stream, not a truncation**: `finish_reason:
+  "length"`, `[DONE]` present, no error, `outcome == "ok"`. The live failure, reproduced
+  without a GPU, pinning that the gateway was right and the assertion was wrong;
+- **a cut during reasoning is still an error**: same empty answer, no `[DONE]`, no
+  `finish_reason`, `outcome == "upstream_stream_cut"`. The two must never be confused —
+  invariant 6, one layer up.
+
+**The sabotage that proved it covers something.** Green on the first run is when a test
+deserves the most suspicion, so the proxy was temporarily patched to re-encode one
+character on the outbound byte path — a literal `ö` rewritten as its six-character JSON
+escape, which is precisely what one `json.loads`/`json.dumps` round trip with the default
+`ensure_ascii` would do. Semantically identical, different bytes, invisible to anything
+but a byte comparison. Under that sabotage:
+
+```
+$ uv run pytest -q          # with the proxy corrupting the stream
+FAILED tests/test_reasoning_passthrough.py::test_reasoning_deltas_reach_the_client_byte_for_byte[reasoning_content]
+FAILED tests/test_reasoning_passthrough.py::test_reasoning_deltas_reach_the_client_byte_for_byte[reasoning]
+FAILED tests/test_reasoning_passthrough.py::test_a_reasoning_stream_survives_being_chopped_one_byte_at_a_time[3]
+FAILED tests/test_reasoning_passthrough.py::test_a_reasoning_stream_survives_being_chopped_one_byte_at_a_time[64]
+4 failed, 133 passed, 2 deselected, 1 warning in 0.41s
+```
+
+**Only the new file noticed.** `test_streaming_passthrough` and `test_tool_blocks` both
+passed against a gateway that was actively corrupting bytes, because every fixture that
+predates this one ships its non-ASCII already escaped — there was nothing left for an
+`ensure_ascii` re-encode to change. That gap is what the live smoke walked into, and it
+is now closed. (`chunk_size=1` also passes under the sabotage, correctly: a per-chunk
+mutation cannot see a two-byte sequence split across two one-byte chunks.) The proxy was
+restored immediately; `git diff headroom/api/proxy.py` is empty, and the suite is green.
+
+**Not yet re-run.** The fixed *live* test has not been executed against the live instance
+— that is the operator's box, and the session that made this change could not reach it.
+Everything above is keyless. The re-run is:
 
 ```
 $ VLLM_BASE_URL=http://<instance>:8000 uv run pytest -m live -k vllm -v
 ```
 
-Keyless gate over the change, on the same machine:
+Keyless gate over the whole change, on the operator's machine:
 
 ```
 $ make lint
 uv run ruff check .
 All checks passed!
 uv run ruff format --check .
-57 files already formatted
+58 files already formatted
 
 $ make typecheck
 uv run mypy
-Success: no issues found in 57 source files
+Success: no issues found in 58 source files
 
 $ make test
-================= 127 passed, 2 deselected, 1 warning in 0.39s =================
+================= 137 passed, 2 deselected, 1 warning in 0.40s =================
 ```
+
+**127 → 137.** The Shipped list above records the count at the Phase 1 gate; the ten added
+here are `tests/test_reasoning_passthrough.py`. Everything is additive — no existing test,
+fixture, or gateway behaviour was changed to make room for them (invariant 7).

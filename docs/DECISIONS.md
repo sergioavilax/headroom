@@ -599,3 +599,47 @@ uvicorn's config* — works only if every deployment remembers to pass one.
 shapes rather than to a friendly API — it is small and commented for that reason.
 `ctx.complete()` is first-call-wins so the middleware's backstop cannot overwrite a diagnosis
 the proxy already recorded; `tests/test_request_context.py` pins that.
+
+---
+
+## H-016 — The reasoning fixtures serialize non-ASCII literally, unlike every other fixture (Phase 1)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** The live vLLM smoke turned up a delta field no module under `headroom/` has
+ever heard of (`reasoning_content`), carried to the client intact. Making that a keyless
+fixture meant deciding how the mock serializes it — and `mock_scripts._dumps` uses
+`json.dumps`'s default `ensure_ascii=True`, so every fixture in the repo ships its
+non-ASCII pre-escaped.
+
+That default quietly disarms the assertion. If the fixture's bytes contain no non-ASCII
+in the first place, then a proxy that re-encodes the stream with `json.loads`/`json.dumps`
+changes *nothing* about it — the escaped form survives an escaping round trip unchanged —
+and a byte-equality test passes against a gateway that is actively corrupting bodies.
+Worse, a 1-byte re-chop of an all-ASCII payload never splits a character, so the A4
+"mid-UTF-8-sequence" claim is not actually exercised by the payload making it.
+
+**Decision.** The reasoning fixtures serialize with `ensure_ascii=False`
+(`mock_scripts._dumps_literal`), which is also what vLLM's FastAPI layer really sends. The
+trace carries a literal `ö`, `—`, and `𝄞`, so the wire holds 2-, 3-, and 4-byte UTF-8
+sequences. The non-streamed `OPENAI_REASONING_BODY` goes further and carries the *same*
+character in both forms — literal and escaped — in one string, so a normalization is
+caught whichever direction it runs. `_dumps` is left exactly as it was; this is a second
+serializer beside it, not a change to the first (invariant 7).
+
+**Alternatives considered.** *Reuse `_dumps` for consistency* — one serializer, and a
+fixture that cannot detect the most likely real corruption; consistency bought at the cost
+of the property being asserted. *Escape everything and test A4 elsewhere* — the existing
+suite already does that, and the sabotage below shows it is not enough. *A raw byte
+literal for the stream too* (as the tool-use fixture does) — correct but unreadable across
+eighteen frames, and the builder has to stay parameterized so `reasoning_field`, the token
+counts, and `finish_reason: "length"` can all vary.
+
+**Consequences.** Two serializers live in `mock_scripts.py` and the difference between them
+is load-bearing, so both are documented at the definition. This is now verified rather than
+argued: with the proxy temporarily patched to rewrite one literal `ö` as its JSON escape on
+the outbound path, `tests/test_reasoning_passthrough.py` fails four ways while
+`test_streaming_passthrough` and `test_tool_blocks` both pass — 4 failed, 133 passed. The
+new file detects a class of corruption the suite previously could not see. Any future
+fixture meant to prove passthrough fidelity should use `_dumps_literal` for the same
+reason; `_dumps` remains right for fixtures asserting event sequences rather than bytes.
