@@ -4110,3 +4110,46 @@ and `usage_ledger` references it, so the rows go with it (H-029's caveat, unchan
 
 **Spend** — $0.00. Every test ran on the MockProvider, the container demo talked to nothing
 outside the compose network, and the vLLM pre-flight ran on the operator's own GPUs.
+
+### CI
+
+CI on PR-6 ([run 31340486751](https://github.com/sergioavilax/headroom/actions/runs/31340486751)),
+all three jobs green on the first run, no annotations:
+
+```
+$ gh run view 31340486751 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 141 source files
+pytest (…service containers) | ===== 1056 passed, 2 deselected, 1 warning in 27.93s =====
+pytest (…service containers) | tests/test_failover_boundary.py::test_the_sabotage_serves_a_frankenstein_answer PASSED
+pytest (…service containers) | tests/test_failover_boundary.py::test_the_shipped_gateway_refuses_the_same_splice PASSED
+pytest (…service containers) | tests/test_failover_boundary.py::test_the_executor_itself_refuses_to_retry_once_a_byte_is_out PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_no_caller_sees_a_5xx_at_any_intensity[light] PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_no_caller_sees_a_5xx_at_any_intensity[heavy] PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_no_caller_sees_a_5xx_at_any_intensity[brutal] PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_every_request_is_metered_exactly_once_under_chaos[brutal] PASSED
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**1056 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of all four contract suites executed against the service
+containers rather than skipping (H-012).
+
+**BUILD_PLAN §P6's "chaos suite green in CI" is now a property of every pull request.** The
+whole of this phase is keyless: three fault intensities against a mock chain, the splice
+sabotage, the boundary pair, and the backoff schedule all run on a runner with no GPU, no
+provider key, and no network to anything — which is what makes §P8.H3's mock-chain half
+reproducible by a stranger with a clone, and the two-GPU half the only part that needs the
+operator's desk.
+
+The `image` job is worth one line again: it builds the container and smokes `/healthz` with
+no Postgres, no DynamoDB, and no `embed` extra anywhere in the job. Phase 6 added a fifth
+provider to the shipped routing config and a startup dialect check on top of it, and the
+gateway still boots with nothing reachable — which is what Phase 9's container needs before
+its secrets arrive.
