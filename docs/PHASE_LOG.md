@@ -981,5 +981,33 @@ in step 7, and is truncated here regardless.)
   pool), which is what keeps CI's `image` job honest and what Phase 9's container needs
   before its secrets arrive.
 
+CI on PR-2 ([run 31291127046](https://github.com/sergioavilax/headroom/actions/runs/31291127046)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31291127046 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 71 source files
+pytest (…service containers) | ===== 280 passed, 2 deselected, 1 warning in 4.00s =====
+pytest (…service containers) | tests/test_tenant_store.py::test_a_created_key_comes_back_whole[memory] PASSED
+pytest (…service containers) | tests/test_tenant_store.py::test_a_created_key_comes_back_whole[postgres] PASSED
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**280 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres half of the contract suite executed against the service container rather than
+skipping. Under H-012 that is enforced rather than hoped for: CI sets `DATABASE_URL`
+explicitly, and an explicit endpoint that is unreachable now fails in 0.2 s.
+
+The `image` job is the one that proves the lazy pool: it builds the container and smokes
+`/healthz` with **no Postgres anywhere in the job**, which a gateway that connected at
+startup could not do.
+
 **Spend** — $0.00. No provider API was called in this phase; every test ran on the
 MockProvider and the container demo talked to nothing.
