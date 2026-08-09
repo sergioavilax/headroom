@@ -59,8 +59,11 @@ async def test_a_streamed_request_records_every_stage(gateway: GatewayHarness) -
     assert ctx.model == "mock-model-1"
     assert ctx.provider == "mock"
     assert ctx.stream is True
-    # Tenancy is a Phase 2 concern; the field exists now so Phase 2 only has to fill it.
-    assert ctx.tenant_id is None
+    # Phase 1 left these as placeholders and Phase 2 filled them: the request is
+    # attributed to the tenant whose virtual key authenticated it, which is what
+    # Phase 3's ledger rows are keyed on.
+    assert ctx.tenant_id == gateway.tenant.id
+    assert ctx.key_id == gateway.key.id
 
 
 async def test_a_non_streamed_request_records_every_stage(gateway: GatewayHarness) -> None:
@@ -187,6 +190,7 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
         "route",
         "dialect",
         "tenant_id",
+        "key_id",
         "model",
         "provider",
         "stream",
