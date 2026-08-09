@@ -8,10 +8,14 @@ request time.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
-from headroom.core.config import GatewayConfig, load_config
+from headroom.core.config import ADMIN_TOKEN_ENV, GatewayConfig, load_config
 from headroom.core.errors import ConfigurationError
+from headroom.core.storage import TenantStore
+from headroom.db.tenants import PostgresTenantStore
+from headroom.policy.auth import Authenticator
 from headroom.policy.routing import RoutingTable
 
 # Imported for their registration side effects: each module calls `register_kind` at
@@ -29,11 +33,24 @@ __all__ = ["Gateway", "build_gateway"]
 
 @dataclass(slots=True)
 class Gateway:
-    """Everything one running gateway needs to serve a request."""
+    """Everything one running gateway needs to serve a request.
+
+    Phase 2 adds the control plane — the store, the authenticator that reads it, and
+    the root admin token — as fields rather than as globals, for the same reason the
+    registry is one: the test suite builds a complete gateway per test, and Phase 9
+    builds one per process against different backing services.
+
+    ``admin_token`` is ``None`` when ``HEADROOM_ADMIN_TOKEN`` is unset, and that is not
+    a synonym for "no authentication required": the admin API refuses every request
+    with 503 in that state (H-019).
+    """
 
     config: GatewayConfig
     registry: ProviderRegistry
     routing: RoutingTable
+    store: TenantStore
+    authenticator: Authenticator
+    admin_token: str | None = None
 
     def provider_for(self, dialect: str, model: str) -> Provider:
         """Resolve a request to the provider that will serve it.
@@ -45,10 +62,19 @@ class Gateway:
 
     async def aclose(self) -> None:
         await self.registry.aclose()
+        await self.store.aclose()
 
 
-def build_gateway(config: GatewayConfig | None = None) -> Gateway:
-    """Construct a gateway from config (loaded from disk when not supplied)."""
+def build_gateway(
+    config: GatewayConfig | None = None, *, store: TenantStore | None = None
+) -> Gateway:
+    """Construct a gateway from config (loaded from disk when not supplied).
+
+    The store defaults to Postgres and its pool is lazy (``headroom/db/pool.py``), so
+    building a gateway — and therefore starting the process — never requires a
+    reachable database. ``store`` is injectable for tests; nothing in configuration can
+    select a non-durable one.
+    """
     resolved = config if config is not None else load_config()
     kinds = provider_kinds()
     registry = ProviderRegistry()
@@ -60,4 +86,12 @@ def build_gateway(config: GatewayConfig | None = None) -> Gateway:
                 f"provider {name!r} has unknown kind {spec.kind!r} (registered: {known})"
             )
         registry.add(factory(name, **spec.settings()))
-    return Gateway(config=resolved, registry=registry, routing=resolved.routing_table())
+    tenant_store = store if store is not None else PostgresTenantStore()
+    return Gateway(
+        config=resolved,
+        registry=registry,
+        routing=resolved.routing_table(),
+        store=tenant_store,
+        authenticator=Authenticator(tenant_store),
+        admin_token=os.environ.get(ADMIN_TOKEN_ENV) or None,
+    )

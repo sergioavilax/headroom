@@ -578,3 +578,436 @@ $ make test
 **127 → 137.** The Shipped list above records the count at the Phase 1 gate; the ten added
 here are `tests/test_reasoning_passthrough.py`. Everything is additive — no existing test,
 fixture, or gateway behaviour was changed to make room for them (invariant 7).
+
+---
+
+## Phase 2 — Tenancy: virtual keys and admin surface (2026-08-08)
+
+**Shipped**
+
+- **The first real migration.** `migrations/0001_tenants_and_virtual_keys.sql` — the
+  P0 runner finally has work. `tenants` (UUID pk, unique name, `active`, timestamps) and
+  `virtual_keys` (UUID pk, `tenant_id` FK `ON DELETE RESTRICT`, `key_hash` UNIQUE,
+  `key_prefix`, `allowed_models`/`allowed_providers` as `TEXT[] NOT NULL DEFAULT '{}'`,
+  `revoked_at`, timestamps). Revocation is a timestamp, not a boolean; nothing is ever
+  deleted; empty scope means unrestricted. **H-022.**
+- **Virtual keys** (`headroom/policy/keys.py`): `hk_` + `secrets.token_urlsafe(32)` — 256
+  bits, 46 characters. **SHA-256 hex at rest** in a UNIQUE-indexed column, so
+  authentication is one indexed lookup and no password KDF sits on the first-token path;
+  the entropy that makes that safe is asserted rather than assumed. An 11-character
+  display prefix (`hk_` + 8) is stored deliberately, withholding ~208 bits. Scope matching
+  is exact, with a trailing `*` as the only wildcard. **H-017.**
+- **`TenantStore`, one interface and two implementations** — `PostgresTenantStore`
+  (`headroom/db/tenants.py`, what the gateway runs; hand-written SQL, `RETURNING *`,
+  `COALESCE($n, column)` partial updates, no concatenated SQL) and `InMemoryTenantStore`
+  (`headroom/db/memory.py`, what most tests run against). The drift hazard is answered by
+  `tests/test_tenant_store.py`, **one contract suite parametrised over both**. **H-021.**
+- **A lazy connection pool** (`headroom/db/pool.py`): building a gateway never opens a
+  connection, so CI's `image` job still smokes `/healthz` with no database in sight and
+  H-000's liveness-only health check survives having real dependencies. Database failures
+  are translated at the boundary — a missing table becomes a `ConfigurationError` naming
+  `make migrate`, anything about reachability becomes a 503. Nothing above `headroom/db/`
+  imports asyncpg.
+- **Proxy authentication, at the P1 seams.** `_proxy` gained three lines:
+  `authenticate()` before the body is read, `require_model()` before routing,
+  `require_provider()` after it. Everything else in `proxy.py` is untouched, and the
+  errors ride the existing `HeadroomError` handler so a 401 arrives in the caller's own
+  dialect. `RequestContext.tenant_id` / `key_id` — Phase 1's placeholders — are now
+  filled by `Principal.stamp`. **H-020.**
+- **Exact 401/403 semantics, and exact ordering.** 401 for missing / malformed / unknown /
+  revoked / inactive-tenant (five distinct `headroom.reason` values, one status); 403 for
+  out-of-scope model or provider; 503 for a control-plane outage, extending H-009's table
+  of invented statuses. An anonymous request with a broken body is **401, not 400**; an
+  out-of-scope model is **403 whether or not it routes**, so a key cannot enumerate the
+  routing table.
+- **Auth decision cache** (`headroom/policy/auth.py`): `AUTH_CACHE_TTL_S = 5.0`, a named
+  constant. **Successes only** — a failure is never cached, so a key minted a millisecond
+  ago works now. Revocation, tenant deactivation, and a scope patch all invalidate
+  in-process immediately, so the window in the revoking process is **zero** and the TTL is
+  the *cross-process* bound (Phase 9 runs several tasks against one RDS). Keyed by hash,
+  never plaintext; stores a frozen `Principal`; the clock is injected so the window is
+  tested by advancing time rather than sleeping through it. **H-018.**
+- **Admin API** (`headroom/api/admin.py`), full CRUD behind a root token:
+  `POST/GET/PATCH/DELETE /admin/tenants[/{id}]` and `/admin/keys[/{id}]` (+ `?tenant_id=`).
+  `DELETE` revokes/deactivates and returns the object in its new state. 409 on a duplicate
+  tenant name, 404 on unknown ids *including* ids that are not UUIDs, 422 on an unknown
+  field (`extra="forbid"`). Errors carry Headroom's own envelope with the request id —
+  the proxy speaks the caller's dialect because an SDK has to parse it; nothing on
+  `/admin` is an SDK.
+- **`HEADROOM_ADMIN_TOKEN`, environment only** — named but never valued in `.env.example`,
+  referenced through `docker-compose.yml`, resolved once at gateway construction, compared
+  with `secrets.compare_digest`. **Unset means the admin API is OFF** — 503 on every route,
+  naming the variable — never open. `/admin` is exempt from virtual-key auth, so the
+  control plane stays reachable when every key is revoked. **H-019.**
+- **The plaintext key exists exactly once**, in the `POST /admin/keys` response, enforced
+  structurally: `KeyView` has no `key` field, `KeyCreated` is the only model that does, and
+  one route returns it.
+- **Tests**: 280 keyless (137 → 280), 2 live-marked and deselected by default. New files —
+  `test_tenant_store` (44, the contract suite + Postgres-only proofs),
+  `test_auth_matrix` (29), `test_virtual_keys` (27), `test_admin_api` (25),
+  `test_auth_cache` (10), `test_key_secrecy` (8). Every Phase 0/1 test still green.
+- **Docs**: H-017 … H-022 in `docs/DECISIONS.md`; **`docs/vllm.md`** (below); README with
+  the four-step keyless demo and the 401/403 rules; `migrations/README.md` status table.
+
+**Additional deliverable — `docs/vllm.md`**
+
+Phase 1's live smoke produced operational facts that lived only in a terminal scrollback.
+They are now a document, with every claim tagged **VERIFIED** (run on this machine) or
+**UNTESTED**: the known-good launch command (`cyankiwi/Qwen3.6-27B-AWQ-INT4`,
+`--gpu-memory-utilization 0.92 --max-model-len 8192 --enforce-eager --tool-call-parser
+qwen3_xml --reasoning-parser qwen3 --limit-mm-per-prompt '{"image": 0, "video": 0}'`, host
+port 8010, HF cache mount); why each non-obvious flag (hermes fails *silently* on this
+family; the text-only multimodal limit skips vision profiling that crawls under eager mode
+and hands the encoder's budget to KV; **8010 because 8000 is Backline's**, and P8.H2 needs
+both stacks up at once); the `drawais/…` landmine (text-only `config.json`, `Qwen3_5Config`
+/ `Qwen3_5TextConfig` `TypeError` on vLLM 0.26 — a traceback that looks like version skew
+and is not); that **GPU selection is unreliable here** (`--gpus device=N` *and*
+`--gpus device=UUID` both put the model on the wrong physical card), the reliable check
+(`nvidia-smi --query-gpu=uuid,memory.used --format=csv`), and the **UNTESTED** candidate
+fix (`--gpus all` + `-e CUDA_VISIBLE_DEVICES=<UUID>`) that has to be settled before Phase
+6's two-instance demo; sizing against **free** memory because the desktop card holds
+~1.2–5 GB of Windows display memory at all times; and the reasoning-model budget behaviour
+that broke the Phase 1 smoke.
+
+**Deferred**
+
+- Nothing from the Phase 2 scope. Explicitly *not* built, per the plan: rate limits and
+  budgets (P4), the cost ledger (P3), the Tenants & Keys dashboard (P7). The seams exist —
+  `ctx.tenant_id` / `ctx.key_id` are in the log line for P3, the `TenantStore` shape is
+  what P3's ledger store should copy, and P4's admission checks slot in beside
+  `require_model` / `require_provider`.
+- **The `CUDA_VISIBLE_DEVICES` GPU-pinning fix in `docs/vllm.md` is UNTESTED** and marked
+  as such. It is Phase 6's pre-flight, not this phase's.
+
+**Deviations**
+
+1. **`make up` now applies migrations.** Since the gateway needs a schema to authenticate
+   against, a stack that is "up" without one is a stack whose first request 500s. `up`
+   runs `docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate`
+   after `--wait`, so it uses the container's `DATABASE_URL` and needs nothing installed on
+   the host. `make migrate` is unchanged (host-side, against `DATABASE_URL`).
+2. **The keyless demo is no longer one curl.** Phase 1's `make up` + curl became four steps:
+   set `HEADROOM_ADMIN_TOKEN`, `make up`, create a tenant, mint a key. That is the cost of
+   the phase, and the README now walks it. Deliberately *not* worked around by letting an
+   unauthenticated request through in some "dev mode" — a gateway with an off switch for
+   authentication is a gateway that ships with it off.
+3. **`ADMIN_TOKEN_ENV` lives in `headroom/core/config.py`**, not in `admin.py`, purely to
+   break an import cycle (`gateway.py` needs the name; `admin.py` needs `Gateway`). It sits
+   beside `CONFIG_PATH_ENV`, which is where environment-variable names already live.
+4. **Two Phase 1 tests changed**, both because the placeholder they asserted is now filled:
+   `test_request_context.py` asserted `ctx.tenant_id is None` (now the seeded tenant's id)
+   and pinned the log-field set (now includes `key_id`). No Phase 1 *behaviour* changed.
+5. **The test harness now authenticates by default.** `GatewayHarness.post` presents a
+   seeded key unless a test says `authenticate=False`, and `gateway.start(...)` wraps the
+   raw-ASGI driver the same way. So all 137 Phase 0/1 tests now exercise the *authenticated*
+   path unchanged, rather than being exempted from it.
+6. **CI's migration step became a real assertion.** It was "the runner is a clean no-op at
+   Phase 0"; it now applies the migration and proves a second run is a no-op.
+7. **The Postgres contract fixture truncates `tenants` and `virtual_keys`.** The compose
+   database is a test fixture, stated plainly here because it means `make test` wipes the
+   local control plane. It truncates on both entry and exit — entry so the contract
+   assertions can be exact (`==`, not `in`) and identical for both stores, exit so the
+   README's demo still works immediately after a test run.
+8. **Additions the plan's Phase 2 text does not enumerate**, all additive: the 503
+   `control_plane_unavailable` status (H-020, extending H-009's table); tenant `active`
+   state and deactivation; `key_id` in the request log line (P3 needs per-key attribution,
+   not only per-tenant); and `docs/vllm.md`, which the session brief mandated.
+
+**Gate** — *auth matrix tests (missing/revoked/wrong-scope keys); admin CRUD; a revoked key
+is dead on the very next request (no cache of auth decisions beyond a short TTL, and the TTL
+is a documented number).*
+
+Run on the operator's machine with the compose stack up and **nothing exported**:
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+71 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 71 source files
+
+$ make test
+================= 280 passed, 2 deselected, 1 warning in 1.90s =================
+
+$ uv run pytest -m live -q --collect-only
+2/282 tests collected (280 deselected) in 0.05s
+```
+
+Per-file counts from the same run:
+
+```
+44 tests/test_tenant_store.py      10 tests/test_reasoning_passthrough.py
+29 tests/test_auth_matrix.py       10 tests/test_auth_cache.py
+27 tests/test_virtual_keys.py       8 tests/test_key_secrecy.py
+25 tests/test_admin_api.py          6 tests/test_non_streaming.py
+19 tests/test_provider_clients.py   6 tests/test_mid_stream_cut.py
+17 tests/test_sse.py                5 tests/test_tool_blocks.py
+17 tests/test_routing.py            5 tests/test_logging.py
+14 tests/test_streaming_passthrough.py  4 tests/test_no_buffering.py
+14 tests/test_error_mapping.py      3 tests/test_pytest_policy.py
+11 tests/test_request_context.py    3 tests/test_migrations.py
+                                    2 tests/test_services.py
+                                    1 tests/test_healthz.py
+```
+
+The Postgres half of the contract suite **ran** rather than skipped — 18 of
+`test_tenant_store.py`'s 44 are the `[postgres]` parameter, plus five Postgres-only proofs:
+
+```
+$ uv run pytest tests/test_tenant_store.py -v | grep -c 'postgres.*PASSED'
+18
+```
+
+**Run again against a fresh clone** (`git clone -b claude/p2-tenancy . /tmp/hr-p2-gate`),
+with no venv, no pre-built image, and a `.env` holding only `HEADROOM_ADMIN_TOKEN` — then
+the README's demo executed verbatim on it:
+
+```
+$ make up
+docker compose up -d --build --wait
+ Container hr-p2-gate-db-1 Healthy
+ Container hr-p2-gate-dynamodb-1 Healthy
+ Container hr-p2-gate-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 1 migration(s): 0001_tenants_and_virtual_keys
+
+$ make test        # bare and keyless — nothing exported
+================= 280 passed, 2 deselected, 1 warning in 2.38s =================
+
+$ curl -sS localhost:8080/healthz
+{"status":"ok"}
+
+--- the README demo, run verbatim on this fresh clone ---
+POST /admin/tenants ->
+{"id":"50cba457-0e0b-4b7a-842c-7f4d3694787b","name":"acme","active":true,
+ "created_at":"2026-08-09T02:47:43.730039Z","updated_at":"2026-08-09T02:47:43.730039Z"}
+
+POST /admin/keys -> (plaintext redacted after its prefix)
+{"id":"71a44809-…","tenant_id":"50cba457-…","name":"laptop","key_prefix":"hk_rcGh-Zvy",
+ "allowed_models":["mock-*"],"allowed_providers":[],"status":"active","revoked_at":null,
+ "key":"hk_rcGh-Zvy..."}
+
+POST /v1/messages with that key ->
+{"id":"msg_mock_6ca20aa0926a68c6","type":"message","role":"assistant","model":"mock-model-1",
+ "content":[{"type":"text","text":"mock reply from mock-model-1"}],"stop_reason":"end_turn",
+ "usage":{"input_tokens":11,"output_tokens":7}}
+-> 200
+```
+
+The first attempt at that last block **failed**, and the failure was worth having: the
+demo's `POST /admin/tenants` came back `409 tenant_name_conflict`, because the Postgres
+contract fixture truncated the control-plane tables on the way *in* and left the last
+test's rows behind on the way *out*. So `make test` followed by the documented demo
+collided on a tenant a test had invented. Fixed in-branch by truncating on both sides
+(`tests/test_tenant_store.py`); the run above is the re-run. A repo whose own README stops
+working after its own test suite is a repo a stranger gives up on.
+
+**H-012 still holds with the new Postgres tests.** A fresh clone with no stack up must run
+a smaller suite *loudly*, and a stated-but-unreachable endpoint must fail rather than skip:
+
+```
+$ docker compose stop db
+$ uv run pytest -q                      # DATABASE_URL unset — inferred, unreachable
+257 passed, 23 skipped, 2 deselected, 1 warning in 0.59s
+
+$ DATABASE_URL=postgresql://…:5433/headroom uv run pytest -q tests/test_tenant_store.py
+22 passed, 22 errors in 0.21s
+ERROR tests/test_tenant_store.py::test_two_keys_cannot_share_a_hash - Failed: DATABASE_URL
+was set to postgresql://…:5433/headroom and nothing is listening there
+```
+
+The 0.21s is deliberate. The first version of that fixture let the migration runner's ten
+one-second connect retries run *per test*, so a wrong `DATABASE_URL` took ten minutes to
+report itself; the fixture now probes reachability and fails immediately. A suite that
+takes ten minutes to say "wrong address" is a suite people learn to interrupt.
+
+**The sabotage runs.** Green on the first attempt is when a suite deserves the most
+suspicion, so each of the phase's four claims was tested by breaking the thing it protects.
+All four patches were reverted immediately; the suite is green above.
+
+*Sabotage 1 — the proxy authenticates nobody* (`authenticate()` replaced with a fabricated
+`Principal`):
+
+```
+31 failed, 249 passed, 2 deselected
+FAILED tests/test_auth_matrix.py::test_a_request_with_no_key_is_401[anthropic]
+FAILED tests/test_auth_matrix.py::test_a_revoked_key_is_401[anthropic]
+FAILED tests/test_auth_matrix.py::test_a_model_outside_the_key_scope_is_403
+FAILED tests/test_auth_matrix.py::test_an_anonymous_request_with_a_broken_body_is_401_not_400
+FAILED tests/test_key_secrecy.py::test_the_request_log_line_carries_the_tenant_not_the_credential
+FAILED tests/test_request_context.py::test_a_streamed_request_records_every_stage
+…
+```
+
+*Sabotage 2 — `display_prefix` keeps the whole key* (the "store it for support" mistake, at
+the one place that would put a plaintext into the database):
+
+```
+9 failed, 271 passed, 2 deselected
+FAILED tests/test_admin_api.py::test_create_a_key_and_get_the_plaintext_once
+FAILED tests/test_key_secrecy.py::test_no_read_endpoint_returns_the_key
+FAILED tests/test_key_secrecy.py::test_the_store_holds_the_hash_and_a_short_prefix_and_nothing_else
+FAILED tests/test_key_secrecy.py::test_the_auth_cache_is_keyed_by_hash_not_by_plaintext
+FAILED tests/test_key_secrecy.py::test_an_error_message_about_scope_names_the_prefix_not_the_key
+FAILED tests/test_tenant_store.py::test_the_plaintext_never_reaches_the_stored_row[memory]
+FAILED tests/test_tenant_store.py::test_the_plaintext_never_reaches_the_stored_row[postgres]
+FAILED tests/test_tenant_store.py::test_no_column_of_the_database_contains_a_plaintext_key
+FAILED tests/test_virtual_keys.py::test_the_display_prefix_is_short_and_keeps_the_secret_out
+```
+
+That eighth line is the gate's *"a test greps the stored form"*, firing: it discovers the
+text-ish columns of both tables from `information_schema` and searches every row, so a
+future migration that adds a place to leak a key is covered the day it lands.
+
+*Sabotage 3 — revocation never reaches the in-process cache* (`invalidate_key` made a
+no-op). Note what does **not** fail: the TTL window is still correct, which is exactly the
+distinction H-018 draws.
+
+```
+2 failed, 278 passed, 2 deselected
+FAILED tests/test_auth_cache.py::test_revoking_through_the_admin_api_kills_the_key_on_the_next_request
+FAILED tests/test_auth_cache.py::test_narrowing_a_keys_scope_takes_effect_on_the_next_request
+```
+
+*Sabotage 4 — the TTL is an hour instead of five seconds*:
+
+```
+1 failed, 279 passed, 2 deselected
+FAILED tests/test_auth_cache.py::test_the_ttl_is_a_documented_number
+```
+
+Only one test fails, and that is honest rather than weak: the window tests are written
+against `AUTH_CACHE_TTL_S` and follow it wherever it goes, so the *behaviour* around the
+number is pinned by them and the *number itself* is pinned by exactly one assertion. A
+future session that wants a different TTL has to change that assertion deliberately, which
+is the point.
+
+**End to end through the real container**, on a wiped volume, keyless, no network:
+
+```
+$ docker compose down -v && make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 1 migration(s): 0001_tenants_and_virtual_keys
+
+### 1. no key at all
+{"type":"error","error":{"type":"authentication_error","message":"no virtual key on this
+request; send it as `Authorization: Bearer hk_…` or `x-api-key: hk_…`"},"headroom":
+{"reason":"missing_api_key","request_id":"hr_ddece398c52b49b4b7ee66d374186573"}}
+-> 401
+
+### 2. create a tenant
+{"id":"1710e2b6-8e6e-49ef-a4f5-b4be8954bc36","name":"backline","active":true,
+ "created_at":"2026-08-09T02:28:41.182544Z","updated_at":"2026-08-09T02:28:41.182544Z"}
+
+### 3. mint a key scoped to mock-* models
+{"id":"7708582e-b4df-4d36-9ec4-ecc9bab0e05b","tenant_id":"1710e2b6-…","name":"suite",
+ "key_prefix":"hk_s1WmIE2d","allowed_models":["mock-*"],"allowed_providers":[],
+ "status":"active","revoked_at":null,"key":"hk_s1WmIE2d…"}          <- the ONLY time
+
+### 4. the key works
+{"id":"msg_mock_6ca20aa0926a68c6","type":"message","role":"assistant","model":"mock-model-1",
+ "content":[{"type":"text","text":"mock reply from mock-model-1"}],"stop_reason":"end_turn",
+ "usage":{"input_tokens":11,"output_tokens":7}}
+-> 200
+
+### 5. read the key back through the admin API
+{"id":"7708582e-…","tenant_id":"1710e2b6-…","name":"suite","key_prefix":"hk_s1WmIE2d",
+ "allowed_models":["mock-*"],"allowed_providers":[],"status":"active","revoked_at":null}
+                                                          ^ no `key` field exists here
+
+### 6. a model outside the scope
+{"type":"error","error":{"type":"permission_error","message":"key hk_s1WmIE2d… is not
+scoped to model 'claude-haiku-4-5' (allowed: 'mock-*')"},"headroom":
+{"reason":"model_out_of_scope","request_id":"hr_97fd8e340e05425997930daa1ed2b9da"}}
+-> 403
+
+### 7. revoke, then the very next request
+DELETE /admin/keys -> 200
+{"type":"error","error":{"type":"authentication_error","message":"this virtual key has been
+revoked"},"headroom":{"reason":"revoked_api_key","request_id":"hr_9dfff9e4e75945fc924aacd9c17d7c3b"}}
+-> 401
+
+### 8. what the database actually holds
+ name  | key_prefix  |        key_hash         | allowed_models | revoked
+-------+-------------+-------------------------+----------------+---------
+ suite | hk_s1WmIE2d | 51f255e1839a2011ea5b... | {mock-*}       | t
+(1 row)
+
+### grep every row of both tables for the plaintext key:
+occurrences of the plaintext key: 0
+occurrences of its 11-char display prefix: 1
+
+### 9. the request log lines
+{"request_id":"hr_97fd8e340e05425997930daa1ed2b9da","route":"/v1/messages","dialect":"anthropic",
+ "tenant_id":"1710e2b6-8e6e-49ef-a4f5-b4be8954bc36","key_id":"7708582e-b4df-4d36-9ec4-ecc9bab0e05b",
+ "model":"claude-haiku-4-5","provider":null,"stream":false,"outcome":"model_out_of_scope",
+ "status":403,"error_source":"gateway","error_reason":"model_out_of_scope","ttft_ms":0.283,"total_ms":0.285}
+{"request_id":"hr_9dfff9e4e75945fc924aacd9c17d7c3b","route":"/v1/messages","dialect":"anthropic",
+ "tenant_id":null,"key_id":null,"model":null,"provider":null,"stream":false,
+ "outcome":"revoked_api_key","status":401,"error_source":"gateway","error_reason":"revoked_api_key",
+ "ttft_ms":0.929,"total_ms":0.931}
+```
+
+Step 7 is the gate's revocation clause, in the real container, with **no clock
+manipulated anywhere**: `DELETE` returned, and the immediately following request was 401.
+Step 9 is the ledger/context clause: `tenant_id` and `key_id` are in the log line for the
+authenticated request — and, correctly, `null` on the 401, because a request that failed to
+identify itself has no tenant and inventing one would put unattributable rows in Phase 3's
+ledger. (The demo key above was minted into a volume that has since been wiped, was revoked
+in step 7, and is truncated here regardless.)
+
+**Assumed-facts register (§0.4)**
+
+- **A1, A3, A4, A5, A6, A7** — not due at this gate, and none touched. A4 and A5 stay
+  VERIFIED from Phase 1; the 137 tests that prove them now run through the authenticated
+  path and are still green, which is a small piece of evidence that Phase 2 did not
+  disturb the passthrough.
+- **A2 — moved closer.** *Anthropic SDKs honour `base_url` override, so Backline can point
+  its Anthropic provider at Headroom unchanged.* Still unverified end to end (that is the
+  H2 pre-flight), but the credential half is now settled deliberately rather than by luck:
+  the Anthropic SDK sends `x-api-key`, the OpenAI SDK sends `Authorization: Bearer`, and
+  both spellings — plus Azure's `api-key` — are accepted on **both** routes and asserted in
+  `tests/test_auth_matrix.py`. A gateway fussy about which header arrives on which route
+  would have made a `base_url`-only integration a matter of luck.
+- **New, and worth the register's discipline even though it is not a numbered assumption:**
+  the gateway process starts and serves `/healthz` with **no database reachable** (the lazy
+  pool), which is what keeps CI's `image` job honest and what Phase 9's container needs
+  before its secrets arrive.
+
+CI on PR-2 ([run 31291127046](https://github.com/sergioavilax/headroom/actions/runs/31291127046)),
+all three jobs green, no annotations:
+
+```
+$ gh run view 31291127046 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 71 source files
+pytest (…service containers) | ===== 280 passed, 2 deselected, 1 warning in 4.00s =====
+pytest (…service containers) | tests/test_tenant_store.py::test_a_created_key_comes_back_whole[memory] PASSED
+pytest (…service containers) | tests/test_tenant_store.py::test_a_created_key_comes_back_whole[postgres] PASSED
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**280 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres half of the contract suite executed against the service container rather than
+skipping. Under H-012 that is enforced rather than hoped for: CI sets `DATABASE_URL`
+explicitly, and an explicit endpoint that is unreachable now fails in 0.2 s.
+
+The `image` job is the one that proves the lazy pool: it builds the container and smokes
+`/healthz` with **no Postgres anywhere in the job**, which a gateway that connected at
+startup could not do.
+
+**Spend** — $0.00. No provider API was called in this phase; every test ran on the
+MockProvider and the container demo talked to nothing.

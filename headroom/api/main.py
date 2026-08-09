@@ -2,8 +2,9 @@
 
 Phase 0 shipped exactly one route so compose had a service to bring up. Phase 1 adds
 the two proxy routes, the request-context middleware, and a lifespan that builds the
-gateway once at startup — all additions (BUILD_PLAN §0.2 invariant 7); ``/healthz`` and
-the module-level ``app`` are untouched.
+gateway once at startup; Phase 2 adds the ``/admin`` router and its error handler — all
+additions (BUILD_PLAN §0.2 invariant 7); ``/healthz`` and the module-level ``app`` are
+untouched.
 
 ``/healthz`` stays liveness-only even now that there are real dependencies. It reports
 that the process is serving, nothing more. A readiness probe that claims to have
@@ -18,7 +19,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from headroom.api import proxy
+from headroom.api import admin, proxy
+from headroom.api.admin import AdminError, admin_error_handler
 from headroom.api.gateway import build_gateway
 from headroom.api.middleware import RequestContextMiddleware
 from headroom.core.log import configure_logging
@@ -51,6 +53,11 @@ app = FastAPI(
 # RequestContext — including the ones that fail before reaching a route.
 app.add_middleware(RequestContextMiddleware)
 app.include_router(proxy.router)
+# The control plane (Phase 2). Separate router, separate credential: `/admin/*` is
+# gated on the root admin token, `/v1/*` on a tenant's virtual key, and neither is ever
+# accepted for the other.
+app.include_router(admin.router)
+app.add_exception_handler(AdminError, admin_error_handler)
 
 
 @app.get("/healthz")
