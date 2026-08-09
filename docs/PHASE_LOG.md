@@ -452,7 +452,74 @@ rather than skipping, which under H-012 is now enforced rather than hoped for: C
 `DATABASE_URL` and `DYNAMODB_ENDPOINT_URL` explicitly, and an explicit endpoint that is
 unreachable fails instead of skipping.
 
-**Live smoke** — not yet run. It is operator-run, after CI is green, and the commands are
-in the PR description. Budgeted at well under $0.05 against the $3 P1–P7 bucket.
+**Live smoke** — the free half has since been run against the operator's vLLM instance;
+what it found, and the test change it forced, are recorded under *Live smoke — first run
+(vLLM)* at the end of this entry. The paid Anthropic half is operator-run after CI is
+green, with the commands in the PR description, and is budgeted at well under $0.05
+against the $3 P1–P7 bucket.
 
-**Spend** — $0.00 so far in this phase. Every test above ran on the MockProvider.
+**Spend** — $0.00 so far in this phase. Every test above ran on the MockProvider, and the
+live smoke that has run ran on the operator's own GPUs.
+
+---
+
+### Live smoke — first run (vLLM), 2026-08-08
+
+It failed, and the failure was worth more than the pass would have been.
+
+The operator's instance serves **Qwen3.6 with `--reasoning-parser qwen3`**. The test asked
+for `max_tokens: 16`. A reasoning model spends its budget on reasoning deltas *before* it
+emits its first content delta, so the response came back well-formed — frames in order,
+`[DONE]` present, no error event — carrying **no content at all** and `finish_reason:
+"length"`. The old assertion (`openai_text(...)` non-empty) reported that as "no text came
+back", which names the symptom and buries the cause: at a 16-token ceiling an exhausted
+budget and a broken gateway are indistinguishable.
+
+**Fixed in `tests/test_live_smoke.py`, test-only.** `max_tokens` is 256 — that smoke runs
+on the operator's own GPUs, so the headroom is free — and the assertion moved to the
+outcome it actually cares about: `finish_reason == "stop"` **and** non-empty reassembled
+content, with a failure message that tells "ran out of budget" apart from "the gateway
+broke". `tests/support/streams.py` grew `openai_finish_reasons()` to read it. The paid
+Anthropic smoke is deliberately untouched: `claude-haiku-4-5` is not a reasoning model at
+these settings, `max_tokens: 16` is what holds that call at ~$0.0001, and invariant 5
+outranks symmetry between the two tests. **No gateway behaviour changed** — the diff is a
+test, a test helper, and this note — so there is no H-entry; the reasoning is here.
+
+**A5-adjacent evidence.** The half of that run which *did* work is the interesting half.
+vLLM's reasoning parser splits the model's chain of thought into a delta field of its own
+— a field neither dialect module in this repo has a line of code for, and one no fixture
+in the keyless suite produces — and the operator observed those deltas arriving at the
+client through the gateway untouched. A5 asserts exactly this shape for Anthropic
+`tool_use` blocks and is already VERIFIED keylessly by `tests/test_tool_blocks.py`; this
+run is not that proof and does not convert anything. What it is: the first observation on
+real hardware that the property generalises past the fields the gateway knows about.
+Under H-007 the proxy forwards body bytes it never re-serializes, so no code path exists
+that *could* mangle a delta type invented after the passthrough was written — and now
+something outside the fixtures has been through it. Phase 3 inherits the consequence:
+reasoning tokens are output tokens the meter cannot see in the content stream, so usage
+must be read from the usage block, never inferred from the text.
+
+**Not yet re-run.** The fixed test has not been executed against the live instance — that
+is the operator's box, and the session that made this change could not reach it. The
+re-run is:
+
+```
+$ VLLM_BASE_URL=http://<instance>:8000 uv run pytest -m live -k vllm -v
+```
+
+Keyless gate over the change, on the same machine:
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+57 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 57 source files
+
+$ make test
+================= 127 passed, 2 deselected, 1 warning in 0.39s =================
+```
