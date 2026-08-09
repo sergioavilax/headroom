@@ -643,3 +643,316 @@ the outbound path, `tests/test_reasoning_passthrough.py` fails four ways while
 new file detects a class of corruption the suite previously could not see. Any future
 fixture meant to prove passthrough fidelity should use `_dumps_literal` for the same
 reason; `_dumps` remains right for fixtures asserting event sequences rather than bytes.
+
+---
+
+## H-017 — Virtual keys: `hk_` + 256 bits, SHA-256 at rest, an 11-character display prefix (Phase 2)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN Phase 2 says keys are `hk_...` strings, hashed at rest. It does not
+say *which* hash, and the reflex answer — "passwords need bcrypt/argon2, so credentials
+need bcrypt/argon2" — is wrong here for a reason worth writing down, because it will be
+questioned by every reader who has been taught the reflex.
+
+A password KDF exists to make guessing **low-entropy, human-chosen** inputs expensive. The
+work factor buys time against a dictionary. There is no dictionary for a value drawn from
+a CSPRNG: an attacker holding the entire `virtual_keys` table would have to enumerate the
+keyspace, and no work factor moves 2^256 anywhere interesting. What a KDF *would* move is
+the cost of every authenticated request on a gateway whose entire product is first-token
+latency — tens of milliseconds, per request, forever, against a threat that does not exist.
+
+There is a second, structural cost: a salted KDF cannot be looked up. Authentication would
+need either a lookup id embedded in the key (a second secret-ish field to get right) or a
+scan. A deterministic hash is a unique index.
+
+**Decision.**
+
+- **A key is `hk_` + `secrets.token_urlsafe(32)`** — 256 bits from the OS CSPRNG, 43
+  urlsafe characters, 46 total. The `hk_` prefix makes a key recognisable in a log, a bug
+  report, and a secret scanner's regex.
+- **Stored form: `sha256(key)` hex, in a `UNIQUE`-indexed column.** Authentication is one
+  indexed lookup, no per-row work, and `hashlib` is stdlib — no dependency added for
+  security theatre.
+- **`key_prefix` stores the first 11 characters** (`hk_` plus 8) in the clear, deliberately,
+  so a key can be identified in a list and in a 403 message. That withholds 35 of the 43
+  secret characters (~208 bits). It is a real disclosure and it is sized to be a
+  meaningless one.
+- **The plaintext exists in exactly one response**, `POST /admin/keys`, and is
+  unrecoverable afterwards. The type system carries this rather than a reviewer:
+  `KeyView` has no `key` field, `KeyCreated` is the single model that does, and it is
+  returned by one route.
+- **Scope matching is exact, with a trailing `*` as the only wildcard.** Empty scope means
+  unrestricted.
+
+**Alternatives considered.** *argon2id / bcrypt* — the reflex; costs latency on every
+request and forfeits the index, buys nothing against a full-entropy secret. *HMAC-SHA256
+under a server-side pepper* — genuinely better if the database can leak while the pepper
+does not, and it introduces a second long-lived secret to provision, rotate, and lose;
+against a 256-bit random key the marginal benefit is the ability to invalidate every key
+at once, which revocation already does. *Storing no prefix at all* — strictly safer, and it
+leaves an operator staring at a list of UUIDs during an incident. *Prefix-by-default scope
+matching* (like the routing table's) — would silently make `mock-model-1` admit
+`mock-model-10`; authorization is the wrong place for a helpful default.
+
+**Consequences.** The security of every key rests on `secrets.token_urlsafe` and on the
+`SECRET_BYTES = 32` constant, so both are asserted directly in
+`tests/test_virtual_keys.py` — the argument above is void if the entropy is not really
+there. The stored prefix is a documented exception to "nothing about the key is stored",
+and `tests/test_key_secrecy.py` asserts that the *remainder* appears in no response, no log
+record, no field of the store, and (on Postgres) no column of either table. If a future
+phase ever needs to display more of a key, this entry is what it has to supersede.
+
+---
+
+## H-018 — Auth decisions are cached for 5 seconds, successes only (Phase 2)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN's Phase 2 gate leaves the choice open and constrains the answer:
+*"no cache of auth decisions beyond a short TTL, and the TTL is a documented number"*, and
+*"a revoked key is dead on the very next request"*. Not caching at all is a legitimate
+answer — an indexed lookup on a local Postgres is well under a millisecond, and Phase 8's
+H2 target is a p50 gateway overhead under 50 ms, so a round trip would fit. But the lookup
+happens before the first upstream byte on every single request, it is the one query the
+gateway makes that the caller gains nothing from, and Phase 4 is about to add two more
+stores to the admission path.
+
+**Decision.** Cache, with the window drawn tightly and asymmetrically.
+
+- **`AUTH_CACHE_TTL_S = 5.0`**, a named constant in `headroom/policy/auth.py`, quoted in
+  this entry and in the README.
+- **Successful lookups only.** A failure is never remembered. Caching "unknown" would make
+  every freshly minted key dead for up to five seconds — which is the admin API's *first*
+  user experience and a bug report reading "sometimes new keys do not work". The cost is
+  that a flood of bogus keys reaches the database; that is a rate-limiting problem, and
+  rate limiting is Phase 4.
+- **Revocation invalidates in-process, immediately.** `DELETE /admin/keys/{id}`,
+  `PATCH /admin/keys/{id}` (a narrowed scope has to bite now; a widened one is harmless to
+  forget, and one invalidation covers both), and tenant deactivation all drop the affected
+  entries before returning. So in the process that revoked, the window is **zero**.
+- **The TTL is therefore the *cross-process* bound** — Phase 9 runs several Fargate tasks
+  against one RDS and nothing else coordinates them. Stated exactly: *a revoked key is dead
+  on the next request in the process that revoked it, and dead within 5 seconds everywhere
+  else.*
+- **Keyed by the SHA-256 hash, never the plaintext**, so the caller's secret never enters a
+  long-lived structure. **Storing a `Principal`, which is frozen**, so a cached permission
+  cannot be mutated by whoever holds it.
+- **The clock is injected.** `AuthCache(clock=...)` lets the window be tested by advancing
+  time rather than by sleeping through it.
+
+**Alternatives considered.** *No cache at all* — simpler, defensible, and the entry would
+have said so; rejected because the query is pure overhead on the latency path the project
+is measured on, and 5 seconds of staleness on an authorization decision is a smaller cost
+than a database round trip per request. *A longer TTL (30–60 s)* — better hit rate, and it
+turns revocation into something an operator cannot trust during an incident. *Pub/sub
+invalidation across processes* — the correct answer at a scale this is not at, and it
+replaces a five-second window with a message bus to operate. *Caching negatives with a
+shorter TTL* — two TTLs to explain, for a DoS surface Phase 4 addresses properly.
+
+**Consequences.** The 5.0 is now a load-bearing published number: `tests/test_auth_cache.py`
+asserts the constant itself and, separately, the behaviour at both edges of the window. A
+deployment wanting the per-request-DB-hit configuration sets `ttl_s=0.0`, which disables the
+cache entirely (also tested). Phase 4's budget reservations are **not** allowed to reuse
+this cache: a stale authorization is a bounded risk, a stale balance is D-019's scar.
+
+---
+
+## H-019 — The root admin token: environment only, and unset means OFF (Phase 2)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** `/admin/tenants` and `/admin/keys` are the endpoints that create tenants and
+mint credentials. They need a credential of their own, and BUILD_PLAN §0.2 invariant 3 says
+no secret enters the repo, a compose file's committed env, or a task definition's plain
+environment. The interesting question is not where the token comes from — it is what
+happens when there **isn't** one.
+
+**Decision.**
+
+- **`HEADROOM_ADMIN_TOKEN`, read from the environment**, named (never valued) in
+  `.env.example` and referenced through in `docker-compose.yml`. It is resolved once, at
+  gateway construction, and held on the `Gateway` object — not re-read per request, and not
+  a field any YAML could hold (the H-014 rule, one layer up).
+- **Unset means the admin API is off.** Every `/admin` route answers **503** with
+  `admin_api_disabled` and a message naming the variable. It never means "no token
+  configured, so no check".
+- **Compared with `secrets.compare_digest`**, so the check does not leak the token a byte
+  at a time to a caller with a stopwatch.
+- **A virtual key is never an admin token and vice versa.** They arrive in the same
+  `Authorization` header and are validated by different code against different secrets;
+  `tests/test_admin_api.py` presents each to the other's endpoint and expects 401.
+- **`/admin` is exempt from virtual-key authentication.** The control plane has to stay
+  reachable when every key is revoked — which is precisely the moment someone needs it.
+
+**Alternatives considered.** *Unset means open* — the failure this decision exists to
+prevent: a fully open tenant-and-key CRUD on the first deployment that forgets one line, and
+silent about it. *Unset means the routes 404* — hides an operator's own misconfiguration
+behind a plausible answer; 503 with the variable's name is the H-009 rule ("a 500 that names
+the knob is not a generic 500") applied one status along. *Refusing to start without a
+token* — would stop a mock-and-vLLM-only deployment from booting for a feature it does not
+use, and would break CI's image smoke. *Per-admin accounts with roles* — a real answer for a
+real product and scope-lust here; one root token, and the entry that widens it can supersede
+this one.
+
+**Consequences.** Every environment that wants the admin API must set one more variable, and
+`make up` alone no longer gets you a working end-to-end demo — the README now spells out the
+four-step version. The token is a single point of compromise with no rotation story yet;
+rotating it today means restarting the gateway with a new value, which is acceptable for a
+credential only the operator holds and which is worth revisiting before this is ever
+multi-operator.
+
+---
+
+## H-020 — 401 before the body, 403 before the route (Phase 2)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** "401/403 semantics exact" is a Phase 2 requirement, and the statuses are the
+easy half. The hard half is **ordering** — where in the pipeline each check runs — because
+that is what decides how much a stranger can learn by probing, and it is invisible in a
+status-code table.
+
+**Decision.** The pipeline runs identify → read → scope, and each step is placed where it
+is for a stated reason.
+
+1. **Authenticate before the body is parsed.** An anonymous request with malformed JSON
+   gets **401**, not 400. A gateway that told a stranger their JSON was wrong would be
+   debugging requests for people it has not identified.
+2. **401 is "we do not know you"**: missing (`missing_api_key`), unusable
+   (`malformed_api_key`), never issued (`unknown_api_key`), revoked (`revoked_api_key`),
+   or belonging to a switched-off tenant (`inactive_tenant`). Five distinct `reason`
+   values, one status. The reason is for the operator reading a log; the status is all the
+   stranger gets.
+3. **Inactive tenant is 401, not 403.** The tenant is not being denied a resource; the
+   tenant is not currently a tenant. Deactivation has to be as final as revoking every key,
+   or it is not usable in an incident.
+4. **403 is "we know exactly who you are, and no"**: `model_out_of_scope`,
+   `provider_out_of_scope`. Returning 401 here would tell a correctly-configured client to
+   go find a better credential, which it cannot.
+5. **Model scope is checked before routing, so 403 beats 404.** An out-of-scope model
+   answers 403 whether or not this deployment routes it — otherwise a key could enumerate
+   the routing table by reading 403 against 404. Provider scope is checked last because it
+   is the only one that needs the route resolved.
+6. **A control-plane outage is 503** (`control_plane_unavailable`), extending H-009's table
+   of invented statuses. The request was well formed and the gateway is correctly
+   configured, so it is neither the caller's 4xx nor a permanent 500 — and a gateway that
+   cannot authenticate must **not** fail open, which would hand every tenant's budget to
+   whoever asked first.
+7. **Error bodies are spoken in the caller's dialect** (H-009 unchanged): Anthropic's
+   `authentication_error` / `permission_error`, OpenAI's equivalents, with the exact cause
+   in `headroom.reason`.
+
+**Alternatives considered.** *Parse the body first so the 400 is more helpful* — helpful to
+the wrong audience. *One `auth_failed` reason for all five 401s* — loses the only
+information an operator has when a tenant reports "it stopped working". *403 for an
+inactive tenant* — reads as a scope problem and invites the client to retry with a
+different model. *404 before scope* — leaks the routing table. *`WWW-Authenticate` on the
+401* — RFC-correct and neither provider sends it, so it is omitted for wire compatibility
+with the SDKs Headroom sits behind.
+
+**Consequences.** The five 401 reasons and two 403 reasons are stable identifiers from
+here: Phase 3 writes them to the ledger and Phase 7 charts them, so they are additive-only.
+The ordering is asserted directly rather than left as a comment —
+`tests/test_auth_matrix.py` checks that an anonymous malformed body is 401, and that an
+out-of-scope model returns the same status and reason whether or not the model is routed.
+
+---
+
+## H-021 — One storage interface, two implementations, one contract suite (Phase 2)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** BUILD_PLAN §0.5 gives `core/` the storage *interfaces*, and the operator's
+standing preference is "interfaces before implementations where a later phase will plug
+in". Phase 2 is where that stops being a principle and costs something: the auth matrix,
+the admin CRUD surface, and the revocation window are all **logic**, and binding their
+tests to a running Postgres would mean a fresh clone silently runs a smaller suite than the
+operator believes — the exact failure H-012 was written about.
+
+**Decision.** `TenantStore` in `headroom/core/storage.py`, with two implementations:
+`PostgresTenantStore` (`headroom/db/tenants.py`, what the gateway runs) and
+`InMemoryTenantStore` (`headroom/db/memory.py`, what most tests run against).
+
+The drift hazard is answered directly, and this is the load-bearing half of the decision:
+**`tests/test_tenant_store.py` is one contract suite parametrised over both stores.** Every
+behaviour asserted of the in-memory store is asserted of Postgres in the same run, or it is
+not asserted at all. The Postgres parameter follows H-012 exactly — it skips when the
+compose stack is down and `DATABASE_URL` was merely *inferred*, and it **fails** when
+someone stated the database is there, which CI does.
+
+Supporting choices:
+
+- **`build_gateway` always constructs the Postgres store.** No configuration switch can
+  select the in-memory one; a deployment cannot lose every tenant to a typo.
+- **The pool is lazy** (`headroom/db/pool.py`). Building a gateway never opens a
+  connection, so CI's `image` job still smokes `/healthz` with no database anywhere, and
+  H-000's "`/healthz` is liveness only" survives contact with real dependencies.
+- **Database errors are translated at the boundary**: a missing table becomes a
+  `ConfigurationError` naming `make migrate`; anything about reachability becomes
+  `ControlPlaneUnavailable` (503). Nothing above `headroom/db/` imports asyncpg.
+- **The Postgres fixture truncates the two control-plane tables** before each test, so the
+  contract assertions can be exact (`==`, not `in`) and identical for both stores. Stated
+  plainly because it means the compose database is a test fixture.
+
+**Alternatives considered.** *Postgres only, everything skips without it* — the honest
+minimum, and it makes the keyless gate a fiction. *A mock store with hand-written stubs* —
+what "second implementation" usually means, and it asserts nothing about the real one.
+*testcontainers* — a container per test run, slower, and it does not remove the need for
+the contract suite. *SQLite as the second implementation* — a third SQL dialect to keep
+honest, for no benefit over a dict.
+
+**Consequences.** Adding a store method now means adding it in three places (interface, two
+implementations) and a contract test, which is the intended friction. Phase 3's ledger and
+Phase 5's cache should follow this shape — the ledger especially, because Phase 8 reads it.
+`InMemoryTenantStore` is production-shaped code that never runs in production and must stay
+that way; if a later phase is tempted to make it selectable, that is a new entry, not a
+config flag.
+
+---
+
+## H-022 — The control-plane schema: revocation is a timestamp, nothing is deleted (Phase 2)
+
+**Status**: accepted · **Date**: 2026-08-08
+
+**Context.** `migrations/0001_tenants_and_virtual_keys.sql` is the first real migration —
+the file `migrations/README.md` has been describing conventions for since Phase 0. Its
+shape is where a handful of small choices get locked in, because H-003 makes applied
+migrations immutable: everything here is additive-only from now on.
+
+**Decision.**
+
+- **UUID primary keys** (`gen_random_uuid()`, built into Postgres 13+, no extension). Ids
+  appear in URLs, log lines, and Phase 3's ledger; a sequential integer would let anyone
+  holding one key id count the deployment's keys.
+- **`revoked_at TIMESTAMPTZ` is the state.** `revoked_at IS NULL` means active. No boolean
+  beside it, because a boolean and a timestamp maintained separately eventually disagree,
+  and the one time anybody reads them is during an incident review.
+- **Revocation is idempotent and keeps the first timestamp** —
+  `SET revoked_at = COALESCE(revoked_at, now())`. Operators revoke twice; the review needs
+  the first time.
+- **Nothing is deleted.** `DELETE /admin/keys/{id}` revokes, `DELETE /admin/tenants/{id}`
+  deactivates, and the foreign key is `ON DELETE RESTRICT` so the database enforces it
+  rather than the application remembering to. Phase 3's ledger attributes every request to
+  a key id and a tenant id forever; a row that vanishes turns a historical invoice into an
+  orphan.
+- **Scopes are `TEXT[] NOT NULL DEFAULT '{}'`.** Empty means unrestricted. Nullable columns
+  would make "no restriction" and "restricted to nothing" the same value.
+- **`tenants.name` is `UNIQUE`**, and the admin API answers 409. A second "acme" is a
+  spend-attribution bug waiting for a quarter to end.
+- **`key_hash` is `UNIQUE`** — a collision would be a catastrophe, and the constraint
+  supplies the index every authenticated request uses.
+- **Partial updates are `COALESCE($n, column)`**, one prepared statement per operation. No
+  SQL is built by concatenation anywhere in `headroom/db/`.
+- **`updated_at` is set by the statement that changes the row**, not by a trigger — a
+  trigger is tidier and invisible in a file review, and this schema is small.
+
+**Alternatives considered.** *`BIGSERIAL` ids* (enumerable), *`active BOOLEAN` on keys*
+(two sources of truth), *hard deletes with `ON DELETE CASCADE`* (orphans the ledger,
+silently), *a `key_scopes` join table* (normalised, and every read becomes a join for two
+short lists that are always read together), *`JSONB` scopes* (no array operators, no reason).
+
+**Consequences.** This file can never be edited (H-003); a change is `0002_*.sql`. Phase 3
+adds the ledger with foreign keys onto both tables, which is why RESTRICT matters now
+rather than later. The truncate-based test fixture (H-021) must be updated when Phase 3
+adds tables that reference these.
