@@ -46,6 +46,14 @@ from headroom.core.budgets import (
     to_picos,
     window_for,
 )
+from headroom.core.cache import (
+    CacheEntry,
+    CacheNamespace,
+    CacheSettings,
+    CacheStats,
+    ResponseCacheStore,
+    SemanticMatch,
+)
 from headroom.core.ledger import LedgerEntry, LedgerQuery, LedgerStore, UsageTotals
 from headroom.core.limits import (
     NANOS_PER_S,
@@ -75,6 +83,7 @@ __all__ = [
     "InMemoryBudgetStore",
     "InMemoryLedgerStore",
     "InMemoryRateLimitStore",
+    "InMemoryResponseCacheStore",
     "InMemoryTenantStore",
 ]
 
@@ -135,6 +144,7 @@ class InMemoryTenantStore(TenantStore):
             created_at=current.created_at,
             updated_at=_now(),
             limits=current.limits,
+            cache=current.cache,
         )
         self._tenants[tenant_id] = updated
         return updated
@@ -242,6 +252,14 @@ class InMemoryTenantStore(TenantStore):
             return None
         updated = replace(current, limits=limits, updated_at=_now())
         self._keys[key_id] = updated
+        return updated
+
+    async def set_cache_settings(self, tenant_id: str, settings: CacheSettings) -> Tenant | None:
+        current = self._tenants.get(tenant_id)
+        if current is None:
+            return None
+        updated = replace(current, cache=settings, updated_at=_now())
+        self._tenants[tenant_id] = updated
         return updated
 
     async def find_by_hash(self, key_hash: str) -> KeyRecord | None:
@@ -622,6 +640,112 @@ class InMemoryRateLimitStore(RateLimitStore):
 
     async def clear(self, key: BucketKey) -> bool:
         return self._tats.pop(key.id, None) is not None
+
+
+class InMemoryResponseCacheStore(ResponseCacheStore):
+    """The response cache in a dict, keyed exactly as the unique index is.
+
+    ``(tenant_id, request_hash)`` — the same two columns, in the same order, as
+    ``response_cache_exact_idx``. That is not decoration: it is what makes "there is no
+    way to read an entry without naming a tenant" true of *this* implementation too,
+    rather than only of the SQL one, and it is what the isolation sabotage has to defeat
+    in both places at once.
+
+    The cosine below is a plain dot product because every stored vector is unit-length
+    (``headroom/cache/embedding.py``), which is the same reason pgvector's ``<=>`` is
+    ``1 - similarity`` exactly. Where the two could drift — the ordering tiebreak, the
+    half-open expiry comparison — the SQL is the specification and this is an
+    implementation of it, and ``tests/test_cache_store.py`` asserts both.
+    """
+
+    __slots__ = ("_entries", "reads")
+
+    def __init__(self) -> None:
+        self._entries: dict[tuple[str, str], CacheEntry] = {}
+        #: Lookups attempted, of either kind. The disabled-tenant proof reads it: "no
+        #: lookups" has to be a measurement rather than a claim.
+        self.reads = 0
+
+    async def get_exact(
+        self, namespace: CacheNamespace, *, request_hash: str, when: datetime
+    ) -> CacheEntry | None:
+        self.reads += 1
+        entry = self._entries.get((namespace.tenant_id, request_hash))
+        if entry is None or _expired(entry, when):
+            return None
+        return entry
+
+    async def search(
+        self,
+        namespace: CacheNamespace,
+        *,
+        embedding: Sequence[float],
+        context_hash: str,
+        embedding_model: str,
+        threshold: float,
+        limit: int = 1,
+        when: datetime,
+    ) -> list[SemanticMatch]:
+        self.reads += 1
+        matches: list[SemanticMatch] = []
+        for (tenant_id, _), entry in self._entries.items():
+            if tenant_id != namespace.tenant_id or entry.embedding is None:
+                continue
+            if (
+                entry.dialect != namespace.dialect
+                or entry.model != namespace.model
+                or entry.transport != namespace.transport
+                or entry.context_hash != context_hash
+                or entry.embedding_model != embedding_model
+                or _expired(entry, when)
+            ):
+                continue
+            similarity = _cosine(embedding, entry.embedding)
+            if similarity >= threshold:
+                matches.append(SemanticMatch(entry=entry, similarity=similarity))
+        matches.sort(key=lambda match: (-match.similarity, match.entry.request_hash))
+        return matches[:limit]
+
+    async def put(self, entry: CacheEntry) -> CacheEntry:
+        stored = replace(entry, id=entry.id or _new_id(), created_at=entry.created_at or _now())
+        # Replace, matching `ON CONFLICT ... DO UPDATE`: both rows answer a
+        # byte-identical request and the newer one carries the fresher expiry.
+        self._entries[(entry.tenant_id, entry.request_hash)] = stored
+        return stored
+
+    async def purge_tenant(self, tenant_id: str) -> int:
+        doomed = [key for key in self._entries if key[0] == tenant_id]
+        for key in doomed:
+            del self._entries[key]
+        return len(doomed)
+
+    async def delete_expired(self, *, when: datetime) -> int:
+        doomed = [key for key, entry in self._entries.items() if _expired(entry, when)]
+        for key in doomed:
+            del self._entries[key]
+        return len(doomed)
+
+    async def stats(self, tenant_id: str) -> CacheStats:
+        owned = [entry for (owner, _), entry in self._entries.items() if owner == tenant_id]
+        created = [entry.created_at for entry in owned if entry.created_at is not None]
+        return CacheStats(
+            tenant_id=tenant_id,
+            entries=len(owned),
+            semantic_entries=sum(1 for entry in owned if entry.embedding is not None),
+            body_bytes=sum(len(entry.body) for entry in owned),
+            oldest=min(created, default=None),
+            newest=max(created, default=None),
+        )
+
+
+def _expired(entry: CacheEntry, when: datetime) -> bool:
+    """``expires_at > $when`` in SQL, negated. Strict, so an entry expiring exactly now
+    is gone in both implementations rather than in one of them."""
+    return entry.expires_at is not None and entry.expires_at <= when
+
+
+def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
+    return sum(a * b for a, b in zip(left, right, strict=True))
 
 
 def _matches(entry: LedgerEntry, query: LedgerQuery) -> bool:

@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from headroom.core.cache import CacheSettings
 from headroom.core.limits import RateLimit
 
 __all__ = [
@@ -59,6 +60,11 @@ class Tenant:
     #: arrive on the ``Principal`` for free, with no second query and no second cache
     #: (docs/DECISIONS.md H-037).
     limits: RateLimit = field(default_factory=RateLimit)
+    #: Phase 5. The response cache's policy, on this row for exactly the same reason the
+    #: limits are — and defaulting to **disabled**, which is the point rather than a
+    #: detail: a tenant caches nothing until somebody says otherwise, and no upgrade,
+    #: migration, or new default can switch it on behind their back.
+    cache: CacheSettings = field(default_factory=CacheSettings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +197,23 @@ class TenantStore(ABC):
     @abstractmethod
     async def set_key_limits(self, key_id: str, limits: RateLimit) -> VirtualKey | None:
         """Replace a key's rate limits wholesale. ``None`` if there is no such key."""
+
+    # --- cache policy (Phase 5) -------------------------------------------------------
+
+    @abstractmethod
+    async def set_cache_settings(self, tenant_id: str, settings: CacheSettings) -> Tenant | None:
+        """Replace a tenant's cache policy wholesale. ``None`` if there is no such tenant.
+
+        Replace rather than patch, for :meth:`set_tenant_limits`'s reason unchanged:
+        ``/admin/cache`` is a PUT, an absent field means *the documented default*, and
+        "leave it alone" and "clear it" cannot both be spelled ``None`` in one call.
+
+        Tenant scope only, and unlike the rate limits there is no per-key counterpart.
+        A cache namespace is a tenant's — two keys belonging to one tenant asking the
+        same question want the same answer, and splitting the namespace per key would
+        multiply the misses without buying any isolation the tenant boundary does not
+        already provide.
+        """
 
     @abstractmethod
     async def find_by_hash(self, key_hash: str) -> KeyRecord | None:
