@@ -14,7 +14,7 @@ from typing import Any
 
 from headroom.core.sse import iter_sse_events
 
-__all__ = ["anthropic_text", "event_pairs", "openai_text"]
+__all__ = ["anthropic_text", "event_pairs", "openai_finish_reasons", "openai_text"]
 
 
 def event_pairs(raw: bytes) -> list[tuple[str | None, str]]:
@@ -49,6 +49,26 @@ def openai_text(raw: bytes) -> str:
             if isinstance(delta, dict) and isinstance(delta.get("content"), str):
                 parts.append(delta["content"])
     return "".join(parts)
+
+
+def openai_finish_reasons(raw: bytes) -> list[str]:
+    """Every non-null ``finish_reason`` a chat-completions client would observe.
+
+    One entry per choice that ended, in order; the usage-only chunk that
+    ``stream_options.include_usage`` appends carries no choices and contributes
+    nothing. For a single completion, ``["stop"]`` means the model ended on its own
+    terms and ``["length"]`` means it hit ``max_tokens`` mid-answer — a distinction the
+    accumulated text cannot make, because both can reassemble to the empty string.
+    """
+    reasons: list[str] = []
+    for event in iter_sse_events(raw):
+        payload: Any = event.json()
+        if not isinstance(payload, dict):
+            continue
+        for choice in payload.get("choices") or []:
+            if isinstance(choice, dict) and isinstance(choice.get("finish_reason"), str):
+                reasons.append(choice["finish_reason"])
+    return reasons
 
 
 def json_events(raw: bytes) -> list[Any]:

@@ -11,7 +11,8 @@ them by hand, once, after CI is green:
 ($1/MTok in, $5/MTok out) with ``max_tokens=16``: roughly twenty input tokens and
 sixteen output, about **$0.0001** — three orders of magnitude under the $0.05 ceiling
 this phase was given, and charged against the $3 P1-P7 bucket in §0.6. The vLLM smoke
-runs on the operator's own GPUs and costs nothing.
+runs on the operator's own GPUs and costs nothing — which is why it can afford the
+larger ``max_tokens`` a reasoning model needs, and the paid one cannot.
 
 Each test skips loudly when its configuration is absent, rather than failing: not
 having a key is a normal state for this repo, and a red suite that means "you didn't
@@ -28,7 +29,7 @@ import pytest
 from headroom.api.gateway import build_gateway
 from headroom.api.main import app as headroom_app
 
-from .support.streams import anthropic_text, event_pairs, openai_text
+from .support.streams import anthropic_text, event_pairs, openai_finish_reasons, openai_text
 
 pytestmark = pytest.mark.live
 
@@ -79,6 +80,19 @@ async def test_a_real_vllm_call_streams_through_the_gateway() -> None:
     The model id is discovered from the instance rather than hard-coded: whichever
     checkpoint is loaded is the one to ask for, and a wrong guess would surface as a
     404 that looks like a gateway bug.
+
+    ``max_tokens`` is 256 where the paid smoke uses 16, because the checkpoint on the
+    other end may be a **reasoning** model — the operator's is (Qwen3.6 served with
+    ``--reasoning-parser qwen3``). Such a model spends its budget on reasoning deltas
+    *before* it emits its first content delta, so a 16-token ceiling ends the stream
+    with ``finish_reason: "length"`` and no content whatsoever: well-formed, complete
+    as SSE, and empty. Buying the headroom costs nothing here — these are the
+    operator's own GPUs.
+
+    The assertion follows from that. This smoke exists to prove the gateway carries a
+    real provider's stream end to end, so it asserts the outcome — the completion
+    ended on its own terms *and* text reached the client — rather than reading an
+    exhausted token budget as a missing answer.
     """
     base_url = os.environ["VLLM_BASE_URL"].rstrip("/").removesuffix("/v1")
     model = os.environ.get("VLLM_MODEL")
@@ -94,7 +108,7 @@ async def test_a_real_vllm_call_streams_through_the_gateway() -> None:
             "/v1/chat/completions",
             json={
                 "model": model,
-                "max_tokens": 16,
+                "max_tokens": 256,
                 "stream": True,
                 "stream_options": {"include_usage": True},
                 "messages": [{"role": "user", "content": "Reply with exactly: headroom ok"}],
@@ -108,4 +122,11 @@ async def test_a_real_vllm_call_streams_through_the_gateway() -> None:
     data = [payload for _, payload in event_pairs(response.content)]
     assert "[DONE]" in data, "the stream did not reach its terminal marker"
     assert not any('"error"' in payload for payload in data), response.text
-    assert openai_text(response.content).strip(), "no text came back"
+
+    reasons = openai_finish_reasons(response.content)
+    assert reasons == ["stop"], (
+        f"the completion ended on {reasons or 'no finish_reason at all'}, not 'stop' — "
+        "'length' means max_tokens ran out before the model was done (raise it if this "
+        "checkpoint reasons at length); anything else is the model or the gateway"
+    )
+    assert openai_text(response.content).strip(), "no content text came back"
