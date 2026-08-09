@@ -5,8 +5,12 @@
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
-up: ## Build and start the stack (db, dynamodb, gateway); waits for healthy
+up: ## Build and start the stack (db, dynamodb, gateway); waits for healthy, then migrates
 	docker compose up -d --build --wait
+	@# Since Phase 2 the gateway needs a schema to authenticate against, so `up` is
+	@# only honestly "up" once the migrations are applied. Run inside the container so
+	@# it uses the compose DATABASE_URL and needs nothing installed on the host.
+	docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
 	docker compose ps
 
 down: ## Stop the stack (keeps the db volume; add -v by hand to wipe it)
@@ -32,5 +36,5 @@ fmt: ## Auto-format Python
 typecheck: ## mypy (strict)
 	uv run mypy
 
-migrate: ## Apply migrations/*.sql in filename order (no-op until Phase 2)
+migrate: ## Apply migrations/*.sql in filename order (from the host, against DATABASE_URL)
 	uv run python -m headroom.db.migrate

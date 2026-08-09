@@ -56,8 +56,9 @@ class RequestContext:
     method: str = "POST"
 
     # --- who and what ------------------------------------------------------------
-    # `tenant_id` is a placeholder in Phase 1 and stays None: virtual keys and the
-    # tenancy that fills it arrive in Phase 2, which sets this field and nothing else.
+    # Filled by `Principal.stamp` the moment a request authenticates (Phase 2). They
+    # stay None on requests that never got that far — an anonymous 401 has no tenant,
+    # and inventing one would put unattributable rows in Phase 3's ledger.
     tenant_id: str | None = None
     key_id: str | None = None
     dialect: str | None = None
@@ -161,6 +162,10 @@ class RequestContext:
             "route": self.route,
             "dialect": self.dialect,
             "tenant_id": self.tenant_id,
+            # Phase 3 attributes cost per key, not only per tenant: a tenant with one
+            # runaway service and four well-behaved ones is a bill nobody can explain
+            # from a tenant total alone.
+            "key_id": self.key_id,
             "model": self.model,
             "provider": self.provider,
             "stream": self.stream,

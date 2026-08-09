@@ -18,6 +18,12 @@ So there are exactly two shapes of failure here, and both are specific:
   surfaces the same way. Each carries a stable ``reason`` that appears in the response
   body under ``headroom.reason`` and in the ledger — the machine-readable detail that
   a coarse HTTP status cannot carry.
+
+Phase 2 adds a third shape that is neither: **the request never reached an upstream at
+all**, because the caller could not be identified (401), was identified and denied
+(403), or could not be identified *because Headroom's own store was down* (503). Those
+live at the bottom of this module and follow the same rule — a fixed status per class,
+a stable ``reason``, nothing invented per call site.
 """
 
 from __future__ import annotations
@@ -25,13 +31,23 @@ from __future__ import annotations
 from typing import Final
 
 __all__ = [
+    "AuthenticationFailed",
     "ConfigurationError",
+    "ControlPlaneUnavailable",
     "HeadroomError",
+    "InactiveTenant",
     "InvalidRequestBody",
+    "MalformedCredential",
+    "MissingCredential",
     "ModelNotRouted",
+    "ModelOutOfScope",
     "ProviderError",
+    "ProviderOutOfScope",
     "ProviderTimeout",
     "ProviderUnavailable",
+    "RevokedCredential",
+    "ScopeDenied",
+    "UnknownCredential",
     "UpstreamStreamCut",
 ]
 
@@ -139,3 +155,91 @@ class ConfigurationError(HeadroomError):
 
     status_code = 500
     reason = "gateway_misconfigured"
+
+
+class ControlPlaneUnavailable(HeadroomError):
+    """Headroom's own store — the one holding tenants and keys — is unreachable.
+
+    503 and not 500 (Phase 2, extending the H-009 table): the request was well formed,
+    the gateway is correctly configured, and the condition is transient, so the honest
+    answer is "try again" rather than "you broke something" or "we are broken forever".
+    A gateway that cannot authenticate must not serve — failing open here would hand
+    every tenant's budget to whoever asked first.
+    """
+
+    status_code = 503
+    reason = "control_plane_unavailable"
+
+
+# --- the caller's credential (Phase 2) --------------------------------------------
+#
+# 401 and 403 answer two different questions and the split is exact: **401 means we do
+# not know who you are** (no key, an unusable key, a key that has been switched off),
+# **403 means we know exactly who you are and you may not have this** (a live key
+# reaching past its scope). Every subclass keeps its own ``reason`` so the log line and
+# the ``headroom`` block say which of the five it was, while the status stays coarse —
+# telling an anonymous caller *why* their credential failed is how key-probing gets
+# efficient.
+
+
+class AuthenticationFailed(HeadroomError):
+    """No usable virtual key on this request. 401."""
+
+    status_code = 401
+    reason = "authentication_failed"
+    source = SOURCE_GATEWAY
+
+
+class MissingCredential(AuthenticationFailed):
+    """No ``authorization`` / ``x-api-key`` header at all."""
+
+    reason = "missing_api_key"
+
+
+class MalformedCredential(AuthenticationFailed):
+    """Something was presented, but it is not shaped like an ``hk_`` key."""
+
+    reason = "malformed_api_key"
+
+
+class UnknownCredential(AuthenticationFailed):
+    """A well-formed key that this deployment has never issued."""
+
+    reason = "unknown_api_key"
+
+
+class RevokedCredential(AuthenticationFailed):
+    """The key existed and was revoked. Dead from the revocation onward."""
+
+    reason = "revoked_api_key"
+
+
+class InactiveTenant(AuthenticationFailed):
+    """The key is live but its tenant is switched off.
+
+    401 rather than 403, deliberately: the tenant is not *being denied a resource*,
+    the tenant is not currently a tenant. Deactivating a tenant has to be as final as
+    revoking every one of its keys, which is what makes it usable in an incident.
+    """
+
+    reason = "inactive_tenant"
+
+
+class ScopeDenied(HeadroomError):
+    """A valid, live key reaching past what it was scoped to. 403."""
+
+    status_code = 403
+    reason = "out_of_scope"
+    source = SOURCE_GATEWAY
+
+
+class ModelOutOfScope(ScopeDenied):
+    """The key is not scoped to this model."""
+
+    reason = "model_out_of_scope"
+
+
+class ProviderOutOfScope(ScopeDenied):
+    """The key is not scoped to the provider this model routes to."""
+
+    reason = "provider_out_of_scope"

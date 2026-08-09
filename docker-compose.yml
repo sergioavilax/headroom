@@ -67,6 +67,10 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-local}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-local}
       HEADROOM_LOG_LEVEL: ${HEADROOM_LOG_LEVEL:-INFO}
+      # The root admin token (Phase 2), referenced from the host shell or the
+      # gitignored `.env`, never valued here. Unset is a safe state: the admin API
+      # answers 503 rather than opening itself (docs/DECISIONS.md H-019).
+      HEADROOM_ADMIN_TOKEN: ${HEADROOM_ADMIN_TOKEN:-}
       # Real provider credentials and endpoints, *referenced* from the host shell or
       # the gitignored `.env` — never a literal value here (invariant 3), and never
       # defaulted to something that could work by accident. Unset means unset: the

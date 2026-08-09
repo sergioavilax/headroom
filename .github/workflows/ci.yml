@@ -71,11 +71,16 @@ jobs:
           done
           echo "dynamodb-local never answered"
           exit 1
-      # Both service-backed tests must actually run here — a silent skip would make
-      # this job a liar about the containers.
+      # The service-backed tests must actually run here — a silent skip would make
+      # this job a liar about the containers. Since Phase 2 that includes the whole
+      # Postgres half of the TenantStore contract suite, which applies `migrations/`
+      # itself, so the schema is proved before the step below re-runs it.
       - run: uv run pytest -v
-      - name: Migration runner is a clean no-op at Phase 0
-        run: uv run python -m headroom.db.migrate
+      - name: Migrations apply, and applying them twice is a no-op
+        run: |
+          uv run python -m headroom.db.migrate
+          uv run python -m headroom.db.migrate | tee /tmp/second.txt
+          grep -q "up to date" /tmp/second.txt
 
   image:
     name: gateway image builds and serves

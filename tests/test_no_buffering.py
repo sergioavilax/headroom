@@ -18,7 +18,6 @@ import asyncio
 
 from headroom.providers.mock import MockScript
 
-from .support.asgi import start_request
 from .support.fixtures import anthropic_request, openai_request
 from .support.harness import GatewayHarness
 
@@ -32,11 +31,10 @@ async def test_bytes_reach_the_client_while_the_upstream_is_still_blocked(
     chunks = list(MockScript.anthropic_stream(REPLY).chunks)
     gateway.book.set("gated", MockScript(chunks=chunks, gate=gate, gate_before_chunk=2))
 
-    run = start_request(
-        gateway.app,
-        path="/v1/messages",
-        body=anthropic_request(stream=True),
-        headers={"x-headroom-mock-script": "gated"},
+    run = gateway.start(
+        "/v1/messages",
+        anthropic_request(stream=True),
+        script="gated",
     )
 
     start = await run.next_message()
@@ -65,11 +63,10 @@ async def test_the_openai_dialect_streams_the_same_way(gateway: GatewayHarness) 
     chunks = list(MockScript.openai_stream(REPLY).chunks)
     gateway.book.set("gated", MockScript(chunks=chunks, gate=gate, gate_before_chunk=2))
 
-    run = start_request(
-        gateway.app,
-        path="/v1/chat/completions",
-        body=openai_request(stream=True),
-        headers={"x-headroom-mock-script": "gated"},
+    run = gateway.start(
+        "/v1/chat/completions",
+        openai_request(stream=True),
+        script="gated",
     )
 
     assert (await run.next_message())["type"] == "http.response.start"
@@ -97,11 +94,10 @@ async def test_first_token_out_is_marked_before_the_stream_completes(
     chunks = list(MockScript.anthropic_stream(REPLY).chunks)
     gateway.book.set("gated", MockScript(chunks=chunks, gate=gate, gate_before_chunk=2))
 
-    run = start_request(
-        gateway.app,
-        path="/v1/messages",
-        body=anthropic_request(stream=True),
-        headers={"x-headroom-mock-script": "gated"},
+    run = gateway.start(
+        "/v1/messages",
+        anthropic_request(stream=True),
+        script="gated",
     )
     await run.next_message()
     await run.next_body()
@@ -131,11 +127,10 @@ async def test_a_client_that_hangs_up_releases_the_upstream_connection(
     chunks = list(MockScript.anthropic_stream(REPLY).chunks)
     gateway.book.set("gated", MockScript(chunks=chunks, gate=gate, gate_before_chunk=2))
 
-    run = start_request(
-        gateway.app,
-        path="/v1/messages",
-        body=anthropic_request(stream=True),
-        headers={"x-headroom-mock-script": "gated"},
+    run = gateway.start(
+        "/v1/messages",
+        anthropic_request(stream=True),
+        script="gated",
     )
     await run.next_message()
     await run.next_body()
