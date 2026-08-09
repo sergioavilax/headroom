@@ -13,9 +13,10 @@ says so explicitly with ``authenticate=False`` or ``api_key=…``.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+import time
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -44,6 +45,8 @@ from headroom.metering.prices import load_price_book
 from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.policy.budgets import BudgetGate
+from headroom.policy.failover import BackoffPolicy, Failover
+from headroom.policy.health import HealthPolicy, HealthTracker
 from headroom.policy.keys import display_prefix, hash_key, mint_key
 from headroom.policy.limits import RateLimiter
 from headroom.providers.base import UpstreamRequest
@@ -53,7 +56,49 @@ from headroom.providers.registry import ProviderRegistry
 from .asgi import ASGIRun, ContextRecorder, start_request
 from .corpus import CorpusEmbedder
 
-__all__ = ["ADMIN_TOKEN", "GatewayHarness", "gateway_harness", "mock_only_config"]
+__all__ = [
+    "ADMIN_TOKEN",
+    "FakeClock",
+    "FakeSleeper",
+    "GatewayHarness",
+    "gateway_harness",
+    "mock_only_config",
+]
+
+
+@dataclass(slots=True)
+class FakeSleeper:
+    """An ``asyncio.sleep`` that records instead of waiting.
+
+    The failover executor's backoff is the one part of Phase 6 that is *about* the
+    passage of time, and a test that verified it by passing time would be slow, flaky,
+    and the first thing deleted when somebody optimises the suite. So the executor takes
+    its ``sleep`` as a parameter and CI gets this: every requested delay in order,
+    asserted exactly, in microseconds of wall clock.
+    """
+
+    delays: list[float] = field(default_factory=list)
+
+    async def __call__(self, seconds: float) -> None:
+        self.delays.append(seconds)
+
+    @property
+    def total_s(self) -> float:
+        return sum(self.delays)
+
+
+@dataclass(slots=True)
+class FakeClock:
+    """A monotonic clock a test advances by hand — the breaker's cooldown, controlled."""
+
+    now: float = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
 
 #: The root admin token the test gateway is built with. A literal in a test file, not
 #: a secret: nothing it guards outlives the process (BUILD_PLAN §0.2 invariant 3 is
@@ -61,18 +106,33 @@ __all__ = ["ADMIN_TOKEN", "GatewayHarness", "gateway_harness", "mock_only_config
 ADMIN_TOKEN = "test-root-admin-token"
 
 
-def mock_only_config() -> GatewayConfig:
-    """A gateway configuration with one provider and nothing that can spend money.
+def mock_only_config(
+    chain: Sequence[str] = ("mock",), *, max_attempts: int | None = None
+) -> GatewayConfig:
+    """A gateway configuration with mock providers and nothing that can spend money.
 
     Routes are ``mock-`` prefixed rather than catch-all, so "this model is not routed"
     stays a case a test can deliberately ask for.
+
+    ``chain`` is Phase 6's addition and its default is the whole point: one provider, no
+    fallbacks, no ``max_attempts`` — which is one attempt, no backoff, and no breaker on
+    the path, i.e. exactly what every test written before this phase was running against.
+    A failover test asks for ``("mock_a", "mock_b")`` and gets a two-link chain in both
+    dialects.
     """
+    primary, *fallbacks = chain
+
+    def rule() -> RouteSpec:
+        return RouteSpec(
+            prefix="mock-",
+            provider=primary,
+            fallbacks=list(fallbacks),
+            max_attempts=max_attempts,
+        )
+
     return GatewayConfig(
-        providers={"mock": ProviderSpec(kind="mock")},
-        routes={
-            "anthropic": [RouteSpec(prefix="mock-", provider="mock")],
-            "openai": [RouteSpec(prefix="mock-", provider="mock")],
-        },
+        providers={name: ProviderSpec(kind="mock") for name in chain},
+        routes={"anthropic": [rule()], "openai": [rule()]},
     )
 
 
@@ -83,6 +143,11 @@ async def gateway_harness(
     limits: RateLimitStore | None = None,
     cache: ResponseCacheStore | None = None,
     tenant: str = "acme",
+    chain: Sequence[str] = ("mock",),
+    max_attempts: int | None = None,
+    backoff: BackoffPolicy | None = None,
+    health: HealthPolicy | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> AsyncIterator[GatewayHarness]:
     """Build a complete keyless gateway and serve it over ASGI.
 
@@ -93,12 +158,35 @@ async def gateway_harness(
 
     Everything else is exactly what every other test gets: one MockProvider, one tenant,
     one unrestricted key, the committed price book, and its own control plane.
+
+    Phase 6 adds four keywords, all defaulted so that nothing changes for anyone who does
+    not pass them. ``chain`` builds a multi-provider failover route (each member is its
+    own ``MockProvider`` sharing one script book — a script registered as
+    ``"name@mock_b"`` binds to that instance alone). ``backoff``/``health``/``clock``
+    replace the executor's timing so a chaos test measures sleeps instead of taking them:
+    :class:`FakeSleeper` records what was requested and returns immediately, and the
+    breaker's cooldown is advanced by hand rather than waited out.
     """
     book = MockScriptBook()
-    provider = MockProvider("mock", book)
+    providers = {name: MockProvider(name, book) for name in chain}
     registry = ProviderRegistry()
-    registry.add(provider)
-    config = mock_only_config()
+    for provider in providers.values():
+        registry.add(provider)
+    config = mock_only_config(chain, max_attempts=max_attempts)
+    sleeper = FakeSleeper()
+    tracker = HealthTracker(health, clock=clock if clock is not None else time.monotonic)
+    for configured in registry:
+        tracker.track(configured.name, configured.kind)
+    failover = Failover(
+        registry=registry,
+        health=tracker,
+        backoff=backoff if backoff is not None else BackoffPolicy(),
+        sleep=sleeper,
+        # A fixed full-jitter draw: every recorded delay is the ceiling, so a test can
+        # assert an exact number and still be asserting about the real formula. The
+        # randomness itself is tested where it belongs, against `BackoffPolicy`.
+        jitter=lambda: 1.0,
+    )
 
     store = InMemoryTenantStore()
     created = await store.create_tenant(tenant)
@@ -137,6 +225,8 @@ async def gateway_harness(
         budgets=gate,
         limits=limiter,
         cache=responses,
+        health=tracker,
+        failover=failover,
         admin_token=ADMIN_TOKEN,
     )
 
@@ -149,7 +239,8 @@ async def gateway_harness(
             yield GatewayHarness(
                 app=headroom_app,
                 book=book,
-                provider=provider,
+                provider=providers[chain[0]],
+                providers=providers,
                 client=client,
                 recorder=recorder,
                 store=store,
@@ -163,6 +254,9 @@ async def gateway_harness(
                 budgets=gate,
                 limits=limiter,
                 cache=responses,
+                health=tracker,
+                failover=failover,
+                sleeper=sleeper,
             )
     finally:
         await instance.aclose()
@@ -175,7 +269,11 @@ class GatewayHarness:
 
     app: Any
     book: MockScriptBook
+    #: The chain's primary. Named ``provider`` since Phase 1 and still the one a
+    #: single-provider test means when it says "the provider".
     provider: MockProvider
+    #: Every provider in the chain, by name. One entry unless a test asked for more.
+    providers: dict[str, MockProvider]
     client: httpx.AsyncClient
     recorder: ContextRecorder
     store: TenantStore
@@ -203,6 +301,14 @@ class GatewayHarness:
     #: on for the harness tenant, read entries back, and — via the embedder's own call
     #: counter — assert that a disabled tenant embedded nothing at all.
     cache: ResponseCache
+    #: Phase 6. Provider health and the executor that reads it, so a test can trip a
+    #: breaker deliberately and assert what the chain did about it.
+    health: HealthTracker
+    failover: Failover
+    #: Every backoff the executor *asked* for, in order. The whole point of injecting it:
+    #: a jittered exponential backoff verified by actually sleeping is a test somebody
+    #: deletes the week the suite gets slow.
+    sleeper: FakeSleeper
     admin_token: str = ADMIN_TOKEN
 
     # --- proxy requests -----------------------------------------------------------

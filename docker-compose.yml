@@ -108,7 +108,13 @@ services:
       # NB: `localhost` in here is the *container*. A vLLM running on this machine is
       # reachable at host.docker.internal (mapped below for native Linux, built in on
       # Docker Desktop); one on another box wants its LAN address.
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8000}
+      #
+      # Two of them since Phase 6 — one per 4090, ports 8010 and 8011 (docs/vllm.md) —
+      # because `config/routing.yaml` chains vllm_a to vllm_b and a fallback nobody can
+      # reach is not a fallback. The defaults here are the demo's addresses, so the
+      # container needs no `.env` to run it.
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8010}
+      VLLM_B_BASE_URL: ${VLLM_B_BASE_URL:-http://host.docker.internal:8011}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -94,6 +94,28 @@ caching disabled, for an ineligible request, or for one that already hit. The co
 appended beside the existing observer feed, on the same side of the ``yield``, so the
 client's first byte is not waiting on it; and the write itself happens after the last
 byte has left, so a slow database delays nothing at all on the path that streams.
+
+Phase 6 changes **one line** of this file, and the fact that it is one line is the
+design:
+
+**``provider.open`` became ``gateway.failover.open``.** A route now resolves to a chain
+rather than to a name, and the executor walks it — retrying on transport faults and on
+the two status families BUILD_PLAN names (429 / 5xx), skipping providers whose breaker
+has tripped, backing off before it comes back to one that already failed *this* request.
+Everything upstream of that line is unchanged: one authentication, one estimate, one
+bucket consumption, one cache lookup, one budget reservation, one ledger row — a request
+that hops three times still spends exactly once, because admission happens before the
+executor exists in the call path and settlement happens after it has finished
+(docs/DECISIONS.md H-053).
+
+**And nothing downstream of it changed either, which is the point.** The executor may
+only run while nothing has been committed to the client, so by the time ``_passthrough``
+yields its first byte there is no retry left to attempt. A stream that dies after that
+byte is still H-008's problem and still gets H-008's answer — a terminal error event in
+the caller's own dialect — because splicing a second provider's answer onto the first
+one's fragment is how gateways serve Frankenstein responses (H-048). The only thing the
+streaming path gained is one call telling provider health how the delivery *ended*, which
+is the signal that trips a breaker when a GPU is killed mid-answer.
 """
 
 from __future__ import annotations
@@ -111,6 +133,7 @@ from headroom.api.deps import GatewayDep
 from headroom.api.gateway import Gateway
 from headroom.api.headers import (
     control_headers,
+    failover_headers,
     forward_request_headers,
     forward_response_headers,
 )
@@ -193,10 +216,13 @@ async def _proxy(
     # reading 403 against 404.
     principal.require_model(model)
 
-    provider_name = gateway.routing.resolve(dialect.name, model)
-    ctx.provider = provider_name
-    principal.require_provider(provider_name)
-    provider = gateway.registry.get(provider_name)
+    # The whole routing decision, chain included. `primary` is what the scope check and
+    # the 403 are decided against — unchanged from Phase 2 — and `permitted` then drops
+    # any fallback this key may not reach, because a scope is not something an outage is
+    # allowed to widen (docs/DECISIONS.md H-049).
+    route = gateway.routing.resolve_route(dialect.name, model).permitted(principal.permits_provider)
+    ctx.provider = route.primary
+    principal.require_provider(route.primary)
 
     # One bound, two gates. The rate limiter needs this request's size in tokens and the
     # budget gate needs it in dollars, and they are the same number arrived at by the
@@ -239,7 +265,12 @@ async def _proxy(
         control=control_headers(request.headers),
     )
 
-    upstream = await provider.open(upstream_request, ctx)
+    # The line that used to read `await provider.open(...)`. Everything above it is
+    # untouched, which is the phase in one sentence: failover is a widening of *how* an
+    # upstream is obtained, not of what a request is. The executor is also the only code
+    # that may call a provider twice, and it refuses to once a byte has gone downstream
+    # — the splice guard (H-048), which is why nothing below this line changed either.
+    upstream = await gateway.failover.open(route.attempts, upstream_request, ctx)
     ctx.upstream_status = upstream.status_code
 
     # An error status means there is no stream to forward, whatever the caller asked
@@ -286,6 +317,7 @@ async def _buffered_response(
         await upstream.aclose()
 
     headers = forward_response_headers(upstream.headers)
+    headers.update(failover_headers(ctx.failover_hops, ctx.failover_from))
     failed = upstream.status_code >= 400
     if failed:
         headers[ERROR_SOURCE_HEADER] = SOURCE_UPSTREAM
@@ -326,6 +358,7 @@ def _streaming_response(
     dialect: Dialect, ctx: RequestContext, upstream: UpstreamResponse, gateway: Gateway
 ) -> StreamingResponse:
     headers = forward_response_headers(upstream.headers)
+    headers.update(failover_headers(ctx.failover_hops, ctx.failover_from))
     return StreamingResponse(
         _passthrough(dialect, ctx, upstream, gateway),
         status_code=upstream.status_code,
@@ -429,6 +462,12 @@ async def _passthrough(
 
     if failure is None:
         ctx.complete(OUTCOME_OK)
+        # Phase 6 scores a streamed provider *here*, not when its headers arrived: an
+        # upstream that answers and then dies mid-answer is not a healthy upstream, and
+        # that is precisely what a `docker kill` on a live vLLM produces. One
+        # observation per attempt — the executor deliberately records nothing for a live
+        # stream (docs/DECISIONS.md H-052).
+        _score(gateway, ctx, ok=True)
         await _finish(gateway, ctx, usage.usage)
         # After the last byte: the client already has the whole answer, so the write
         # costs the request nothing at all on this path.
@@ -440,6 +479,11 @@ async def _passthrough(
     # before its first output. On a cut this is the only path that ever sets the mark.
     ctx.mark_first_token_out()
     ctx.complete(failure, error_source=SOURCE_UPSTREAM, error_reason=failure)
+    # A cut or an unterminated stream is a provider failure and is counted as one — it
+    # is the signal that trips the breaker during the two-GPU demo. What it is *not* is
+    # a reason to retry: bytes have already gone downstream, and the next lines say so
+    # in the caller's own dialect instead (H-008, H-048).
+    _score(gateway, ctx, ok=False, reason=failure)
     # Metered with whatever the provider managed to report. A stream cut before its
     # totals leaves the output count unknown, and the row says so — it is not billed
     # as a complete answer, and it is not billed as a free one either (invariant 6,
@@ -453,6 +497,24 @@ async def _passthrough(
     await _store_stream(gateway, ctx, recorder, content_type, usage.usage)
     yield dialect.terminal_error_event(
         reason=failure, message=failure_message, request_id=ctx.request_id
+    )
+
+
+def _score(gateway: Gateway, ctx: RequestContext, *, ok: bool, reason: str | None = None) -> None:
+    """Record how a streamed response ended, against the provider that served it.
+
+    Only the streaming path calls this. The failover executor scores every attempt it
+    can judge on its own — a transport failure, a retryable status, a body it read to the
+    end — and deliberately says nothing about a live stream, because at hand-off time
+    there is nothing yet to judge. One attempt, one observation, never two.
+
+    A client disconnect is scored by neither: the caller hung up, which is not evidence
+    about the provider and must not be allowed to trip a breaker for everybody else.
+    """
+    if ctx.provider is None:
+        return
+    gateway.health.record(
+        ctx.provider, ok=ok, reason=reason, latency_ms=ctx.upstream_latency_ms if ok else None
     )
 
 
@@ -564,5 +626,12 @@ async def _error_response(
         ),
         status_code=exc.status_code,
         media_type="application/json",
-        headers={**exc.headers, ERROR_SOURCE_HEADER: exc.source},
+        headers={
+            **exc.headers,
+            # An exhausted chain leaves its story here too: the caller gets the last
+            # failure's honest status (H-009, unchanged) *and* the fact that Headroom
+            # tried elsewhere first, which is otherwise invisible from outside.
+            **failover_headers(ctx.failover_hops, ctx.failover_from),
+            ERROR_SOURCE_HEADER: exc.source,
+        },
     )

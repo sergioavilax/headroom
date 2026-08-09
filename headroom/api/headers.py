@@ -39,7 +39,10 @@ from typing import Final
 
 __all__ = [
     "CONTROL_PREFIX",
+    "FAILOVER_FROM_HEADER",
+    "FAILOVER_HOPS_HEADER",
     "control_headers",
+    "failover_headers",
     "forward_request_headers",
     "forward_response_headers",
 ]
@@ -77,6 +80,32 @@ _REQUEST_DENY: Final = _HOP_BY_HOP | {
 
 #: httpx already decoded the body, so the upstream's framing no longer describes it.
 _RESPONSE_DENY: Final = _HOP_BY_HOP | {"content-length", "content-encoding"}
+
+
+#: Phase 6, in the same closed namespace and for the same reason: these can only have
+#: been written by this process, because every ``x-headroom-*`` header is stripped from
+#: every upstream response (H-038). A caller reading them is reading Headroom's own
+#: testimony about how it got its answer.
+FAILOVER_HOPS_HEADER: Final = "x-headroom-failover-hops"
+FAILOVER_FROM_HEADER: Final = "x-headroom-failover-from"
+
+
+def failover_headers(hops: int, failed_over_from: str | None) -> dict[str, str]:
+    """What a response says about the chain, when there is something to say.
+
+    Absent on the overwhelming majority of responses — a request the primary served has
+    no story — so this adds no bytes to the path Phase 8's H2 measures.
+
+    Naming the provider is a deliberate, small disclosure: the operator chose those
+    names, a tenant seeing ``vllm_a`` learns nothing it can act on, and the alternative
+    (an opaque id) makes every support conversation and the entire kill demo worse.
+    """
+    if hops <= 0:
+        return {}
+    built = {FAILOVER_HOPS_HEADER: str(hops)}
+    if failed_over_from is not None:
+        built[FAILOVER_FROM_HEADER] = failed_over_from
+    return built
 
 
 def forward_request_headers(headers: Mapping[str, str]) -> dict[str, str]:

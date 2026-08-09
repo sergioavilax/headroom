@@ -38,7 +38,7 @@ _COLUMNS = """
     budget_status, budget_reserved_usd, budget_settled_usd,
     upstream_latency_ms, ttft_ms, passthrough_overhead_ms, total_ms,
     cache_disposition, cache_avoided_usd, cache_similarity, cache_source_request_id,
-    failover_hops, started_at, created_at
+    failover_hops, failover_from, failover_error, started_at, created_at
 """
 
 _INSERT = f"""
@@ -50,7 +50,7 @@ INSERT INTO usage_ledger (
     budget_status, budget_reserved_usd, budget_settled_usd,
     upstream_latency_ms, ttft_ms, passthrough_overhead_ms, total_ms,
     cache_disposition, cache_avoided_usd, cache_similarity, cache_source_request_id,
-    failover_hops, started_at
+    failover_hops, failover_from, failover_error, started_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11, $12, $13, $14,
@@ -59,7 +59,7 @@ INSERT INTO usage_ledger (
     $25, $26, $27,
     $28, $29, $30, $31,
     $32, $33, $34, $35,
-    $36, $37
+    $36, $37, $38, $39
 )
 -- Idempotent by request id: the writer may retry, and a second row would double-bill.
 ON CONFLICT (request_id) DO NOTHING
@@ -118,6 +118,8 @@ def _entry(row: asyncpg.Record) -> LedgerEntry:
         cache_similarity=row["cache_similarity"],
         cache_source_request_id=row["cache_source_request_id"],
         failover_hops=row["failover_hops"],
+        failover_from=row["failover_from"],
+        failover_error=row["failover_error"],
         started_at=row["started_at"],
         created_at=row["created_at"],
     )
@@ -201,6 +203,8 @@ class PostgresLedgerStore(LedgerStore):
                 entry.cache_similarity,
                 entry.cache_source_request_id,
                 entry.failover_hops,
+                entry.failover_from,
+                entry.failover_error,
                 entry.started_at,
             )
 

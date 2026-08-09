@@ -13,6 +13,14 @@ pointing at an undefined provider is a typo the operator should hear about at st
 so it fails there. A missing ``ANTHROPIC_API_KEY`` is *not*: a gateway serving mock and
 vLLM traffic must boot and run fine without one (invariant 4), and the honest place for
 that error is the first request that actually needs Anthropic.
+
+Phase 6 adds failover chains to a route, and one thing about *where* they are validated
+is deliberate. Shape — undefined names, a repeated provider, an attempt budget above the
+ceiling — is checked here, at load. **Whether a fallback can actually speak the rule's
+dialect is checked in ``headroom/api/gateway.py``**, because that is the module which
+imports the provider kinds and therefore the only one where the registry is guaranteed
+populated. BUILD_PLAN L4 stops being a property of the data structure and becomes a
+property the gateway refuses to start without.
 """
 
 from __future__ import annotations
@@ -26,7 +34,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from headroom.core.errors import ConfigurationError
-from headroom.policy.routing import RouteRule, RoutingTable
+from headroom.policy.routing import MAX_ATTEMPT_LIMIT, RouteRule, RoutingTable
 
 __all__ = [
     "ADMIN_TOKEN_ENV",
@@ -87,13 +95,39 @@ class ProviderSpec(BaseModel):
 
 
 class RouteSpec(BaseModel):
-    """Models starting with ``prefix`` are served by ``provider``."""
+    """Models starting with ``prefix`` are served by ``provider``, then by ``fallbacks``.
+
+    Phase 6 added the last two fields, and their defaults are the whole reason this phase
+    is additive: a rule with no ``fallbacks`` and no ``max_attempts`` makes exactly one
+    attempt, with no backoff and no breaker interference — bit for bit what Phase 5 did.
+    Failover is opt-in, per route, in the file the operator already edits when a GPU
+    moves (BUILD_PLAN §P6, docs/DECISIONS.md H-049).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     #: Empty string is legal and means "everything else".
     prefix: str = ""
     provider: str
+    #: Same-dialect alternates, in order. Cross-dialect fallbacks are rejected at
+    #: gateway build (BUILD_PLAN L4), not merely discouraged in a comment.
+    fallbacks: list[str] = Field(default_factory=list)
+    #: Attempts one request may make. Absent means one per candidate. Above the chain
+    #: length it wraps, which is how a single-provider route asks to be retried rather
+    #: than abandoned. Bounded because an unbounded retry budget on the first-token path
+    #: is a denial of service one config edit away.
+    max_attempts: int | None = Field(default=None, ge=1, le=MAX_ATTEMPT_LIMIT)
+
+    @model_validator(mode="after")
+    def _chain_is_distinct_and_excludes_the_primary(self) -> Self:
+        chain = [self.provider, *self.fallbacks]
+        if len(set(chain)) != len(chain):
+            raise ValueError(
+                f"route {self.prefix!r} names a provider twice in its chain ({chain}); "
+                "a repeat buys nothing the `max_attempts` wrap does not, and it would "
+                "make `failover_hops` count a hop that never left the provider"
+            )
+        return self
 
 
 class GatewayConfig(BaseModel):
@@ -108,20 +142,35 @@ class GatewayConfig(BaseModel):
 
     @model_validator(mode="after")
     def _routes_point_at_real_providers(self) -> Self:
+        """Every name a rule can reach — primary *and* fallback — must be defined.
+
+        A typo in a fallback is worse than a typo in a primary, because it stays
+        invisible until the day the primary is down, which is the worst possible day to
+        discover a configuration error.
+        """
         for dialect, rules in self.routes.items():
             for rule in rules:
-                if rule.provider not in self.providers:
-                    known = ", ".join(sorted(self.providers)) or "none"
-                    raise ValueError(
-                        f"route {dialect}:{rule.prefix!r} names provider "
-                        f"{rule.provider!r}, which is not defined (defined: {known})"
-                    )
+                for name in (rule.provider, *rule.fallbacks):
+                    if name not in self.providers:
+                        known = ", ".join(sorted(self.providers)) or "none"
+                        raise ValueError(
+                            f"route {dialect}:{rule.prefix!r} names provider "
+                            f"{name!r}, which is not defined (defined: {known})"
+                        )
         return self
 
     def routing_table(self) -> RoutingTable:
         return RoutingTable(
             {
-                dialect: [RouteRule(prefix=rule.prefix, provider=rule.provider) for rule in rules]
+                dialect: [
+                    RouteRule(
+                        prefix=rule.prefix,
+                        provider=rule.provider,
+                        fallbacks=tuple(rule.fallbacks),
+                        max_attempts=rule.max_attempts,
+                    )
+                    for rule in rules
+                ]
                 for dialect, rules in self.routes.items()
             }
         )

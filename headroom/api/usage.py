@@ -91,7 +91,12 @@ class LedgerRowView(BaseModel):
     total_ms: float | None
 
     cache_disposition: str | None
+    #: What failover did (Phase 6). ``provider`` above says who served; these say what it
+    #: took — how many candidates were passed over, which one first, and why. NULL and
+    #: zero on the overwhelming majority of rows, which is the point.
     failover_hops: int
+    failover_from: str | None
+    failover_error: str | None
     started_at: datetime
 
     @classmethod
@@ -134,6 +139,8 @@ class LedgerRowView(BaseModel):
             total_ms=entry.total_ms,
             cache_disposition=entry.cache_disposition,
             failover_hops=entry.failover_hops,
+            failover_from=entry.failover_from,
+            failover_error=entry.failover_error,
             started_at=entry.started_at,
         )
 
