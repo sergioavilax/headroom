@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from headroom.api import admin, proxy
+from headroom.api import admin, proxy, usage
 from headroom.api.admin import AdminError, admin_error_handler
 from headroom.api.gateway import build_gateway
 from headroom.api.middleware import RequestContextMiddleware
@@ -57,6 +57,11 @@ app.include_router(proxy.router)
 # gated on the root admin token, `/v1/*` on a tenant's virtual key, and neither is ever
 # accepted for the other.
 app.include_router(admin.router)
+# Before `admin.router`? No — the two prefixes do not overlap (`/admin/usage` vs
+# `/admin/tenants` and `/admin/keys`), so order is irrelevant and stays alphabetical.
+# Read-only, same credential, its own file because reporting and CRUD change for
+# different reasons (Phase 3).
+app.include_router(usage.router)
 app.add_exception_handler(AdminError, admin_error_handler)
 
 

@@ -21,11 +21,13 @@ closing each one, every judgment call logged in
 the measured semantic-cache safety curve, the gateway-overhead number, and the
 architecture diagram — is Phase 11.
 
-Progress: **Phase 0** bootstrap · **Phase 1** proxy core · **Phase 2** tenancy ← here.
+Progress: **Phase 0** bootstrap · **Phase 1** proxy core · **Phase 2** tenancy ·
+**Phase 3** metering ← here.
 
 What exists today: the **proxy core** (Phase 1) — `POST /v1/messages` and
-`POST /v1/chat/completions`, streaming and non-streaming, passthrough per dialect — and
-**tenancy** (Phase 2): tenants, virtual keys, and an admin API.
+`POST /v1/chat/completions`, streaming and non-streaming, passthrough per dialect —
+**tenancy** (Phase 2): tenants, virtual keys, and an admin API — and **metering**
+(Phase 3): every request becomes a priced, attributed ledger row.
 
 ```bash
 make up      # postgres+pgvector, dynamodb-local, the gateway — waits healthy, migrates
@@ -78,6 +80,60 @@ deactivated, because the cost ledger points at their ids forever.
 inactive tenant). `403` means it knows exactly who you are and the key is not scoped to
 that model or provider. The reasoning for all of it is in
 [docs/DECISIONS.md](docs/DECISIONS.md) H-017 … H-022.
+
+## The cost ledger
+
+Every request that authenticated and named a model becomes one row in `usage_ledger`,
+priced at the rates that were in effect **on the day it arrived**:
+
+```bash
+curl -sS -H "$ADMIN" localhost:8080/admin/usage           # the ledger, newest first
+curl -sS -H "$ADMIN" localhost:8080/admin/usage/totals    # spend per tenant
+curl -sS -H "$ADMIN" 'localhost:8080/admin/usage/totals?by_model=true'
+curl -sS -H "$ADMIN" localhost:8080/admin/usage/hr_…      # one request, by its id
+```
+
+Filters: `tenant_id`, `key_id`, `model`, `provider`, `outcome`, `since`, `until`,
+`limit`, `offset`. The surface is read-only; every other verb is a 405.
+
+Four things about it are deliberate, and each has an entry in
+[docs/DECISIONS.md](docs/DECISIONS.md):
+
+**Prices are a dated history, not a number** (H-023). `config/models.yaml` gives each
+model a list of `(effective_from, usd_per_mtok_in, usd_per_mtok_out)` rows, and the
+committed file already contains a real boundary: Anthropic published Claude Sonnet 5 at
+an introductory $2/$10 per MTok through **2026-08-31**, $3/$15 after — so the identical
+request costs different money on either side of that midnight. Rates are *quoted
+strings*; an unquoted `3.00` is a YAML float and the loader refuses it by name.
+
+**A row keeps the price it was billed at** (H-024). The rates are copied into the row,
+so editing the price file — or a vendor publishing new rates — can never re-bill a
+request that already happened. This is Backline's D-017 scar turned into a column
+layout.
+
+**The meter reads the usage block; it never counts the text** (H-025, and Phase 1's live
+smoke). A reasoning model can answer in eleven visible characters and bill sixty-three
+tokens, fifty-seven of them chain-of-thought that appears nowhere in the content stream.
+`output_tokens` is reasoning-inclusive, always, from the provider's own report.
+
+**`NULL` and `0` are different facts**, and `cost_status` says which — `priced`,
+`partial`, `unpriced_model`, `usage_unknown`, `not_billable`. An upstream 429 provably
+cost nothing (`0`). A stream cut mid-answer cost *something nobody can know* (`NULL`).
+A meter that wrote `0.00` for both would look identical and be wrong.
+
+Two consequences worth knowing before you read a total:
+
+- **Anonymous 401s are not in the ledger.** They have no tenant to attribute, and the
+  structured log line already records them. A tenant's row count is not their request
+  count.
+- **OpenAI-dialect *streamed* requests are only meterable if the caller asked for
+  usage.** Send `"stream_options": {"include_usage": true}` and the counts arrive;
+  without it the row is honestly `usage_unknown`, because Headroom will not rewrite a
+  caller's request body to close the gap (H-028). `unpriced_requests` on every total
+  says how many rows a sum could not include.
+
+Money is `Decimal` from the YAML file through the arithmetic to `NUMERIC(24, 12)` and
+back out **as a string** — JSON has one numeric type and it is a double.
 
 Running the local vLLM backends: [docs/vllm.md](docs/vllm.md).
 

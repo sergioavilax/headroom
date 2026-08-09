@@ -14,6 +14,14 @@ one tenant and one unrestricted virtual key, an authenticator with its own cache
 root admin token. Isolation matters as much here as it does for faults — a cached auth
 decision or a revoked key leaking between tests would make the revocation-window
 assertions meaningless.
+
+Since Phase 3 it also gets its own **ledger**, and one thing about it is deliberate:
+the price book is loaded from the **committed** ``config/models.yaml`` rather than from
+a fixture. The exact-cost assertions are therefore assertions about the file the
+gateway ships with, so a fat-fingered rate in the real config fails the suite instead of
+sailing through it. A test that needs a price *boundary* builds its own book in code —
+the shipped mock entries are flat on purpose, so that test costs never move on a
+calendar day (docs/DECISIONS.md H-023).
 """
 
 from __future__ import annotations
@@ -25,7 +33,10 @@ import pytest
 
 from headroom.api.gateway import Gateway
 from headroom.api.main import app as headroom_app
-from headroom.db.memory import InMemoryTenantStore
+from headroom.db.memory import InMemoryLedgerStore, InMemoryTenantStore
+from headroom.metering.meter import Meter
+from headroom.metering.prices import load_price_book
+from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.policy.keys import display_prefix, hash_key, mint_key
 from headroom.providers.mock import MockProvider, MockScriptBook
@@ -55,12 +66,16 @@ async def gateway() -> AsyncIterator[GatewayHarness]:
     )
     assert key is not None  # the tenant was just created
 
+    ledger = InMemoryLedgerStore()
+    writer = LedgerWriter(ledger)
     instance = Gateway(
         config=config,
         registry=registry,
         routing=config.routing_table(),
         store=store,
         authenticator=Authenticator(store),
+        ledger=ledger,
+        meter=Meter(prices=load_price_book(), writer=writer),
         admin_token=ADMIN_TOKEN,
     )
 
@@ -81,6 +96,9 @@ async def gateway() -> AsyncIterator[GatewayHarness]:
                 tenant=tenant,
                 key=key,
                 api_key=plaintext,
+                ledger=ledger,
+                meter=instance.meter,
+                writer=writer,
             )
     finally:
         await instance.aclose()

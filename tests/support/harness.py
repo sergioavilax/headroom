@@ -21,7 +21,10 @@ import httpx
 
 from headroom.core.config import GatewayConfig, ProviderSpec, RouteSpec
 from headroom.core.context import RequestContext
+from headroom.core.ledger import LedgerEntry, LedgerStore
 from headroom.core.storage import Tenant, TenantStore, VirtualKey
+from headroom.metering.meter import Meter
+from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.providers.base import UpstreamRequest
 from headroom.providers.mock import MockProvider, MockScriptBook
@@ -66,6 +69,13 @@ class GatewayHarness:
     key: VirtualKey
     #: The plaintext of :attr:`key`. Held here because the store never will.
     api_key: str
+    ledger: LedgerStore
+    meter: Meter
+    #: Exposed so a test can drain the fire-and-forget queue before asserting. The
+    #: writer is asynchronous *on purpose* (a slow database must never delay a stream),
+    #: which means a test that asserted immediately after the response would be racing
+    #: it — :meth:`ledger_row` waits properly instead of sleeping and hoping.
+    writer: LedgerWriter
     admin_token: str = ADMIN_TOKEN
 
     # --- proxy requests -----------------------------------------------------------
@@ -164,3 +174,25 @@ class GatewayHarness:
         """What the provider was actually handed — the request half of fidelity."""
         assert self.provider.received, "the provider was never called"
         return self.provider.received[-1]
+
+    # --- the ledger ---------------------------------------------------------------
+
+    async def ledger_row(self, request_id: str | None = None) -> LedgerEntry:
+        """The ledger row for a request, once the writer has actually written it.
+
+        Drains the queue first — the write is fire-and-forget by design, so reading
+        the store without waiting would be a race that passes on a fast machine and
+        fails in CI. Asserts the row exists, so a test that expects one and gets none
+        fails on the missing row rather than on an ``AttributeError`` three lines later.
+        """
+        await self.writer.drain()
+        resolved = request_id if request_id is not None else self.last_context().request_id
+        row = await self.ledger.get(resolved)
+        assert row is not None, f"no ledger row was written for request {resolved}"
+        return row
+
+    async def ledger_row_or_none(self, request_id: str | None = None) -> LedgerEntry | None:
+        """The same, for tests asserting that a request is deliberately *not* metered."""
+        await self.writer.drain()
+        resolved = request_id if request_id is not None else self.last_context().request_id
+        return await self.ledger.get(resolved)

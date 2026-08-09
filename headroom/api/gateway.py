@@ -13,8 +13,13 @@ from dataclasses import dataclass
 
 from headroom.core.config import ADMIN_TOKEN_ENV, GatewayConfig, load_config
 from headroom.core.errors import ConfigurationError
+from headroom.core.ledger import LedgerStore
 from headroom.core.storage import TenantStore
+from headroom.db.ledger import PostgresLedgerStore
 from headroom.db.tenants import PostgresTenantStore
+from headroom.metering.meter import Meter
+from headroom.metering.prices import load_price_book
+from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.policy.routing import RoutingTable
 
@@ -50,6 +55,11 @@ class Gateway:
     routing: RoutingTable
     store: TenantStore
     authenticator: Authenticator
+    #: Phase 3. The ledger is where the meter's rows land and what ``/admin/usage``
+    #: reads; the meter holds the price book and the writer. Fields, not globals, for
+    #: the same reason everything else here is: one gateway per test, one per process.
+    ledger: LedgerStore
+    meter: Meter
     admin_token: str | None = None
 
     def provider_for(self, dialect: str, model: str) -> Provider:
@@ -61,19 +71,33 @@ class Gateway:
         return self.registry.get(self.routing.resolve(dialect, model))
 
     async def aclose(self) -> None:
+        # The writer first, and deliberately: it drains its queue into the ledger
+        # store, so closing the store out from under it would throw away exactly the
+        # rows a graceful shutdown exists to save (docs/DECISIONS.md H-027).
+        if self.meter.writer is not None:
+            await self.meter.writer.aclose()
         await self.registry.aclose()
         await self.store.aclose()
+        await self.ledger.aclose()
 
 
 def build_gateway(
-    config: GatewayConfig | None = None, *, store: TenantStore | None = None
+    config: GatewayConfig | None = None,
+    *,
+    store: TenantStore | None = None,
+    ledger: LedgerStore | None = None,
 ) -> Gateway:
     """Construct a gateway from config (loaded from disk when not supplied).
 
-    The store defaults to Postgres and its pool is lazy (``headroom/db/pool.py``), so
-    building a gateway — and therefore starting the process — never requires a
-    reachable database. ``store`` is injectable for tests; nothing in configuration can
+    The stores default to Postgres and share one lazy pool (``headroom/db/pool.py``),
+    so building a gateway — and therefore starting the process — never requires a
+    reachable database. They are injectable for tests; nothing in configuration can
     select a non-durable one.
+
+    Prices are read here, once, from ``config/models.yaml``. A missing or malformed
+    price file fails at startup rather than at the first billed request: a gateway that
+    booted without prices would serve traffic and write a ledger full of NULL costs,
+    and nobody finds out until an invoice arrives.
     """
     resolved = config if config is not None else load_config()
     kinds = provider_kinds()
@@ -87,11 +111,14 @@ def build_gateway(
             )
         registry.add(factory(name, **spec.settings()))
     tenant_store = store if store is not None else PostgresTenantStore()
+    ledger_store = ledger if ledger is not None else PostgresLedgerStore()
     return Gateway(
         config=resolved,
         registry=registry,
         routing=resolved.routing_table(),
         store=tenant_store,
         authenticator=Authenticator(tenant_store),
+        ledger=ledger_store,
+        meter=Meter(prices=load_price_book(), writer=LedgerWriter(ledger_store)),
         admin_token=os.environ.get(ADMIN_TOKEN_ENV) or None,
     )
