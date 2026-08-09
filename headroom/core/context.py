@@ -31,6 +31,7 @@ from decimal import Decimal
 from typing import Any, Final
 
 from headroom.core.budgets import Reservation
+from headroom.core.cache import CachePlan
 from headroom.core.ledger import format_usd
 
 __all__ = ["RequestContext", "current_context", "new_request_id"]
@@ -123,6 +124,31 @@ class RequestContext:
     #: The bucket that refused, as ``tenant:requests`` / ``key:tokens``. Set only on a
     #: refusal: on the way through, no single bucket is worth naming.
     rate_limit_scope: str | None = None
+
+    # --- what the cache did (Phase 5) -----------------------------------------------
+    # Every proxied request that reaches the gate gets a `cache_disposition`, including
+    # the ones where the answer is "this tenant has caching off" — so "was the cache
+    # involved" is answerable for every row rather than only the interesting ones.
+    #: cache_hit_exact | cache_hit_semantic | cache_miss | cache_bypass | cache_disabled.
+    cache_disposition: str | None = None
+    #: Why a request was bypassed, or why a response was not stored. One field for both
+    #: because they are the same question from a operator's side — "why is my cache not
+    #: doing anything" — and the disposition beside it says which half it came from.
+    cache_reason: str | None = None
+    #: Cosine similarity of a semantic hit. ``None`` on an exact hit, where the question
+    #: was not similar but identical.
+    cache_similarity: float | None = None
+    #: What this hit would have cost, taken from the entry's own recorded cost. ``None``
+    #: when that cost was never known — H-025's rule, so a savings total can never
+    #: quietly add a zero for a figure nobody has.
+    cache_avoided_usd: Decimal | None = None
+    #: The request that populated the entry. Provenance: the path from an answer back to
+    #: the question it was actually produced for.
+    cache_source_request_id: str | None = None
+    #: The live plan between a miss and its store. Not logged and not stored — a handle,
+    #: exactly as ``budget_reservation`` is. Its presence is also what licenses the
+    #: streaming path to record bytes at all.
+    cache_plan: CachePlan | None = None
 
     # --- when --------------------------------------------------------------------
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -274,6 +300,15 @@ class RequestContext:
             # Phase 4b. Which limit applied and, on a refusal, which bucket said no.
             "rate_limit_status": self.rate_limit_status,
             "rate_limit_scope": self.rate_limit_scope,
+            # Phase 5. What the cache did, why it did nothing when it did nothing, and —
+            # on a hit — how close the match was and whose answer it is. `cache_reason`
+            # is the field an operator reads when the answer to "why is my cache empty"
+            # is a rule rather than a bug. Money is a string, for `usd_cost`'s reason.
+            "cache_disposition": self.cache_disposition,
+            "cache_reason": self.cache_reason,
+            "cache_similarity": self.cache_similarity,
+            "cache_avoided_usd": format_usd(self.cache_avoided_usd),
+            "cache_source_request_id": self.cache_source_request_id,
             "upstream_latency_ms": _round(self.upstream_latency_ms),
             "ttft_ms": _round(self.time_to_first_token_ms),
             "passthrough_overhead_ms": _round(self.passthrough_overhead_ms),

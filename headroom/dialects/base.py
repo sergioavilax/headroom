@@ -21,6 +21,11 @@ cannot avoid asking:
    The two shapes differ enough to be worth a method: Anthropic splits usage across
    ``message_start`` and ``message_delta``, while the OpenAI dialect appends a single
    usage-bearing chunk *after* the frame that ends the answer.
+6. **Is this one plain question, and where is it?** (Phase 5) — the semantic cache
+   embeds the user's turn and hashes everything else, so it has to know which part is
+   which. Also a dialect question, and a consequential one: Anthropic's system prompt is
+   a top-level field while the OpenAI dialect's is a message, so a single shared reading
+   of ``messages`` would quietly drop one of them out of the key.
 
 Note what is absent: nothing here rewrites, re-encodes, or normalizes a request or a
 response. The body the client sent is the body the provider receives, byte for byte,
@@ -35,10 +40,54 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import Any
 
+from headroom.core.cache import PROBE_SENTINEL, CacheProbe
 from headroom.core.sse import SSEEvent
 from headroom.metering.usage import Usage, UsageObserver
 
-__all__ = ["Dialect", "dialect_for", "register_dialect"]
+__all__ = [
+    "Dialect",
+    "dialect_for",
+    "redact_message",
+    "register_dialect",
+    "text_of_content",
+]
+
+
+def text_of_content(content: Any) -> str | None:
+    """A message's content as plain text, or ``None`` if it is not plain text.
+
+    Both dialects accept either a bare string or a list of typed blocks, and both spell
+    a text block ``{"type": "text", "text": …}``. Anything else in the list — an image,
+    a document, a ``tool_result`` — returns ``None``, which makes the request ineligible.
+    That is the intended behaviour and not a limitation to be lifted casually: an image
+    is part of the question, and a cache that embedded only the words beside it would
+    answer one picture's question with another picture's answer.
+    """
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list) or not content:
+        return None
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, Mapping) or block.get("type") != "text":
+            return None
+        text = block.get("text")
+        if not isinstance(text, str):
+            return None
+        parts.append(text)
+    return "\n".join(parts)
+
+
+def redact_message(body: Mapping[str, Any], messages: list[Any], index: int) -> dict[str, Any]:
+    """A shallow copy of ``body`` whose ``messages[index]`` content is the sentinel.
+
+    Shallow everywhere except the one message being rewritten, because the result is
+    canonicalised and hashed immediately and then discarded — it is never sent, never
+    stored, and never handed back to a caller (``headroom/cache/keys.py``).
+    """
+    replaced = list(messages)
+    replaced[index] = {**messages[index], "content": PROBE_SENTINEL}
+    return {**body, "messages": replaced}
 
 
 class Dialect(ABC):
@@ -104,6 +153,23 @@ class Dialect(ABC):
 
         Fed the same events the completion check sees, from the same tap (H-007), so
         metering a stream adds no second parse and cannot touch a forwarded byte.
+        """
+
+    # --- reading the question (Phase 5) ---------------------------------------------
+
+    @abstractmethod
+    def cache_probe(self, body: Mapping[str, Any]) -> CacheProbe | None:
+        """The single user turn's text plus the request with that text redacted.
+
+        ``None`` means *this request is not one plain question*, and every reason for it
+        is a reason not to cache: more than one user turn (history the probe would not
+        see), an assistant turn, non-text content, or a body whose ``messages`` are not
+        the shape either API documents. The caller treats ``None`` as ineligible rather
+        than as an error, because "not cacheable" is the overwhelmingly common answer.
+
+        Conservative by construction: anything unrecognised returns ``None``. The cost of
+        a false negative is a cache miss; the cost of a false positive is embedding one
+        request and answering a different one with it.
         """
 
     # --- speaking failure ---------------------------------------------------------

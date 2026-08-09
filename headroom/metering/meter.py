@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 from headroom.core.context import RequestContext
 from headroom.core.errors import ProviderTimeout
@@ -150,6 +151,16 @@ def build_entry(ctx: RequestContext, usage: Usage, breakdown: CostBreakdown) -> 
         budget_status=ctx.budget_status,
         budget_reserved_usd=ctx.budget_reserved_usd,
         budget_settled_usd=ctx.budget_settled_usd,
+        # Phase 5's account of the same request. `cache_similarity` becomes a Decimal
+        # here and only here: it is a float everywhere it is *computed* (a cosine of
+        # floating-point vectors) and a NUMERIC(6,5) where it is *stored*, so the
+        # conversion belongs at the boundary between those two facts.
+        cache_disposition=ctx.cache_disposition,
+        cache_avoided_usd=ctx.cache_avoided_usd,
+        cache_similarity=(
+            None if ctx.cache_similarity is None else Decimal(f"{ctx.cache_similarity:.5f}")
+        ),
+        cache_source_request_id=ctx.cache_source_request_id,
         upstream_latency_ms=ctx.upstream_latency_ms,
         ttft_ms=ctx.time_to_first_token_ms,
         passthrough_overhead_ms=ctx.passthrough_overhead_ms,

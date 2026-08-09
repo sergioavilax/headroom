@@ -77,6 +77,23 @@ be refused for rate is refused before it takes a hold it would have to hand stra
 request for a tenant serialises on (docs/DECISIONS.md H-039). Nothing settles on the way
 out: a bucket refills by itself, which is the entire difference between a flow and a
 stock, and the reason this half of the phase adds no code to :func:`_finish`.
+
+Phase 5 adds the cache, in the one slot left between them:
+
+**Looked up after the limiter, before the cap; stored after the response is delivered.**
+A hit is served without opening an upstream and without taking a budget reservation — it
+spends nothing, so there is nothing to bound — while still costing its rate-limit units,
+because a hit is not free to *this* process and a tenant that could serve unlimited
+traffic by repeating itself would have a denial of service for the asking
+(docs/DECISIONS.md H-046).
+
+**The store side is where the streaming path grew its only new line.** A response can
+only be cached if its bytes are still around, so ``_passthrough`` keeps a copy — and
+keeps it **only when there is a live cache plan**, which there is not for a tenant with
+caching disabled, for an ineligible request, or for one that already hit. The copy is
+appended beside the existing observer feed, on the same side of the ``yield``, so the
+client's first byte is not waiting on it; and the write itself happens after the last
+byte has left, so a slow database delays nothing at all on the path that streams.
 """
 
 from __future__ import annotations
@@ -98,6 +115,9 @@ from headroom.api.headers import (
     forward_response_headers,
 )
 from headroom.api.middleware import context_of
+from headroom.cache.eligibility import MAX_CACHEABLE_BODY_BYTES, REASON_BODY_TOO_LARGE
+from headroom.cache.replay import replay
+from headroom.core.cache import CacheHit
 from headroom.core.context import (
     OUTCOME_CLIENT_DISCONNECT,
     OUTCOME_OK,
@@ -197,6 +217,16 @@ async def _proxy(
         key_limits=principal.key_limits,
         estimate=estimate,
     )
+
+    # Between the two gates, and the position is argued in H-046: after the limiter
+    # because a hit costs this process real work (a search, and on the semantic path a
+    # CPU embedding), before the cap because a hit costs the *tenant* nothing and a
+    # reservation it would settle to zero is two DynamoDB round trips on the one path
+    # whose entire product is that the first token is already there.
+    hit = await gateway.cache.lookup(ctx, dialect, body, settings=principal.tenant_cache)
+    if hit is not None:
+        return await replay(hit, ctx, on_complete=lambda: _finish_cached(gateway, ctx, hit))
+
     await gateway.budgets.admit(ctx, dialect, body, raw_body, estimate=estimate)
 
     upstream_request = UpstreamRequest(
@@ -269,7 +299,21 @@ async def _buffered_response(
     )
     # An error body has no usage to read, and the meter is told nothing rather than
     # asked to find something: it prices the request from the upstream status.
-    await _finish(gateway, ctx, Usage() if failed else dialect.usage_from_body(body))
+    usage = Usage() if failed else dialect.usage_from_body(body)
+    await _finish(gateway, ctx, usage)
+    # Deliberately reached on the *error* path too, with the error body in hand. It is
+    # refused there — that is what `may_store_response` is for — and driving the real
+    # refusal through the real path is what makes the D-021 poison attempts a test of
+    # the gateway rather than of a helper function.
+    #
+    # One honest cost, stated: on this path the write precedes the response, so a miss
+    # pays one INSERT before its last byte. The streamed path below pays nothing, since
+    # its bytes are already gone. A second fire-and-forget queue would erase the
+    # difference and add another thing to drain at shutdown, for a few milliseconds on
+    # the slower of two paths that has just waited on a model.
+    await gateway.cache.store_response(
+        ctx, body=body, content_type=headers.get("content-type", "application/json"), usage=usage
+    )
     return Response(
         content=body,
         status_code=upstream.status_code,
@@ -304,10 +348,16 @@ async def _passthrough(
     """
     observer = SSEObserver()
     usage = dialect.usage_observer()
-    is_sse = _SSE_CONTENT_TYPE in upstream.headers.get("content-type", "")
+    content_type = upstream.headers.get("content-type", _SSE_CONTENT_TYPE)
+    is_sse = _SSE_CONTENT_TYPE in content_type
     saw_terminal = False
     failure: str | None = None
     failure_message = ""
+    # Only when there is something to cache. No plan — a disabled tenant, an ineligible
+    # request, a hit — and not one byte is copied, which is what makes "caching off
+    # costs nothing" a property of the code rather than a claim about it.
+    recorder: list[bytes] | None = [] if ctx.cache_plan is not None else None
+    recorded = 0
 
     def watch(events: list[SSEEvent]) -> None:
         """Steer completion detection and metering off the same events.
@@ -328,6 +378,19 @@ async def _passthrough(
                 continue
             if is_sse:
                 watch(observer.feed(chunk))
+            if recorder is not None:
+                # Beside the observer feed, on the same side of the yield: a list append
+                # is strictly cheaper than the parse that already happens here, and
+                # keeping both before the yield keeps the loop obviously correct.
+                recorded += len(chunk)
+                if recorded > MAX_CACHEABLE_BODY_BYTES:
+                    # Stop paying to remember a response that will never be stored. The
+                    # request itself is unaffected; only the copy is abandoned.
+                    recorder = None
+                    ctx.cache_plan = None
+                    ctx.cache_reason = REASON_BODY_TOO_LARGE
+                else:
+                    recorder.append(chunk)
             ctx.mark_first_token_out()
             yield chunk
         if is_sse:
@@ -367,6 +430,9 @@ async def _passthrough(
     if failure is None:
         ctx.complete(OUTCOME_OK)
         await _finish(gateway, ctx, usage.usage)
+        # After the last byte: the client already has the whole answer, so the write
+        # costs the request nothing at all on this path.
+        await _store_stream(gateway, ctx, recorder, content_type, usage.usage)
         return
 
     # Marked before `complete`, not after: the terminal event is itself a byte the
@@ -379,9 +445,58 @@ async def _passthrough(
     # as a complete answer, and it is not billed as a free one either (invariant 6,
     # one layer down: an amputated answer must not look finished to the invoice).
     await _finish(gateway, ctx, usage.usage)
+    # The truncation path, and it calls the cache on purpose with the amputated bytes in
+    # hand. Nothing lands — `ctx.outcome` is not ``ok`` — and driving the refusal through
+    # the real code is what makes the D-021 attempt a test of this gateway rather than of
+    # a predicate in isolation. Invariant 6 is enforced *here*, at the one place a
+    # truncated answer could otherwise become permanent.
+    await _store_stream(gateway, ctx, recorder, content_type, usage.usage)
     yield dialect.terminal_error_event(
         reason=failure, message=failure_message, request_id=ctx.request_id
     )
+
+
+async def _store_stream(
+    gateway: Gateway,
+    ctx: RequestContext,
+    recorder: list[bytes] | None,
+    content_type: str,
+    usage: Usage,
+) -> None:
+    """Offer a streamed response to the cache, whatever happened to it.
+
+    ``recorder is None`` means there was nothing to offer in the first place — caching
+    off, request ineligible, or a body that outgrew the bound — and in that case the plan
+    has already been cleared, so this is a no-op rather than a silent skip.
+    """
+    if recorder is None:
+        return
+    await gateway.cache.store_response(
+        ctx, body=b"".join(recorder), content_type=content_type, usage=usage
+    )
+
+
+async def _finish_cached(gateway: Gateway, ctx: RequestContext, hit: CacheHit) -> None:
+    """Close the books on a request the cache served.
+
+    The same ``measure``/``commit`` pair every other exit runs, with two differences that
+    are the whole point of the row it writes. The usage carries **only** the stop reason:
+    the answer really did end that way, and it is the one fact about the response that is
+    still true on a replay — while the token counts stay ``None``, because nothing was
+    generated and a row claiming otherwise would corrupt every ``SUM(output_tokens)`` in
+    the dashboard and in the Phase 9 rollup.
+
+    The cost that falls out is ``$0`` with ``not_billable`` beside it, from
+    ``Meter._is_billable``'s existing rule (no upstream status, no timeout → no model
+    ran) — the same status an unroutable model gets, and for the same reason. The saving
+    is on the row too, in ``cache_avoided_usd``, where it cannot be mistaken for spend.
+
+    There is no settlement step: a hit never took a reservation, so
+    ``budget_reservation`` is ``None`` and ``_finish``'s middle line would be a no-op.
+    Calling ``record`` directly says that, rather than implying a hold that never existed.
+    """
+    usage = Usage(stop_reason=hit.entry.stop_reason)
+    gateway.meter.record(ctx, usage)
 
 
 async def _finish(
@@ -435,6 +550,11 @@ async def _error_response(
     # then hit a timeout, an unroutable model, or a transport failure has its budget
     # handed straight back, because the settlement follows the cost and that cost is 0.
     await _finish(gateway, ctx, Usage())
+    # And it offers nothing to the cache, through the same call every other exit makes.
+    # A timeout is the interesting one: the provider may well have generated an answer,
+    # and there is not one byte of it here — which is precisely why an empty body and a
+    # non-``ok`` outcome must both refuse, rather than one of them.
+    await gateway.cache.store_response(ctx, body=b"", content_type="", usage=Usage())
     return Response(
         content=dialect.error_body(
             status_code=exc.status_code,

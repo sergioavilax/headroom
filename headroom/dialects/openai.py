@@ -40,13 +40,21 @@ import json
 from collections.abc import Mapping
 from typing import Any, Final
 
+from headroom.core.cache import CacheProbe
 from headroom.core.sse import SSEEvent, format_sse
-from headroom.dialects.base import Dialect, register_dialect
+from headroom.dialects.base import Dialect, redact_message, register_dialect, text_of_content
 from headroom.metering.usage import Usage, UsageObserver
 
 __all__ = ["DONE_SENTINEL", "OPENAI", "OpenAIDialect"]
 
 DONE_SENTINEL: Final = "[DONE]"
+
+#: Roles allowed *before* the single user turn a cacheable request may carry. Both are
+#: instructions rather than conversation, they stay in ``context_hash`` verbatim, and
+#: neither is something the probe should be embedding. An ``assistant`` turn is
+#: deliberately absent: that is history, and history the probe cannot see is history a
+#: semantic match would ignore.
+_PREAMBLE_ROLES: Final = frozenset({"system", "developer"})
 
 # OpenAI's error `type` values, by status.
 _ERROR_TYPES: Final[Mapping[int, str]] = {
@@ -108,6 +116,33 @@ class OpenAIDialect(Dialect):
             isinstance(choice, dict) and choice.get("finish_reason") is not None
             for choice in choices
         )
+
+    def cache_probe(self, body: Mapping[str, Any]) -> CacheProbe | None:
+        """A system/developer preamble at most, then exactly one user turn, text only.
+
+        The asymmetry with the Anthropic dialect is the whole reason this is a dialect
+        method: here the system prompt is *inside* ``messages``, so it has to be left in
+        place while the last message is redacted — a shared implementation that blanked
+        "the messages" would drop it out of ``context_hash`` and let two different system
+        prompts share a cache entry.
+        """
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return None
+        index = len(messages) - 1
+        for position, message in enumerate(messages):
+            if not isinstance(message, Mapping):
+                return None
+            role = message.get("role")
+            if position == index:
+                if role != "user":
+                    return None
+            elif role not in _PREAMBLE_ROLES:
+                return None
+        text = text_of_content(messages[index].get("content"))
+        if text is None or not text.strip():
+            return None
+        return CacheProbe(text=text, redacted=redact_message(body, messages, index))
 
     def usage_from_body(self, body: bytes) -> Usage:
         try:

@@ -2005,3 +2005,460 @@ is simply not allowed to be there. *Rate limit after `provider.open`* — not a 
 a rate-limited request leaves the budget's counters untouched. Phase 5's cache will have to
 choose a position in this sequence too — a cache hit costs no provider call, so *should* it
 consume a bucket? — and this entry is where that argument starts.
+
+---
+
+## H-040 — Two mechanisms keep tenants apart, and one function is both of them (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The session brief states the requirement without qualification: *"no cache
+entry ever serves across tenants — exact or semantic."* That is easy to satisfy and hard
+to *prove*, because the failure is silent: a cross-tenant hit returns a 200 carrying a
+complete, well-formed answer belonging to somebody else, and nothing in the response says
+so. Backline's **D-021** is the same shape one layer up, which is why invariant 6 exists
+at all.
+
+A single mechanism is not enough, and the reason is specific rather than superstitious.
+If isolation lived only in a SQL predicate, that predicate is one refactor away from being
+"optimised" — the exact layer looks up by a 64-character hash, and *"the hash is unique
+anyway, drop the tenant from the WHERE"* is a change a reviewer would wave through. If it
+lived only in the hash, a future query written by hand (an admin listing, a Phase 7
+dashboard panel, Phase 9's rollup Lambda) reaches the table without going through it.
+
+**Decision.** Isolation is **a value, not a habit**: `CacheNamespace`
+(`headroom/core/cache.py`) is the only address the cache has, every store method takes
+one, and there is no method on `ResponseCacheStore` that can be called without naming a
+tenant. That one value then does two jobs:
+
+- it **salts the exact key** — `request_hash` is SHA-256 over `namespace.salt` and the
+  canonicalised request, so two tenants asking the byte-identical question produce
+  different digests;
+- it **is the query** — every statement in `headroom/db/cache.py` leads with
+  `tenant_id = $1`, against a unique index that leads with the same column, and the
+  semantic search filters the whole namespace before pgvector is allowed to order
+  anything.
+
+Both are downstream of `namespace_for`, which is called from exactly one place.
+
+**The sabotage is what makes this more than a claim.** `tests/test_cache_isolation.py`
+patches `namespace_for` so the namespace no longer carries the tenant — the realistic
+version of the bug, which is not "somebody deleted a WHERE clause" but "somebody decided
+the namespace did not need the tenant in it" — and that single patch removes both
+mechanisms at once. Under it, tenant B is served tenant A's answer, on the exact layer
+*and* on a paraphrase through the semantic layer. Restored, B gets its own upstream answer
+and the disposition is `cache_miss`. A leak test that could only defeat one of two defences
+would prove nothing about the other, which is why the sabotage lives permanently in the
+suite rather than being a one-off run recorded in a log.
+
+**Alternatives considered.** *The predicate alone* — the conventional answer, and one
+refactor from silence. *The hash alone* — leaves every hand-written query outside the
+guarantee, including ones later phases will write. *A table per tenant* — real isolation,
+traded for schema management, connection-pool pressure, and a `Scan` for every admin
+listing. *Row-level security in Postgres* — genuinely stronger, and it binds the guarantee
+to one datastore's feature at exactly the moment `InMemoryResponseCacheStore` stops being
+able to reproduce it, which would take the contract suite (H-021) down with it.
+
+**Consequences.** Adding a way to read the cache means adding a `CacheNamespace` parameter,
+which is the intended friction. The namespace also carries dialect, model, and transport,
+so "which requests can possibly share an answer" is one type rather than four conventions.
+And because the tenant is inside the digest, a database dump's `request_hash` column is not
+a stable identifier for "this question" across tenants — worth knowing before anyone tries
+to use it for analytics.
+
+---
+
+## H-041 — Eligibility: single-turn, no tools at all, and a temperature bound (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P5 fixes the shape — *"eligibility rules are conservative and
+documented: single-turn user content, no tool_use in the conversation, temperature ≤ a
+bound, per-tenant + per-model namespacing, TTLs"* — and the brief names three adjacent
+cases the plan does not settle: tools **present but unused**, streamed versus
+non-streamed, and reasoning models. The first is decided here; the second is H-043 and the
+third is H-044.
+
+**Decision.**
+
+- **A request that declares `tools` is ineligible even when nothing has been called.**
+  This is the case worth arguing. There is one user turn, no `tool_use` block anywhere,
+  and the letter of the plan's rule is satisfied — and it is refused anyway, for two
+  reasons. The same words with tools available may legitimately produce a *tool call*
+  rather than prose, so answering with a cached paragraph is D-021's shape exactly. And
+  the tools array is part of the prompt: a semantic probe that embeds only the user's
+  question would ignore it entirely, so a request with tools and one without could match
+  each other on the strength of identical words.
+- **The tool scan is structural and deliberately over-broad** (`declares_tools`). It walks
+  the whole parsed body rather than checking the two or three places tools are *supposed*
+  to appear, because the failure mode of a targeted check is silent: a content-block type
+  or vendor extension nobody anticipated slips past and is discovered as a wrong answer.
+  It inspects object **keys** and typed markers — `tools`, `tool_choice`, `tool_calls`,
+  the legacy `functions`/`function_call`, a `type` of `tool_use`/`tool_result`/…, a `role`
+  of `tool` — and never free text, so a user asking a question *about* tool use is
+  unaffected. A false positive costs one cache miss.
+- **Single-turn, for both layers, following the plan literally.** Multi-turn *exact*
+  caching would in fact be safe: the hash covers every byte, so two identical conversations
+  get the same answer with no more risk than a single turn carries. It is not done anyway.
+  The value is low (verbatim repeats of a long conversation are rare), and widening the
+  blast radius of any future normalisation bug from one question to a whole conversation is
+  not a trade this phase should make on its own authority against the plan's stated rule.
+  The alternative is recorded here so a later phase can take it deliberately.
+- **`temperature > 0.2` is ineligible.** A caller asking for variety is asking for the
+  opposite of a cache. 0.2 rather than 0.0 because a great deal of production traffic sets
+  a small non-zero temperature without wanting different answers, and refusing all of it
+  would make the feature useless on real workloads. Note this is *not* a correctness
+  mechanism: temperature is inside the exact key and inside `context_hash` regardless, so
+  two temperatures never share an entry. The bound is about whether caching is the right
+  behaviour at all. It is a module constant rather than a per-tenant knob — the plan makes
+  the *similarity threshold* configurable and says nothing about this one, and one new dial
+  per phase is enough.
+- **`n > 1` is ineligible**: the caller asked for several answers and a cache has one.
+- **A response over 1 MiB is not stored.** A bound on what one entry can cost the table,
+  not a correctness rule. On the streaming path the copy is abandoned mid-response and the
+  request itself is unaffected.
+
+**Alternatives considered.** *Allow tools when none have been called* — the permissive
+reading, and the one that produces a wrong answer rather than a missing feature. *A
+targeted tool check* — cheaper, and silently wrong the first time a vendor ships a new
+block type. *Multi-turn exact caching* — see above; deferred rather than rejected.
+*Temperature as a per-tenant setting* — a second dial for a rule nobody has asked to
+change. *No temperature rule at all, relying on the key* — technically safe and
+behaviourally wrong: it would return one fixed answer to a caller who explicitly asked for
+sampling.
+
+**Consequences.** The ten reasons (`tools_present`, `temperature_above_bound`,
+`multiple_completions`, `not_single_turn`, `incomplete_response`, `upstream_error`,
+`empty_body`, `body_too_large`, `tool_output`, `reasoning_response`) are stable identifiers
+from here: they reach the log line as `cache_reason` and Phase 7 will chart them.
+Backline's own agent traffic is tool-heavy and therefore almost entirely uncacheable, which
+is the correct outcome and worth stating before §P8.H2 wonders why its hit rate is zero —
+H2 is a *passthrough overhead* experiment and runs with caching off anyway (H-047).
+
+---
+
+## H-042 — The exact key is a canonical hash with nothing dropped (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P5 says *"normalized-request hash → stored response"*. What
+"normalized" means is the whole decision, because every field a normaliser discards is a
+field two different requests can now share an answer through.
+
+There is also a rule this appears to break and does not. H-028 refuses to rewrite a request
+body even to close a real metering gap, and H-007/H-016 rest on the fact that *no code
+exists which could rebuild a request*. Canonicalisation parses and re-serialises.
+
+**Decision.**
+
+- **Canonicalising is not rewriting, and the distinction is enforced by where the output
+  goes.** `canonical_json` produces bytes that are hashed and thrown away. Nothing it
+  produces is ever sent, stored, or returned. The proxy still forwards the caller's bytes
+  verbatim; if a canonical form ever reached a provider, that would be the bug.
+- **The only normalisation is key order and whitespace.** Not one field is dropped — not
+  `metadata`, not `user`, not a field this gateway has never heard of. A caller who sends
+  an extra key gets their own entry. That is a deliberate hit-rate cost paid against a
+  zero-length list of fields anybody can be *sure* cannot change a response, and widening
+  it is an argument someone has to make in a new entry.
+- **`ensure_ascii=False`, so a literal `ö` and the six-character JSON escape that denotes
+  the same character canonicalise identically.** This is H-016 pointed the other way: on
+  the wire that difference is load-bearing and the proxy preserves it byte for byte; in a
+  *key* it is noise, and two clients whose JSON encoders disagree about non-ASCII must not
+  miss each other's entries.
+- **The digest is length-prefixed over its parts**, so no concatenation of namespace and
+  body can be ambiguous. Contrived, and free to make impossible.
+- **`context_hash` is the same canonical hash over the request with the user's question
+  replaced by a sentinel**, domain-separated from the exact key by a marker. This is the
+  semantic layer's guard rail and the reason its blast radius is exactly one field: a
+  semantic hit requires an identical system prompt, temperature, `max_tokens`, and
+  everything else, and allows similarity to move only what the user asked.
+- **Which part *is* the question is a dialect method** (`Dialect.cache_probe`), because
+  Anthropic keeps `system` as a top-level field while the OpenAI dialect keeps it in
+  `messages`. A shared implementation that blanked "the messages" would drop the OpenAI
+  system prompt out of the context entirely and let two different system prompts share an
+  entry — which `tests/test_cache_keys.py` asserts against directly.
+
+**Alternatives considered.** *Drop fields that "obviously" do not affect the answer*
+(`metadata`, `user`, request ids) — a higher hit rate, and the list is exactly the kind
+that grows by one plausible entry at a time until something in it does matter. *Hash the
+raw bytes with no canonicalisation* — maximally safe, and it would miss on whitespace,
+which is the one difference reliably produced by clients pretty-printing prompts.
+*`ensure_ascii=True`* — matches the repo's other serializer and would split one question
+into two entries depending on the client's encoder. *Embed the whole request rather than
+just the question* — makes similarity a function of JSON scaffolding.
+
+**Consequences.** Hit rates are lower than a field-dropping normaliser would produce, and
+that is the intended trade. `request_hash` is not a stable identifier for "this question"
+across tenants (H-040), and it is not stable across a change to the canonicalisation rules
+either — such a change silently invalidates every entry, which is safe (a miss) and should
+still be treated as a schema change.
+
+---
+
+## H-043 — The transport is part of the key; an entry is replayed, never converted (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P5 asks for *"cached responses replay as a simulated stream when
+the caller asked for streaming (first token effectively instant — a demo moment)"*, and the
+brief asks for the choice to be logged either way: A4-grade fidelity tests if responses
+replay as streams, or a stated reason if caching is non-streamed-only.
+
+The obvious design is one canonical entry per question, rendered into whichever transport
+the caller wants. It hits more often. It also needs two pieces of machinery this repo has
+spent four phases arguing against: an **assembler** that rebuilds a JSON message from SSE
+frames, and a **synthesiser** that emits frames no provider ever sent.
+
+**Decision.** **Neither. The transport is part of the cache key, an entry stores the
+upstream's bytes verbatim, and a replay yields exactly those bytes.**
+
+- A streaming caller is served by an entry a streaming request populated; a non-streaming
+  caller by one a non-streaming request populated. Neither is converted into the other, and
+  a transport mismatch is a miss.
+- The demo moment survives intact: stream a question twice and the second one's first token
+  is already there, because a streaming client populates its own entry on its first
+  request.
+- The fidelity claim gets *stronger* than the live path's. A4 fixed that chunk boundaries
+  are never meaningful and content equality is the bar; a replay is **byte-identical**,
+  which is a strict superset. `tests/test_cache_replay.py` asserts it on both dialects,
+  including the H-016 fixtures carrying literal 2-, 3-, and 4-byte UTF-8 sequences — the
+  only fixtures in the repo that can *see* a re-encode — and including streams recorded
+  from 1-byte chunking.
+- The stored bytes are emitted in **one chunk**. Re-chopping them into plausible-looking
+  pieces would be inventing a shape, which is the thing this decision exists not to do.
+
+**Upstream response headers are not stored and not replayed.** A cached `retry-after` or
+`anthropic-ratelimit-requests-remaining` describes a call that did not happen, and a
+replayed provider request id would send an operator chasing the wrong trace. A replay
+carries Headroom's own namespace instead — `x-headroom-cache`, `-source`, `-similarity`,
+`-age` — which since H-038 is stripped from every upstream response and can therefore only
+have been written by this process.
+
+**Alternatives considered.** *One canonical entry, rendered per transport* — the higher hit
+rate, bought with an assembler and a synthesiser on the serving path; H-016 proved by
+sabotage that a single re-encode is invisible to every test that does not compare bytes,
+and a cache's output is served forever rather than once. *Store only non-streamed
+responses* — the brief's explicit alternative, and it forfeits the demo moment and most of
+the value, since streaming is what a gateway's callers actually use. *Store the stream and
+synthesise a body from it for non-streaming callers* — the same violation in one direction
+only.
+
+**Consequences.** A question asked both ways occupies two entries, and the first request of
+each transport misses. Worth noting for completeness: `stream` is *also* inside the request
+body, so the exact layer would separate the two transports even without this — the
+namespace's `transport` is defence in depth, and its value is that a future dialect
+signalling streaming out of band (a header, a distinct route) stays separated by
+construction. The sabotage run reflects that honestly: removing `transport` from the
+namespace fails the key-level tests and not the end-to-end ones.
+
+---
+
+## H-044 — A reasoning response is cacheable exactly and never semantically (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The brief requires the reasoning-model case to be decided and logged: *"the
+P1/P3 findings — reasoning deltas and reasoning_tokens — must inform what a cached replay
+even means."* Those findings are that reasoning deltas are ordinary bytes in the stream
+which the proxy forwards untouched (Phase 1's live smoke, then
+`tests/test_reasoning_passthrough.py`), and that `reasoning_tokens` are *inside*
+`output_tokens` and knowable only from the usage block (Phase 3).
+
+Two consequences fall out mechanically and need no decision. Replay carries the chain of
+thought intact, because byte-identical replay carries everything. And the avoided cost is
+computed from the stored usage exactly as the original was priced, because
+`reasoning_tokens` were already inside the count that was billed.
+
+What needs a decision is the third thing: **a cached replay of a reasoning model hands the
+caller the *original* chain of thought, not a fresh one.**
+
+**Decision.** **A response reporting `reasoning_tokens` is stored *exact-only*: it may be
+hit by a byte-identical request and is never embedded, so no paraphrase can ever reach
+it.**
+
+For an exact hit this is plainly right — same question, same reasoning, and a cache that
+refused it would be refusing the safest hit there is. For a *semantic* hit it would be a
+category of wrongness beyond "the answer is wrong": the chain of thought explicitly reasons
+about the original question's wording, so a hit across a near-miss would serve a visible
+monologue about Radiohead to somebody who asked about Coldplay. Worse for this project's
+own purposes, §P8.H1's silent-wrong-answer metric scores the *answer* against the answer
+key and would not capture it at all.
+
+Enforcing it costs two lines: the usage block already says whether there were reasoning
+tokens, and `StoreDecision` carries `store` and `embed` as separate booleans for exactly
+this reason. A provider reporting the field as `0` has told us there was none, and is
+treated as an ordinary response.
+
+**Alternatives considered.** *Treat reasoning responses like any other* — the default, and
+it makes the most confusing possible failure mode reachable. *Refuse to cache them at all*
+— throws away the safest hits to prevent the dangerous ones. *Strip the reasoning from the
+stored bytes and replay only the answer* — that is re-serialisation, forbidden by H-043 for
+the same reasons, and it would break the byte-identity claim the fidelity tests rest on.
+*Embed them but require a much higher threshold* — a second threshold to explain and sweep,
+for a case a boolean settles.
+
+**Consequences.** A tenant on a reasoning model gets exact caching and effectively no
+semantic caching, which is a real reduction in value and is stated in the README rather
+than discovered. `/admin/cache` reports `semantic_entries` beside `entries`, so the gap is
+visible. If a later phase wants semantic caching for reasoning models, the honest route is
+to store the answer *and* the reasoning separately and replay only what the new request
+asked for — a different design, and a new entry.
+
+---
+
+## H-045 — A hit is billed at zero and records the cost it avoided (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P5's gate: *"ledger rows correctly marked `cache_hit_exact` /
+`cache_hit_semantic` with cost $0 and the *avoided* cost recorded (the dashboard's savings
+number needs it)."* The brief adds the constraint that matters more: *"a hit's ledger row
+must be distinguishable from an upstream call's in every way that matters (no fake
+upstream_status, honest timings)"*, and asks for the cost semantics to follow H-026's
+recorded-not-priced pattern.
+
+**Decision.**
+
+- **`usd_cost = 0` with `cost_status = not_billable`.** No new status is invented: this is
+  precisely H-025's existing rule for a request that never reached a provider — an
+  unroutable model, a scope refusal — and a hit is one of those. The zero is a
+  *measurement*, which is what `not_billable` means and what distinguishes it from the NULL
+  that means "we do not know".
+- **The avoided cost is a column of its own**, `cache_avoided_usd`, and it is **the entry's
+  own recorded cost** — the figure the request that populated it was actually billed, copied
+  in at store time. H-024's rule one table over: a saving should be a fact about an invoice
+  line that really happened, not a re-pricing of a hypothetical at today's rates. It is
+  NULL when that cost was never known (an unpriced model, an unmeterable stream), so a
+  savings total can never quietly add a zero for a figure nobody has.
+- **Everything that would imply an upstream call is NULL.** `upstream_status`, `provider`,
+  `upstream_latency_ms`, `passthrough_overhead_ms`, `input_tokens`, `output_tokens`,
+  `reasoning_tokens`. `provider` is the one worth defending: the route *did* resolve to one
+  and it was never called, and the column's readers — the dashboard's per-provider spend,
+  Phase 6's failover and health accounting — are asking "which upstream served this". The
+  honest answer is none.
+- **The token columns stay NULL rather than borrowing the entry's counts.** Nothing was
+  generated. Every `SUM(output_tokens)` written before this phase — in `/admin/usage`, in
+  Phase 7, in Phase 9's rollup Lambda — keeps meaning "tokens a model produced", with no
+  edit anywhere.
+- **What a hit *does* carry**: `outcome = ok` and `status_code = 200`, because that is what
+  the caller experienced; a real `ttft_ms` and `total_ms`, which are small and are the
+  number the demo is about; the `stop_reason`, because the answer really did end that way;
+  `cache_similarity` for a semantic hit; and `cache_source_request_id`, the provenance that
+  makes a hit auditable and is the answer key §P8.H1 needs.
+- **A hit takes no budget reservation and settles nothing** (H-046), so `budget_status` is
+  NULL — which the field already documents as "never got as far as the gate".
+
+**Alternatives considered.** *A `cache_hit` cost status* — a sixth value for a case the
+fifth already describes exactly. *Copying the entry's token counts onto the row* — makes
+the savings visible in existing charts, by making every token total wrong. *Re-pricing the
+avoided cost at today's rates* — arguably the more useful counterfactual, and it is a
+counterfactual; the recorded figure is a fact, and the source row carries the rates for
+anyone who wants the other number. *Keeping `provider` set* — defensible, and it puts
+requests no provider saw into per-provider accounting Phase 6 is about to build on.
+
+**Consequences.** `cache_avoided_usd`, `cache_similarity`, and `cache_source_request_id`
+are stable columns from here. A tenant's ledger row count is still their request count
+(hits are rows), but their *token* totals now under-count what they were served —
+correctly, and the savings column is where the difference lives. Phase 7 builds the savings
+counter from these three columns and needs no new schema.
+
+---
+
+## H-046 — The cache sits after the rate limiter and before the budget gate (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** H-039 closed by naming this decision and declining to make it: *"Phase 5's
+cache will have to choose a position in this sequence too — a cache hit costs no provider
+call, so should it consume a bucket? — and this entry is where that argument starts."*
+
+**Decision — the order is: authenticate (401) → read the body → model scope (403) → route →
+provider scope (403) → rate limit (429) → cache → budget reservation (402) → open the
+upstream.**
+
+**After the rate limiter, and the units are not refunded on a hit.** A hit costs no
+provider work, but it is not free to *this* process: it costs a connection, a pgvector
+search, and on the semantic path a CPU embedding — the most expensive thing the gateway
+does to a request it never forwards. A tenant able to serve unlimited traffic as long as it
+repeated itself would have a denial of service for the asking. H-036's no-refund rule then
+applies unchanged: a bucket consumption settles never, and a hit is not an exception.
+Placing the cache after the limiter also means a burst is shed before it can reach the
+embedder — the same argument H-039 made for shedding before the budget item.
+
+**Before the budget gate, and a hit takes no reservation at all.** This is the sharper
+half. A hit spends nothing, so there is nothing to bound; reserving and settling to zero
+would put two DynamoDB round trips on the one path whose entire product is that the first
+token is already there. The consequence is stated rather than discovered: **a tenant over
+its cap still gets its cached answers.** A budget bounds *spend*, and a hit does not spend.
+The tenant is degraded — every miss is a 402 — rather than dead, and abuse is bounded by
+the limiter one step earlier. `tests/test_cache_gate.py` asserts exactly that pair on one
+exhausted tenant: a hit at 200 and a miss at 402.
+
+**The cost of that placement, named.** A *miss* by an out-of-budget tenant pays for its
+cache lookup — including an embedding — before the 402. That is a bounded waste on a path
+the rate limiter already guards, and the alternative (budget first) would put a
+compensating release on the hot path for every hit, which is the one shape Phase 4 refused
+to add.
+
+**A refusal earlier in the chain never reaches the cache.** A 403 or a 429 leaves
+`cache_disposition` NULL, which is how the log line distinguishes "the cache said nothing"
+from "the cache was never asked".
+
+**Alternatives considered.** *Cache before the rate limiter* — a hit becomes free to the
+tenant and the gateway becomes free to abuse. *Cache after the budget gate* — two DynamoDB
+round trips per hit and a reservation that always settles to zero. *Refuse hits for tenants
+over budget* — consistent-sounding, and it refuses a request that costs nothing to serve
+for a reason that does not apply to it. *Charge a hit a reduced budget amount for the
+gateway resources it used* — inventing a price for something no provider billed, which is
+the whole class of thing this repo's metering refuses to do.
+
+**Consequences.** The order is pinned by tests rather than by reading the proxy, and the
+sabotage run confirms the pin fires: moving the cache above the limiter fails
+`test_a_hit_still_consumes_its_rate_limit` and
+`test_a_rate_limited_request_never_reaches_the_cache`. Phase 6 inherits one more line in the
+same sequence and the same question — a failover hop happens *after* all of this, so a
+cache hit can never trigger one.
+
+---
+
+## H-047 — H2 runs with caching disabled, and the plan says so before the data exists (Phase 5)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P8.H2 measures per-request gateway overhead against a
+pre-registered p50 < 50 ms and reports the real number either way — it is the figure that
+answers "why is a gateway in Python defensible". Phase 5 has just made that measurement
+corruptible: a cached hit answers in microseconds without touching a provider, so a suite
+run against a cache-enabled tenant would report an overhead figure that is really a
+*hit-rate* figure, flattering the gateway by exactly the amount Backline's 133 questions
+happen to repeat themselves.
+
+Invariant 8 decides *when* this has to be settled: every Phase 8 experiment's hypothesis,
+metrics, and conditions are written **before data exists**. Phase 5 is the phase that makes
+the amendment executable, so Phase 5 is where it is made.
+
+**Decision.** BUILD_PLAN §P8.H2 is amended in this PR with: *"H2 runs against a tenant with
+caching disabled entirely; overhead is measured on pure passthrough."* Three things make it
+more than a sentence:
+
+- **It is the shipped default.** `cache_mode` is `NOT NULL DEFAULT 'disabled'`, so the H2
+  tenant is correct by construction and the amendment is a statement of what not to change
+  rather than a step somebody has to remember.
+- **The pre-flight asserts it.** `experiments/` checks `GET /admin/cache/{tenant}` before
+  spending the $10.
+- **The ledger makes it checkable afterwards.** Every row carries `cache_disposition`, so
+  the H2 report states the count of rows that are not `cache_disabled`, and that count must
+  be zero. A run that accidentally had caching on cannot be reported as if it did not.
+
+Measuring what the cache *saves* is §P8.H1's job, on a different tenant, with the threshold
+sweep this phase built the config surface for.
+
+**Alternatives considered.** *Leave it implicit because the default is already disabled* —
+defaults change, and an unstated assumption is the one nobody checks when a number looks
+surprising. *Run H2 with caching on and report the hit rate beside the overhead* — two
+confounded variables in the number the writeup is built on. *Run it both ways* — a second
+$10 run to answer a question §P8.H1 answers better and for free.
+
+**Consequences.** The H2 tenant now has a documented configuration requirement and the
+report has one more line in it. §P8.H1 keeps a separate tenant, which is also what stops
+its seeded corpus from polluting H2's ledger rows.

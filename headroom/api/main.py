@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from headroom.api import admin, budgets, limits, proxy, usage
+from headroom.api import admin, budgets, cache, limits, proxy, usage
 from headroom.api.admin import AdminError, admin_error_handler
 from headroom.api.gateway import build_gateway
 from headroom.api.middleware import RequestContextMiddleware
@@ -58,11 +58,12 @@ app.include_router(proxy.router)
 # accepted for the other.
 app.include_router(admin.router)
 # Before `admin.router`? No — the prefixes do not overlap (`/admin/usage`,
-# `/admin/budgets`, and `/admin/limits` vs `/admin/tenants` and `/admin/keys`), so order
-# is irrelevant and stays alphabetical. Same credential, separate files because
-# reporting, CRUD, budgets, and rate limits change for different reasons (Phases 3, 4,
-# and 4b).
+# `/admin/budgets`, `/admin/limits`, and `/admin/cache` vs `/admin/tenants` and
+# `/admin/keys`), so order is irrelevant and stays alphabetical. Same credential,
+# separate files because reporting, CRUD, budgets, rate limits, and the cache change for
+# different reasons (Phases 3, 4, 4b, and 5).
 app.include_router(budgets.router)
+app.include_router(cache.router)
 app.include_router(limits.router)
 app.include_router(usage.router)
 app.add_exception_handler(AdminError, admin_error_handler)
