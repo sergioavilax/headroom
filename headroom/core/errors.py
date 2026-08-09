@@ -32,6 +32,7 @@ from typing import Final
 
 __all__ = [
     "AuthenticationFailed",
+    "BudgetExceeded",
     "ConfigurationError",
     "ControlPlaneUnavailable",
     "HeadroomError",
@@ -223,6 +224,37 @@ class InactiveTenant(AuthenticationFailed):
     """
 
     reason = "inactive_tenant"
+
+
+class BudgetExceeded(HeadroomError):
+    """The tenant's committed spend would pass its cap if this request ran. **402.**
+
+    Three statuses were on the table and the choice matters more than it looks
+    (docs/DECISIONS.md H-032).
+
+    **429** is the tempting one and it is wrong: it means *slow down*, and every SDK in
+    the world responds to it by retrying with backoff. A budget refusal does not heal
+    with time inside its window, so a 429 would turn one refused request into a retry
+    storm against the very item the gate serialises on — the failure mode this phase
+    exists to prevent, arriving through the front door.
+
+    **403** is defensible and loses information: it is already this gateway's answer for
+    "your key is not scoped to that", and an operator reading a dashboard needs
+    "out of money" and "out of scope" to be different bars on the chart.
+
+    **402 Payment Required** says exactly what happened. It is a status no SDK retries
+    automatically, and the dialects render it in their own vocabulary for insufficient
+    funds — Anthropic's ``billing_error``, OpenAI's ``insufficient_quota`` — so a client
+    library raises something a developer can act on rather than something generic.
+
+    No ``retry-after``: the honest value would be "when your window rolls", which for a
+    lifetime budget is never, and a header that says *retry* invites the retry this
+    class exists to discourage. The window's reset is in the message instead.
+    """
+
+    status_code = 402
+    reason = "budget_exceeded"
+    source = SOURCE_GATEWAY
 
 
 class ScopeDenied(HeadroomError):

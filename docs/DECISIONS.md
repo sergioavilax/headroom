@@ -1344,3 +1344,335 @@ whether the request the smoke builds still authenticates. So
 real `Authenticator` on every CI run, and asserts the sabotage (a smoke that sends no
 key) is refused with `MissingCredential`. It cannot prove the live smokes pass; it proves
 the credential they present is one the gateway accepts, which is the thing that broke.
+
+---
+
+## H-030 — Budgets are integer picodollars on one DynamoDB item (Phase 4)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN L2 puts budget reservations on DynamoDB conditional writes, and
+the phase brief names the storage question directly: *"Decimal end to end; DynamoDB
+stores amounts as strings or cent-integers — decide, justify (DynamoDB Number precision
+is a real concern)."* Underneath it sits a harder constraint the brief does not state,
+because it is only discovered by trying to write the condition: **DynamoDB conditions do
+no arithmetic.** A `ConditionExpression` compares an attribute to a value. There is no
+way to express `spent + reserved + estimate <= budget` in one.
+
+**Decision.** Three things, and the third falls out of the first two.
+
+- **The unit is an integer count of picodollars** (1e-12 USD). Not `Decimal`, not a
+  string. Strings cannot be added by an `UpdateExpression` at all, which ends that
+  option immediately — an atomic increment is the whole mechanism. `Decimal` would
+  work: DynamoDB Numbers carry 38 significant digits and boto3 maps them to `Decimal`
+  in both directions. It is rejected anyway, because the atomicity argument this phase
+  makes rests entirely on *"add this, and only if the result still fits"*, and integers
+  are the only numeric domain where that sentence needs no footnote about decimal
+  contexts, `Inexact` traps, or which library rounded what. Verified at the gate: 38
+  digits accepted, 39 rejected with `ValidationException`. A $1,000,000 cap is 19
+  digits.
+- **1e-12 is not an arbitrary scale.** It is exactly `metering.cost.USD_QUANTUM`, the
+  ledger's own `NUMERIC(24, 12)` precision, so `Decimal → int → Decimal` is lossless
+  for every value the meter can produce and the two systems can be compared to the last
+  digit. `tests/test_budget_store.py` asserts that equality rather than trusting it. An
+  estimate converts with `ROUND_CEILING` (a hold that rounded *down* would admit one
+  request too many at the boundary); everything else is already exact at this scale.
+- **`remaining` is a stored attribute, not a derived one.** Since the condition cannot
+  compute `budget - spent - reserved`, the difference is maintained as an attribute and
+  the condition is `remaining_picos >= :estimate`. The item shape is downstream of what
+  a condition can express, and this is the line that makes admission a single atomic
+  operation.
+
+The bookkeeping identity `remaining == budget - spent - reserved` is therefore
+load-bearing rather than incidental. Every mutation moves `remaining` and its components
+in the *same* single-item update, so it can only be broken by a wrong expression — and
+the contract suite checks it after every operation, against both implementations.
+
+Two findings from the gate belong here because they are facts about the emulator rather
+than about the design:
+
+- **`scope` is a DynamoDB reserved word**, and `attribute_exists(scope)` fails with
+  `ValidationException`. The partition key is `scope_id`.
+- **DynamoDB Local rejects an access key id containing a hyphen** with
+  `UnrecognizedClientException: The Access Key ID or security token is invalid`. The
+  first version of the emulator credential was `headroom-local`, and every
+  DynamoDB-backed test in the suite failed with an error that reads exactly like a real
+  AWS authentication failure and sends you looking in entirely the wrong place. It is
+  now `headroomlocal`, and `tests/test_dynamo_client.py` pins both the string and the
+  container's acceptance of it.
+
+**Alternatives considered.** *Cent-integers* (1e-2) — the brief's own suggestion, and far
+too coarse: the canonical mock reply costs $0.0000115 and would round to zero, which
+would make every keyless cost assertion in the suite meaningless. *Micro-dollars* (1e-6)
+— the same figure lands on 11.5, still not an integer. *`Decimal` through boto3's type
+serializer* — defensible, and it puts a rounding context in the middle of the one
+argument that has to be airtight. *Strings* — no atomic arithmetic, so no gate at all.
+*A separate reservations table* — see H-033.
+
+**Consequences.** Every amount crossing the store boundary is converted at exactly two
+functions (`to_picos` / `from_picos`) and nowhere else. The scale is now coupled to
+`USD_QUANTUM`: changing the ledger's precision without changing this would be a silent
+truncation, which is why the equality is asserted rather than assumed. And `remaining`
+may go **negative** — not a bug but the recorded consequence of a request that overran
+its estimate (H-031), with the arithmetic staying exact through it.
+
+---
+
+## H-031 — What a hold settles at, and the one place the budget and the invoice disagree (Phase 4)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The phase brief: *"On failure/timeout/cut: RELEASE or settle-partial per the
+honest-cost semantics established in H-025/H-026 — decide, log, test."* H-025 already
+decided what a failure *costs*: an upstream 4xx/5xx and a request that never reached a
+provider cost 0; a timeout costs NULL because it may well have been billed by someone we
+cannot ask; a cut stream costs NULL unless its usage arrived. The budget cannot simply
+inherit that table, because one of its entries is not a number. A ledger row can say
+"unknown". A counter cannot.
+
+**Decision.** The settlement is a function of the meter's `cost_status`:
+
+| `cost_status` | settles at | why |
+|---|---|---|
+| `priced` | the actual cost | known exactly |
+| `partial` | the actual cost | a lower bound, labelled as one on the row (H-026); the budget inherits the same caveat rather than inventing a rate for cache tiers nobody can price |
+| `not_billable` | **$0**, released | no model ran — an upstream error, an unroutable model, a scope refusal |
+| `unpriced_model` | **$0**, released | there was no price to reserve against either; the estimate was $0 |
+| `usage_unknown` | **the estimate** | a model ran and we cannot ask what it charged |
+
+The last row is the decision. A timeout, a mid-stream cut, a client that hung up, an
+OpenAI-dialect stream whose caller never asked for usage (H-028) — in every one of them a
+provider was reached and generated something. Releasing the hold would be a cheerful
+guess that it cost nothing; the only defensible number is the bound already reserved.
+
+**So the budget and the ledger deliberately disagree on exactly these requests**, and the
+disagreement is the honest one: `usd_cost` is NULL because a ledger row is an invoice
+line and states facts, while `budget_settled_usd` equals the reservation because a budget
+is a guard rail and states bounds. Both are on the same row, so the difference is visible
+rather than buried.
+
+A **stranded** hold — one whose process died and never settled at all — is the opposite
+case, and is **released, not charged** (H-032's sweep). The distinction is what we know:
+an unknown *cost* on a request we watched reach a provider is bounded above by its
+estimate; an unknown *outcome* on a request we lost track of is not evidence of anything,
+and charging on suspicion would let one restart under load quietly eat a tenant's month.
+The ledger would not corroborate such a charge either, since a lost request has no row.
+
+**Alternatives considered.** *Release everything unknown* — matches the ledger exactly,
+and undercounts every timeout, which is the failure mode that grows with provider
+flakiness. *Charge stranded holds too* — symmetrical with the above and much worse: a
+`SIGKILL` under load would bill every in-flight tenant for requests that may never have
+happened, with no row to explain it. *Settle `partial` at the estimate* — over-counts; the
+recorded figure is a bound in the other direction and the row already says so. *A separate
+"provisional spend" counter* — a third number to explain, for a distinction `cost_status`
+already carries.
+
+**Consequences.** `budget_settled_usd` is not always equal to `usd_cost`, and a reader
+comparing the two columns will find rows where they differ — that is intended, and this
+entry is what explains it. A tenant with a flaky provider is charged its estimates against
+its cap while its invoice says "unknown", which is the conservative direction for a guard
+rail and the honest direction for an invoice. Phase 7's dashboard should show both.
+
+---
+
+## H-032 — 402, no `retry-after`, and a sweep on the refusal path (Phase 4)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** Two questions the brief leaves open and calls out by name: *"pick the honest
+status code and error shape per dialect"*, and *"Reservations must not leak: a crashed
+process must not strand reserved budget forever. Decide the mechanism (TTL on reservation
+records, sweeper, or settle-on-read)."*
+
+**Decision — the status is 402 Payment Required, in both dialects.**
+
+- **429 is the tempting answer and it is wrong.** It means *slow down*, and every SDK in
+  the world answers it by retrying with backoff. A budget refusal does not heal with time
+  inside its window, so a 429 would convert one refused request into a retry storm against
+  the single item the gate serialises on — the failure this phase exists to prevent,
+  arriving through the front door.
+- **403 is defensible and loses information.** It is already this gateway's answer for
+  "your key is not scoped to that" (H-020), and an operator needs "out of money" and "out
+  of scope" to be different bars on a chart.
+- **402 says what happened**, no SDK retries it automatically, and each dialect renders it
+  in its own vocabulary for insufficient funds: Anthropic's `billing_error`, OpenAI's
+  `insufficient_quota`. Both are real values those SDKs already know, which keeps H-009's
+  rule intact — a gateway is a bad place to coin vocabulary, and the exact cause travels
+  in `headroom.reason` as `budget_exceeded`.
+- **No `retry-after`.** The honest value would be "when your window rolls", which for a
+  lifetime budget is never, and a header that says *retry* invites the retry this decision
+  exists to discourage. The window's reset and the tenant's own figures go in the message
+  instead, where a developer can act on them.
+- **The check runs after the scope checks and before `provider.open`.** After scope, so a
+  key reaching past its permissions is told that rather than sent chasing a balance.
+  Before the upstream, so a refusal provably costs nothing — asserted against the
+  MockProvider's own record of what it was handed, not reasoned about.
+
+**Decision — leaks are closed by an expiry plus three sweep triggers.**
+
+Every hold carries `expires_at = now + 900s` (`RESERVATION_TTL_S`). Fifteen minutes is
+comfortably longer than any single model call and short enough that a `SIGKILL` does not
+encumber a cap for the rest of the month. It is an *upper bound on a leak*, not a request
+timeout: a live request that outlives it still settles, because a settlement and a sweep
+are conditioned on the same hold and only one of them can win.
+
+Three triggers, and the first is the one that matters:
+
+1. **On refusal, before refusing.** When the condition fails, the item comes back with the
+   failure (`ReturnValuesOnConditionCheckFailure`, verified working on DynamoDB Local), so
+   expired holds are released and the write retried **without a second read**. A dead
+   process's hold can therefore never be the reason a live request is turned away — which
+   a background timer would only fix eventually, and only if it happened to be running.
+2. **On an admin read.** `GET /admin/budgets/{tenant}` sweeps before reporting, so the
+   `reserved` figure an operator sees during an incident is live rather than inflated by
+   processes that died. A GET with a side effect, taken deliberately: releasing an
+   *already expired* hold changes nothing live and is idempotent, and the alternative is a
+   number that is quietly wrong exactly when somebody is relying on it. The list route
+   does not sweep — a `Scan` that wrote to every item it read would be a surprising thing
+   for a listing to do.
+3. **`sweep_expired`**, explicitly, for tests and for Phase 9's scheduled runs.
+
+No background task is load-bearing, which is why none is started. DynamoDB's own TTL
+feature is deliberately not used for this: it deletes an item, and deleting a reservation
+record without decrementing the counter would strand the budget permanently *and* destroy
+the evidence.
+
+**Alternatives considered.** *A periodic in-process sweeper* — more moving parts, and it
+fixes late what trigger 1 fixes immediately. *DynamoDB TTL on reservation items* — see
+above; it is a garbage collector, not a compensating transaction. *No expiry at all,
+relying on settlement in a `finally`* — a `finally` does not run through a `SIGKILL`, and
+that is the entire scenario. *Charging expired holds instead of releasing them* — see
+H-031.
+
+**Consequences.** `budget_exceeded`, and the `no_budget` / `reserved` / `exceeded` status
+values, are stable identifiers from here, because the ledger stores them and Phase 7 will
+chart them. `expired_releases` and `expired_released_picos` are counters worth alarming on
+in Phase 9: non-zero means requests are dying between admission and settlement.
+
+---
+
+## H-033 — Tenant scope only, and the window is the calendar month (Phase 4)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The brief asks two scoping questions: *"per-tenant budgets (and optionally
+per-key — decide and log)"*, and *"support at least: total/lifetime and a rolling or
+calendar period — decide the window semantics, keep it simple, log the H-entry."*
+
+**Decision — tenant scope only, with the shape for more already in place.**
+
+A budget attaches to a `BudgetScope(kind, id)`, and the only kind Phase 4 enforces is
+`tenant`. Per-key budgets are not a matter of adding a row: enforcing two caps on one
+request means taking **two holds**, and two conditional writes are not one atomic
+operation. Either the second failure has to release the first — a compensating action,
+which is a new home for exactly the class of bug this phase exists to eliminate — or both
+scopes live in one item, which collapses them back together. Neither is a small change,
+and doing it badly would be D-019 with extra steps.
+
+So the scope is a value with a `kind` from the first line, the store is keyed by
+`tenant#<uuid>`, and a later phase adds a kind rather than reshaping the table.
+
+**Decision — `monthly` (calendar, UTC) and `total` (lifetime).**
+
+- **Calendar, not rolling.** A rolling 30-day window cannot be a counter: answering "what
+  has this tenant spent in the last 30 days" means summing history on every admission,
+  which is a query and not a conditional write. This entire phase exists because the
+  answer has to be one atomic operation. A calendar month is also how every provider
+  invoices and how an operator states a cap.
+- **UTC, resolved from the request's own `started_at`** — the same rule the dated price
+  schedule follows (H-023). Wall-clock "now" would let a queued settlement or a replayed
+  fixture land in the wrong month.
+- **There is no reset job.** The item carries `window_id` and `window_expires_at`, and
+  `window_expires_at > :now` is part of the admission condition — so the first request of
+  a new month fails the condition, and the failure path rolls the counters with a
+  compare-and-set on the old `window_id`. Exactly one racer wins the roll; the rest retry
+  the ordinary path. A lifetime budget uses a far-future sentinel, so one expression
+  serves both window types with no `OR`.
+- **A request in flight across a boundary loses its hold to the roll**, and its settlement
+  becomes a no-op. Its cost is still in the ledger, which is the invoice; the gate's
+  counter for the new month starts at what the new month has spent, which is the only
+  number it can honestly hold.
+
+**Alternatives considered.** *Per-key budgets now* — see above; a distributed-transaction
+problem wearing a small feature's clothes. *A rolling window* — not expressible as a
+counter. *A `daily` window as well* — a third window to test, for a cap nobody asked for.
+*A reset job or a scheduled Lambda* — infrastructure to make a key change, and one more
+thing that can fail silently on the first of the month.
+
+**Consequences.** `/admin/budgets` reports `window` and `window_id`, and a monthly budget
+read on the first of a month reports the *new* window's counters before any request has
+rolled them — because that is what the next request will see. Changing a budget's window
+type resets its counters, deliberately: a monthly cap and a lifetime cap count different
+things, and carrying a total across the change would answer neither question.
+
+---
+
+## H-034 — The estimate: max_tokens, the body's own size, and a stated blind spot (Phase 4)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** A reservation-based gate is exactly as trustworthy as the bound it reserves.
+If an estimate can be lower than the cost that follows it, then "settled spend never
+exceeds the budget" is a hope rather than a property. The brief specifies the shape —
+*"from max_tokens (or a documented default when absent) at the model's current dated price
+— deliberately conservative; document the formula"* — and leaves the prompt side
+unmentioned.
+
+**Decision.**
+
+```
+input_tokens  = min(ceil(len(request_body) / 3), context_window)
+output_tokens = max_tokens from the body, else 4096
+usd           = input_tokens * rate_in / 1e6 + output_tokens * rate_out / 1e6
+```
+
+resolved at the price in effect on the request's own date (H-023).
+
+- **The prompt half is included, going beyond the letter of the brief.** Generated tokens
+  dominate the *rate* (output runs 4–5× input) but prompt tokens dominate the *count*: a
+  long-context request with `max_tokens: 64` can cost far more on its prompt than on its
+  answer, and an output-only estimate would wave it straight through a nearly-exhausted
+  cap. A bound that omits most of the cost is not a bound.
+- **Three bytes per token, not four.** English prose runs about four bytes to the token,
+  and the body carries JSON scaffolding the model never sees, so this over-counts by
+  roughly a third — the direction that refuses a request rather than the direction that
+  lets spend past. The failure modes are asymmetric: an over-estimate produces a visible
+  402 the tenant reports immediately; an under-estimate produces an invoice nobody reads
+  until later.
+- **Capped at the model's `context_window`** when `config/models.yaml` states one. That is
+  a real ceiling rather than another heuristic — more input tokens than the window cannot
+  exist.
+- **4096 when the caller states no ceiling.** Only reachable on the OpenAI dialect (the
+  Messages API requires `max_tokens`), and it is a documented assumption rather than a
+  guarantee: a model that generates more settles for more, and the overshoot eats the next
+  request's headroom (H-030, H-031).
+- **An unpriced model estimates $0 and says so.** H-023 refuses to invent a rate, and a
+  gate cannot bound an unknown. Such a request is admitted, and its ledger row is
+  `unpriced_model` with a NULL cost — the same visible gap `/admin/usage/totals` already
+  publishes as `unpriced_requests`. **This is a real operational trap and it is stated
+  rather than hidden:** a model added to `config/routing.yaml` and forgotten in
+  `config/models.yaml` is invisible to both the invoice and the cap. The fix is the same in
+  both cases — price the model — and refusing instead would take a tenant down for a
+  config slip.
+
+**The blind spot, named.** The byte heuristic is worst for a request carrying a base64
+image, where megabytes of body correspond to a few thousand image tokens. Such a request is
+over-reserved, and can be refused against a budget it would in fact have fitted. The
+context-window cap bounds the damage; removing the heuristic entirely would mean tokenizing
+every request in the gateway, on the first-token path, for a number the settlement corrects
+milliseconds later.
+
+**Alternatives considered.** *Output-only, per the brief's letter* — see above. *Tokenizing
+the prompt properly* — a per-request CPU cost on the latency path this project publishes
+numbers about, and a second tokenizer to keep in sync with two providers'. *Reserving the
+model's whole context window* — maximally conservative and useless: at 200k tokens it would
+refuse nearly everything. *Refusing unpriced models* — turns a config omission into an
+outage.
+
+**Consequences.** `EST_BYTES_PER_TOKEN` and `DEFAULT_MAX_OUTPUT_TOKENS` are published
+numbers the suite depends on; `tests/test_budget_estimate.py` checks the formula term by
+term against arithmetic done on paper, and asserts the bound really is above what the
+canonical fixture costs. Because the estimate is conservative, the stampede's headline
+claim holds strictly — and the honest statement of it is: **settled spend cannot exceed the
+cap while the estimate bounds the actual, and where it does not, the overshoot is recorded
+and the next request is refused.**

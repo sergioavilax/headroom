@@ -22,12 +22,14 @@ the measured semantic-cache safety curve, the gateway-overhead number, and the
 architecture diagram — is Phase 11.
 
 Progress: **Phase 0** bootstrap · **Phase 1** proxy core · **Phase 2** tenancy ·
-**Phase 3** metering ← here.
+**Phase 3** metering · **Phase 4** the budget gate ← here.
 
 What exists today: the **proxy core** (Phase 1) — `POST /v1/messages` and
 `POST /v1/chat/completions`, streaming and non-streaming, passthrough per dialect —
-**tenancy** (Phase 2): tenants, virtual keys, and an admin API — and **metering**
-(Phase 3): every request becomes a priced, attributed ledger row.
+**tenancy** (Phase 2): tenants, virtual keys, and an admin API — **metering**
+(Phase 3): every request becomes a priced, attributed ledger row — and the
+**budget gate** (Phase 4): per-tenant caps enforced by a single atomic DynamoDB
+conditional write before a request can reach a provider.
 
 ```bash
 make up      # postgres+pgvector, dynamodb-local, the gateway — waits healthy, migrates
@@ -134,6 +136,59 @@ Two consequences worth knowing before you read a total:
 
 Money is `Decimal` from the YAML file through the arithmetic to `NUMERIC(24, 12)` and
 back out **as a string** — JSON has one numeric type and it is a double.
+
+## Budgets that hold under concurrency
+
+A tenant is uncapped until you give it a cap. Then every request is admitted — or
+refused — by **one atomic DynamoDB conditional write, before it can reach a provider**:
+
+```bash
+curl -sS -X PUT localhost:8080/admin/budgets/$TENANT -H "$ADMIN" \
+     -H 'content-type: application/json' -d '{"usd": "25.00", "window": "monthly"}'
+
+curl -sS -H "$ADMIN" localhost:8080/admin/budgets/$TENANT
+# {"usd":"25.000000000000","spent":"0.000011500000","reserved":"0.000000000000",
+#  "remaining":"24.999988500000","committed":"0.000011500000","window_id":"2026-08", …}
+```
+
+`window` is `monthly` (calendar month, UTC) or `total` (lifetime). `usd` is a **quoted
+string** — a JSON number is a double, and the API refuses one by name.
+
+**The design, in one sentence.** Admission reserves the request's *worst case* — its
+`max_tokens` ceiling plus the size of the body it sent, at the model's dated price — and
+the check and the deduction are the same operation:
+
+```
+ConditionExpression: remaining_picos >= :estimate
+UpdateExpression:    SET remaining_picos = remaining_picos - :estimate, …
+```
+
+Completion settles the hold to the actual cost, handing the difference back. Nothing is
+cached, ever: not the balance, not the cap, not whether a tenant has one.
+
+That shape is Backline's **D-019** scar as a product feature. There, a gate checked
+spend, then added spend, in two operations; under concurrency every request passed the
+check before any had recorded anything, and the budget was blown.
+`tests/test_budget_stampede.py` fires 64 concurrent requests at a cap sized for 5, on
+DynamoDB Local, and asserts settled spend never exceeds it — then reruns the identical
+stampede against two deliberately broken gates to prove the test can catch what it
+claims to. The numbers are in [docs/PHASE_LOG.md](docs/PHASE_LOG.md).
+
+Three more things worth knowing:
+
+- **A refusal is `402`**, in the caller's own dialect (Anthropic `billing_error`, OpenAI
+  `insufficient_quota`), with `headroom.reason: budget_exceeded` and the tenant's own
+  figures in the message. Not `429` — that means *slow down*, every SDK retries it, and
+  a budget refusal does not heal inside its window.
+- **A crashed process cannot strand budget.** Holds expire after 15 minutes and are
+  released — not charged — and the sweep runs on the *refusal* path, so a dead process's
+  hold can never be the reason a live request is turned away.
+- **The budget and the invoice deliberately disagree on one class of request** (H-031).
+  When the cost is genuinely unknown — a timeout, a cut stream — the ledger writes
+  `NULL` because it states facts, and the budget keeps the reservation because it states
+  bounds. Both figures are on the same row.
+
+Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-030 … H-034.
 
 Running the local vLLM backends: [docs/vllm.md](docs/vllm.md).
 

@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
+from headroom.core.budgets import Reservation
 from headroom.core.ledger import format_usd
 
 __all__ = ["RequestContext", "current_context", "new_request_id"]
@@ -96,6 +97,20 @@ class RequestContext:
     #: usage_unknown | not_billable. A NULL cost and a zero cost are different facts
     #: and this is the field that says which one this is.
     cost_status: str | None = None
+
+    # --- what the budget said (Phase 4) --------------------------------------------
+    # Filled by `headroom/policy/budgets.py` at admission and again at settlement, so
+    # one request's whole budget story — held this much, was allowed, ended up costing
+    # that much — is on the log line and in the ledger row without a join.
+    #: no_budget | reserved | exceeded. ``None`` on a request that never got as far as
+    #: the gate (an anonymous 401, a body that named no model).
+    budget_status: str | None = None
+    budget_reserved_usd: Decimal | None = None
+    budget_settled_usd: Decimal | None = None
+    #: The live hold, from admission until settlement. Not logged and not stored — it
+    #: is a handle, and the two amounts above are what it is worth recording. Cleared
+    #: by the first settlement so a second one cannot move the counters again.
+    budget_reservation: Reservation | None = None
 
     # --- when --------------------------------------------------------------------
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -238,6 +253,12 @@ class RequestContext:
             "cache_write_tokens": self.cache_write_tokens,
             "usd_cost": format_usd(self.usd_cost),
             "cost_status": self.cost_status,
+            # Phase 4. The budget's whole account of this request: whether a cap
+            # applied, what was held before it ran, and what was taken when it
+            # finished. Strings for the same reason `usd_cost` is one.
+            "budget_status": self.budget_status,
+            "budget_reserved_usd": format_usd(self.budget_reserved_usd),
+            "budget_settled_usd": format_usd(self.budget_settled_usd),
             "upstream_latency_ms": _round(self.upstream_latency_ms),
             "ttft_ms": _round(self.time_to_first_token_ms),
             "passthrough_overhead_ms": _round(self.passthrough_overhead_ms),

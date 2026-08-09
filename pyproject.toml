@@ -82,6 +82,14 @@ files = ["headroom", "tests", "conftest.py"]
 module = "asyncpg.*"
 ignore_missing_imports = true
 
+# boto3 and botocore ship no inline types and no py.typed marker. The alternative is
+# `boto3-stubs[dynamodb]`, a large generated stub package pinned to an SDK version —
+# for a surface of five DynamoDB calls, all of which cross the boundary through
+# `headroom/db/dynamo.py` and are converted to typed records immediately (Phase 4).
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
