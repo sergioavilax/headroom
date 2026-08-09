@@ -67,6 +67,16 @@ Nothing else in this file moved. Metering did not become asynchronous — ``meas
 added per exit is the budget's own conditional write, which H-027 forbids from riding
 the fire-and-forget queue: a lost ledger row is a reporting gap, a lost settlement is
 D-019 growing back.
+
+Phase 4b adds the other half of the plan's Phase 4, one line above the budget gate:
+
+**The rate limiter sheds load before the cap counts it.** Token buckets are consumed
+after the scope checks and *before* the budget reservation, so a request that is going to
+be refused for rate is refused before it takes a hold it would have to hand straight back
+— and so a burst is shed one step before it reaches the single DynamoDB item every
+request for a tenant serialises on (docs/DECISIONS.md H-039). Nothing settles on the way
+out: a bucket refills by itself, which is the entire difference between a flow and a
+stock, and the reason this half of the phase adds no code to :func:`_finish`.
 """
 
 from __future__ import annotations
@@ -107,6 +117,7 @@ from headroom.dialects.anthropic import ANTHROPIC
 from headroom.dialects.base import Dialect
 from headroom.dialects.openai import OPENAI
 from headroom.metering.usage import Usage
+from headroom.policy.budgets import estimate_usd
 from headroom.providers.base import UpstreamRequest, UpstreamResponse
 
 __all__ = ["router"]
@@ -167,10 +178,26 @@ async def _proxy(
     principal.require_provider(provider_name)
     provider = gateway.registry.get(provider_name)
 
-    # The last gate before anything is spent. It raises 402 rather than returning, so
-    # there is no path from a refusal to `provider.open` — which is the property
-    # `tests/test_budget_gate.py` asserts by checking the mock was never called.
-    await gateway.budgets.admit(ctx, dialect, body, raw_body)
+    # One bound, two gates. The rate limiter needs this request's size in tokens and the
+    # budget gate needs it in dollars, and they are the same number arrived at by the
+    # same formula (H-034) — so it is computed once, here, and handed to both. Two
+    # independent estimates of one request would be two things to keep in sync.
+    estimate = estimate_usd(
+        dialect, body, raw_body, model=model, when=ctx.started_at, prices=gateway.budgets.prices
+    )
+
+    # The load shedder first (429), the cap second (402), and both before anything is
+    # spent. Neither returns a refusal — they raise — so there is no path from either to
+    # `provider.open`, which is the property `tests/test_rate_limit_gate.py` and
+    # `tests/test_budget_gate.py` assert by checking the mock was never called. The
+    # ordering is argued in docs/DECISIONS.md H-039 and in `headroom/policy/limits.py`.
+    await gateway.limits.admit(
+        ctx,
+        tenant_limits=principal.tenant_limits,
+        key_limits=principal.key_limits,
+        estimate=estimate,
+    )
+    await gateway.budgets.admit(ctx, dialect, body, raw_body, estimate=estimate)
 
     upstream_request = UpstreamRequest(
         dialect=dialect.name,
@@ -386,6 +413,11 @@ async def _error_response(
     the dialect's own error shape so the caller's SDK raises the right exception type,
     and ``headroom.reason`` carries the exact cause that an HTTP status is too coarse
     to express.
+
+    Phase 4b adds ``exc.headers``, which is empty for every error class but one: a rate
+    limit refusal carries its ``retry-after`` and the bucket that produced it. They are
+    merged *under* ``x-headroom-error-source``, so no error class can overwrite the one
+    header that says who refused.
     """
     ctx.mark_first_token_out()
     ctx.complete(
@@ -412,5 +444,5 @@ async def _error_response(
         ),
         status_code=exc.status_code,
         media_type="application/json",
-        headers={ERROR_SOURCE_HEADER: exc.source},
+        headers={**exc.headers, ERROR_SOURCE_HEADER: exc.source},
     )

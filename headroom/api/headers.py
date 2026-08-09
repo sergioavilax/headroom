@@ -21,6 +21,15 @@ Rate-limit headers, ``retry-after``, and the provider's own request id are exact
 a caller needs to behave well, and a gateway that swallows them makes its callers worse
 citizens than they were without it. The cost of the deny-list is having to notice a new
 framing header; the cost of an allow-list is silently discarding signal, forever.
+
+Phase 4b adds one clause, and it is the *only* thing that makes the deny-list safe in the
+response direction: **``x-headroom-*`` never crosses, either way.** It was already
+stripped from requests, because those headers steer Headroom and a provider must not see
+them. Now it is stripped from responses too, because those headers are how a caller — and,
+in Phase 6, Headroom's own failover logic — tells a refusal *this gateway* issued from one
+an upstream issued. A namespace that an upstream can also write in cannot answer that
+question, and "no provider currently sends such a header" is a property of today's
+providers rather than of this proxy (docs/DECISIONS.md H-038).
 """
 
 from __future__ import annotations
@@ -89,7 +98,16 @@ def control_headers(headers: Mapping[str, str]) -> dict[str, str]:
 
 
 def forward_response_headers(headers: Mapping[str, str]) -> dict[str, str]:
-    """Upstream headers to send downstream: everything but framing and hop-by-hop."""
+    """Upstream headers downstream: everything but framing, hop-by-hop, and our namespace.
+
+    The upstream's own ``retry-after`` and ``x-ratelimit-*`` still cross untouched — they
+    are exactly the signal a well-behaved caller needs. What cannot cross is anything
+    claiming to be Headroom: ``x-headroom-error-source`` and ``x-headroom-ratelimit-*``
+    are this process's own testimony about a response, and testimony an upstream can forge
+    is worth nothing to the Phase 6 code that has to act on it.
+    """
     return {
-        name.lower(): value for name, value in headers.items() if name.lower() not in _RESPONSE_DENY
+        name.lower(): value
+        for name, value in headers.items()
+        if name.lower() not in _RESPONSE_DENY and not name.lower().startswith(CONTROL_PREFIX)
     }

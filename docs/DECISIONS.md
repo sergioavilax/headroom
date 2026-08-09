@@ -1676,3 +1676,332 @@ canonical fixture costs. Because the estimate is conservative, the stampede's he
 claim holds strictly — and the honest statement of it is: **settled spend cannot exceed the
 cap while the estimate bounds the actual, and where it does not, the overshoot is recorded
 and the next request is refused.**
+
+---
+
+## H-035 — A token bucket is stored as a time, not as a count (Phase 4b)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN Phase 4: *"Token-bucket rate limits (requests/min and tokens/min
+per key and per tenant) … enforced on DynamoDB conditional writes (A1)."* The words doing
+the work are **enforced on conditional writes**, and they turn out to rule out the way
+almost every token bucket in the wild is built.
+
+The obvious item is `tokens` plus `refilled_at`. Admission then needs
+
+```
+min(capacity, tokens + (now - refilled_at) * rate) - cost >= 0
+```
+
+evaluated at write time — and a DynamoDB `ConditionExpression` compares an attribute to a
+value and does **no arithmetic**. So a stored count can only be checked by reading it,
+refilling it in application code, deciding, and writing the result back. That is Backline's
+**D-019** exactly, in a different noun, and `tests/test_rate_limit_hammer.py` sabotage A is
+that implementation failing the hammer by 8x.
+
+**Decision — the bucket is one number: `tat`, the moment it will next be full.**
+
+The GCRA formulation (the leaky-bucket dual used by traffic shapers, and by every rate
+limiter that has to be atomic). With `T` the emission interval and `D = T * limit` the
+delay tolerance:
+
+```
+available at now   = clamp((now + D - tat) / T, 0, limit)      -- derived, never stored
+admit cost c       iff tat <= now + D - c*T                    -- a bare comparison
+on admit           tat := max(tat, now) + c*T
+```
+
+The condition is an attribute compared to a value, which is the only kind DynamoDB has.
+Admission is therefore one conditional write, with nothing read and nothing to be stale:
+
+```
+ConditionExpression: tat > :now AND tat <= :now + D - :charge
+UpdateExpression:    SET tat = tat + :charge
+```
+
+**Decision — `max(tat, now)` is recovered with a second conditional write, not a read.**
+
+That clamp is the one term the expression language cannot express, and dropping it is not
+cosmetic: without it an idle bucket accumulates unbounded credit, and a bucket untouched
+for an hour admits an hour of traffic in one burst (sabotage C measures it: **300 requests
+against a five-per-minute limit**). So there are two mutually exclusive branches — *hot*
+(`tat > now`, add to it) and *cold* (`tat <= now`, or no item at all, set it to
+`now + charge`) — each atomic on its own. Which one to attempt is learned from the item a
+failed condition hands back via `ReturnValuesOnConditionCheckFailure`, never from a
+separate read. Hot is attempted first, so under load — the only time a limiter's cost
+matters — one write is all that happens; an idle bucket costs two, and an idle bucket is by
+definition not busy.
+
+**Decision — nanoseconds, integers, and the interval rounds up.** `T = ceil(60e9 / limit)`.
+Epoch nanoseconds is a 19-digit integer, comfortably inside DynamoDB's 38 significant
+digits even after `+ D`. Rounding up makes the limiter fractionally *stricter* than nominal
+— four parts in 10^11 at `limit = 7` — which is the direction the whole phase errs in: a
+limiter that leaks is not a limiter.
+
+**Decision — a second table, `headroom_buckets`, carrying a TTL attribute.** Not more items
+in the budgets table: the two have opposite retention rules. A budget item must never be
+garbage-collected; a bucket item is *safe* to reap, because **an absent bucket and a full
+bucket are the same state** to the cold branch. That is also why DynamoDB TTL is right here
+and was wrong for reservations — H-032 rejects it there, because deleting a reservation
+record without decrementing its counter would strand the budget *and* destroy the evidence.
+The `expires_at` attribute is written on every consumption; *enabling* TTL on the table is
+Terraform's job in Phase 9, and nothing here depends on the reaper ever running.
+
+**Alternatives considered.** *Stored count plus `refilled_at`* — see above; it is the bug.
+*A fixed-window counter* (`SET used = used + :cost` conditioned on the count) — genuinely
+atomic, genuinely simple, and it admits **twice the limit across every minute boundary**;
+sabotage B measures it at 10 against a limit of 5, and it *passes the hammer*, which is why
+it survives review everywhere it is deployed. *A sliding-window log* — a list per bucket,
+unbounded item growth, and no conditional expression that can evaluate it. *A
+compare-and-set retry loop on a value we read* — correct, but it is a read-then-write with
+a condition bolted on, and the phase's whole claim is that there is no read to race.
+*Redis* — the better-known answer, and BUILD_PLAN L2 already argues why not: conditional
+writes are the correct primitive here and a better interview story than "I used Redis".
+
+**Consequences.** `tat` is the schema — the whole bucket, in one attribute — so a later
+phase wanting per-bucket observability has to derive it rather than read it off. A limit
+change reprices the future without resetting anything, because `tat` is an absolute time
+that means the same thing under any limit. And a bucket's capacity *measured in time* is
+always exactly one window whatever the limit is; only the price of a unit changes. That is
+counter-intuitive enough that `tests/test_rate_limit_store.py` pins it.
+
+---
+
+## H-036 — Both scopes, four buckets, and no refund (Phase 4b)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN says *"per key and per tenant"* and *"requests/min and tokens/min"*,
+which is four buckets for one request. H-033 deferred per-key **budgets** on the grounds
+that two caps mean two reservations and a compensating release when the second fails. The
+obvious question is why that argument does not also defer per-key limits.
+
+**Decision — both scopes are enforced from the first line, and the asymmetry with H-033 is
+real rather than inconsistent.**
+
+A budget admission takes a **hold** that must later be settled. Two holds mean a failure
+between them has to be compensated, and the compensating release is a new home for exactly
+the bug Phase 4 exists to remove. A bucket consumption holds nothing and settles never; two
+consumptions are two independent facts, and a failure between them leaves the first
+consumed — which is bounded, self-correcting, and in the safe direction.
+
+**Decision — one item per `(scope, dimension)`, consumed key-first and requests-first.**
+
+Four items, up to four conditional writes, and only for dimensions that are actually
+configured: an unlimited scope is skipped entirely, so a deployment that caps nobody does
+no DynamoDB work at all on this path — which is what keeps this phase additive for every
+tenant nobody has limited. The order puts the cheaper and more likely refusal first, so a
+request that is going to be refused has consumed as little as possible of anything
+*shared*: a key's bucket is private to one credential, the tenant's is shared by all of
+them, and one request costs the requests bucket 1 where it can cost the tokens bucket
+thousands.
+
+**Decision — consumption is never refunded.**
+
+When the third bucket refuses, the first two stay consumed. This is the decision most worth
+arguing with, so the argument in full: **a budget is a stock and a rate limit is a flow.**
+An over-charge against a budget persists for the rest of the month and must be corrected,
+which is why settlement exists at all. An over-charge against a token bucket is erased by
+the bucket's own refill within one emission interval — the refill *is* the compensating
+transaction, it runs continuously, and it costs nothing. A refund would be a second
+conditional write per bucket on every refusal, repairing an error that time repairs for
+free, and it would introduce the one thing this design does not have: **an operation whose
+absence breaks an invariant.**
+
+The same rule covers a request that reached a provider and failed. There is deliberately no
+code that hands the unit back: the request *used* the rate — it occupied a connection and
+may have cost the provider work — and bounding how often that can happen is the whole point
+of a flow limit. That is the exact opposite of the budget gate, where the same failure
+releases the hold to $0 (H-031), and the two are opposite because they measure different
+things.
+
+**Alternatives considered.** *One item per scope holding both dimensions* — makes a scope's
+two dimensions atomic together, and costs a four-branch update expression, since each
+dimension is independently hot or cold; rejected because it does not remove the property
+that has to be documented anyway, given that key and tenant are necessarily two items.
+*Check all buckets, then commit all buckets* — two passes, twice the writes, and the first
+pass is a read-then-write by another name. *Refund on refusal* — see above. *Tenant-first
+ordering* — wastes shared capacity on requests a key's own limit would have refused anyway.
+
+**Consequences.** The limiter is fractionally **stricter** than configured under exactly one
+condition: a request refused by its Nth bucket has consumed from the N-1 before it. The
+error is bounded by one request's worth per bucket and disappears within one emission
+interval. `tests/test_rate_limit_gate.py` asserts it happening rather than pretending it
+does not.
+
+---
+
+## H-037 — The limits live in Postgres, on the rows authentication already reads (Phase 4b)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The bucket's *state* has to be in DynamoDB — that is the whole phase. Its
+*configuration* has to be somewhere, and the somewhere matters more than it looks, because
+the rate limiter runs on the first-token path of every request and must not add a round
+trip to it.
+
+**Decision — two nullable columns on `tenants` and on `virtual_keys`
+(`migrations/0004_rate_limits.sql`), carried onto the `Principal`, read for free.**
+
+BUILD_PLAN L2 settles the question by itself: *"Postgres … for config, virtual keys, the
+cost ledger, request log, and the semantic cache. DynamoDB (conditional writes) for token
+buckets and budget reservations **only**."* Limits are config. And the placement pays for
+itself twice over: `find_by_hash` already joins both rows on every authentication, so both
+scopes' limits arrive with the identity — no second query, no second cache, and no new
+staleness bound to explain. They inherit the auth cache's existing one exactly (H-018), so
+the guarantee is the same sentence a scope change gets: **a limit change takes effect on
+the next request in the process that made it, and within `AUTH_CACHE_TTL_S` (5 s)
+everywhere else.** `/admin/limits` invalidates its own process's entry for precisely that
+reason.
+
+Note what is *not* cached: the buckets. A stale *balance* is D-019's scar and is never read
+at all; a stale *policy* for at most five seconds is the trade Phase 2 already made,
+argued, and tested.
+
+**Decision — `NULL` means unlimited, and the setter replaces rather than patches.**
+
+Nullable rather than defaulted to some large number, because "no limit" and "a very high
+limit" are different facts and only one of them can be reported honestly.
+`set_tenant_limits` / `set_key_limits` are methods of their own rather than four more
+`COALESCE` parameters on the existing patchers, because there `None` means *leave alone*
+and here it must mean *clear* — `/admin/limits` is a PUT, and an API that can only ever
+tighten a limit is a trap during an incident. A `CHECK (… > 0)` in the migration and
+`ge=1` in the API keep zero out from both directions: zero would mean "admit nothing",
+which already has two better spellings (deactivate the tenant, revoke the key), and it has
+no emission interval at all.
+
+**Alternatives considered.** *A `rate_limits` table keyed by scope* — tidier in isolation,
+and it costs either a query or a cache on the hot path. *Beside the bucket in DynamoDB* —
+contradicts L2, and worse: the limiter would then need the config in order to *build the
+condition*, which means reading the item before writing it, which is the bug. *In
+`config/routing.yaml`* — limits are per tenant and change at runtime; a committed config
+file is neither. *A separate TTL for a limits cache* — a second staleness number to
+document and reconcile with H-018's.
+
+**Consequences.** `Tenant` and `VirtualKey` gained a `limits` field, so every code path that
+rebuilds one has to carry it — `tests/test_tenant_store.py` asserts that renaming a key,
+revoking it, and deactivating a tenant all preserve limits, because uncapping something by
+accident is invisible until the traffic arrives. `/admin/tenants` and `/admin/keys`
+deliberately do **not** set limits: there is one place to change them, and it is the one
+that also shows the buckets.
+
+---
+
+## H-038 — 429 with `retry-after`, and how a caller knows whose it is (Phase 4b)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** H-032 chose **402** for a budget refusal and argued explicitly that 429 would
+be wrong *there*, because 429 means *slow down*, every SDK retries it, and a budget refusal
+does not heal inside its window. A rate-limit refusal is the mirror image and gets the
+mirror answer — but it introduces a problem Phase 6 will have to solve on top of it: a
+provider's own 429 also reaches the caller, and **failing over on ours would be exactly the
+wrong response**, since it would move the excess traffic somewhere else instead of shedding
+it.
+
+**Decision — 429, with a `retry-after` computed from the bucket.**
+
+This is the case the status was invented for: it heals with time, and the amount of time is
+known exactly. The refusal path already holds the item its condition failed against, so the
+value is the true excess of `tat` over the ceiling it had to be under — floored at one
+second, because a `retry-after: 0` is an invitation to the retry storm a 429 exists to
+damp. The body is the dialect's own `rate_limit_error`, a real value in both vocabularies,
+and the precision travels in `headroom.reason` where no SDK can be surprised by it (H-009).
+
+**One refusal carries no `retry-after`, deliberately.** When a request needs more tokens
+than the bucket's whole capacity, waiting will never help and every value would be a lie.
+It stays a 429 — the request is fine, the *limit* cannot accommodate it — carries
+`headroom.reason: rate_limit_exceeds_capacity`, and the message says what to change. Only
+reachable on the tokens dimension: a request costs one unit of the requests bucket, and
+every limit is at least 1.
+
+**Decision — three independent markers say a 429 is the gateway's, and the namespace they
+live in is now closed.**
+
+1. `x-headroom-error-source: gateway` — an upstream error always says `upstream`;
+2. `x-headroom-ratelimit-scope: tenant:requests` — which of the four buckets refused,
+   beside `-limit`, `-remaining`, and `-reset`;
+3. `headroom.reason: rate_limited` in the body.
+
+Any one of them is sufficient. The headers are the load-bearing ones, and they are only
+trustworthy because of the change that makes this decision more than a naming convention:
+**`forward_response_headers` now strips the whole `x-headroom-*` namespace from every
+upstream response**, on the success path as well as the error path. It was already stripped
+from *requests* (H-010, so that a provider never sees the headers that steer Headroom).
+Without the response half, "no provider currently sends such a header" would be a property
+of today's providers rather than of this proxy, and Phase 6 would be trusting it.
+`tests/test_429_distinguishability.py` has an upstream forge both markers and asserts they
+are gone.
+
+The upstream's *own* rate-limit headers still cross untouched — `retry-after`,
+`x-ratelimit-*`, `anthropic-ratelimit-*` — because they are exactly the signal a caller
+needs in order to behave well. Only Headroom's own namespace is closed.
+
+**Alternatives considered.** *403* — collapses "too fast" into "not allowed". *402* — the
+budget's answer, and wrong here for H-032's reason run backwards: this one *does* heal.
+*503 with `retry-after`* — implies the gateway is unwell, which it is not. *Unnamespaced
+`x-ratelimit-*` headers* — the conventional spelling, and unusable for the distinction,
+because an upstream sends them too. *A dedicated status such as 529* — inventing
+vocabulary, which H-009 forbids. *Leaving the response deny-list alone and reading the body
+instead* — a gateway that decides "whose failure is this" by parsing somebody else's JSON
+is trusting the wrong party. *413 for the too-large case* — honest about the size and
+dishonest about the cause, and it muddies the one-line rule P6 needs.
+
+**Consequences.** `rate_limited` and `rate_limit_exceeds_capacity` are stable identifiers
+from here: the ledger stores them as outcomes and Phase 7 will chart them. Phase 6's
+failover rule is one line — *a 429 with `x-headroom-error-source: gateway` is a local shed,
+never a failover* — and `tests/test_429_distinguishability.py` is written now, so that P6
+inherits a pinned contract rather than an intention.
+
+---
+
+## H-039 — The rate limiter runs before the budget gate (Phase 4b)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** With both halves of Phase 4 landed, a proxied request now passes five policy
+checks. Their order is a real decision with real consequences, and the plan does not fix
+it.
+
+**Decision — the order is: authenticate (401) → read the body → model scope (403) → route →
+provider scope (403) → rate limit (429) → budget reservation (402) → open the upstream.**
+
+- **Identity first**, unchanged from Phase 2: an anonymous caller has no buckets and no
+  budget, and a gateway should not debug requests for strangers (H-020).
+- **Scope before either gate**, unchanged from H-032: a key reaching past its permissions
+  should be told that, not told to slow down or that it is out of money. A 403 storm
+  therefore consumes nothing, which `tests/test_rate_limit_gate.py` asserts.
+- **Rate limit before budget**, which is the new part, for three reasons:
+  1. **No compensating release.** A rate-limited request that had already reserved budget
+     would have to hand the hold straight back — a compensating action on the hot path,
+     which is the one shape this phase refuses to add (H-036).
+  2. **The limiter protects the gate.** A burst is exactly the traffic the budget gate is
+     worst at: every request in it serialises on *one* DynamoDB item. Shedding it one step
+     earlier is what keeps the cap's latency bounded under the load the limiter exists for.
+  3. **It is cheaper.** A bucket consumption contends on a per-scope, per-dimension item; a
+     budget admission contends on the single item every request for that tenant shares.
+- **Both before `provider.open`**, so neither refusal can reach an upstream — asserted
+  against the MockProvider's own record of what it was handed, not reasoned about.
+- **One shared estimate.** The limiter needs the request's size in tokens and the gate needs
+  it in dollars; they are the same bound from the same formula (H-034), so the proxy
+  computes it once and hands it to both. Two independent estimates of one request would be
+  two things to keep in sync.
+
+**Consequence, stated so it cannot be mistaken for an accident:** a request that is both
+over its limit and over its cap answers **429**, and answers **402** on the retry. "Slow
+down" is advice a client can act on immediately, and one wasted round trip is cheaper than
+hammering the budget item to discover the cap is gone too.
+
+**Alternatives considered.** *Budget first* — a refused-for-rate request would take and
+release a hold, and the burst would hit the contended item anyway; those are reasons 1 and
+2 run backwards. *One combined "policy" step* — collapses two gates with different failure
+modes, different statuses, and different datastores into one thing nobody can reason about.
+*Rate limit before the scope checks* — cheaper still, and it would answer 429 to a key that
+is simply not allowed to be there. *Rate limit after `provider.open`* — not a rate limiter.
+
+**Consequences.** The order is now pinned by tests rather than by reading the proxy:
+`test_rate_limit_gate.py` asserts 403-before-429, 401-before-429, 429-before-402, and that
+a rate-limited request leaves the budget's counters untouched. Phase 5's cache will have to
+choose a position in this sequence too — a cache hit costs no provider call, so *should* it
+consume a bucket? — and this entry is where that argument starts.
