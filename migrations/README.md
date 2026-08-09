@@ -32,14 +32,24 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 | `0001_tenants_and_virtual_keys.sql` | 2 | `tenants`, `virtual_keys` — the control plane |
 | `0002_usage_ledger.sql` | 3 | `usage_ledger` — one priced, attributed row per request |
 | `0003_ledger_budget_columns.sql` | 4 | `budget_status`, `budget_reserved_usd`, `budget_settled_usd` on `usage_ledger` |
+| `0004_rate_limits.sql` | 4b | `requests_per_min`, `tokens_per_min` on `tenants` and `virtual_keys` |
 
 Still to come: the pgvector semantic-cache tables in Phase 5.
 
-**Budgets themselves are not here.** Per-tenant caps, their counters, and their live
-reservations live on **DynamoDB**, not in Postgres (BUILD_PLAN L2) — because the whole
-point is an atomic conditional write, and that is DynamoDB's primitive. `0003` only adds
-what the *ledger* has to say about a request the budget gate saw. See
-[headroom/db/budgets.py](../headroom/db/budgets.py) for the item shape.
+**Budgets themselves are not here, and neither are token buckets.** Per-tenant caps,
+their counters, their live reservations, and the buckets' `tat` values live on
+**DynamoDB**, not in Postgres (BUILD_PLAN L2) — because the whole point is an atomic
+conditional write, and that is DynamoDB's primitive. `0003` only adds what the *ledger*
+has to say about a request the budget gate saw. See
+[headroom/db/budgets.py](../headroom/db/budgets.py) and
+[headroom/db/buckets.py](../headroom/db/buckets.py) for the two item shapes.
+
+`0004` is the other side of that split: the rate limits are *configuration*, which
+BUILD_PLAN L2 puts in Postgres, and putting them on these two rows means the statement
+that already authenticates every request returns them too — so the limiter reads no
+configuration of its own on the hot path (H-037). NULL means unlimited in all four
+columns, deliberately nullable rather than defaulted to a large number: "no limit" and
+"a very high limit" are different facts and the admin API has to report which.
 
 The shape of `0001` — UUID keys, `revoked_at` as the state rather than a boolean,
 `ON DELETE RESTRICT`, `TEXT[]` scopes where empty means unrestricted — is argued in
@@ -48,8 +58,9 @@ into every row so a price change can never re-bill history, stores money as `NUM
 rather than `DOUBLE PRECISION`, and keeps NULL (unknown) distinct from 0 (provably
 free) — H-024 and H-025. `0003` keeps both of those rules for the two amounts it adds,
 and is additive-only: existing rows genuinely had no budget outcome, so NULL is the
-truthful value rather than a gap to backfill. All three are applied, so all three are
-immutable: a change is `0004_*.sql`.
+truthful value rather than a gap to backfill. `0004` is additive and nullable for the
+same reason — every existing row reads as unlimited, which is exactly the behaviour
+before it ran. All four are applied, so all four are immutable: a change is `0005_*.sql`.
 
 `make up` applies migrations inside the gateway container once the stack is healthy;
 `make migrate` applies them from the host against `DATABASE_URL`.

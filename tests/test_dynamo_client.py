@@ -168,7 +168,7 @@ async def test_the_table_is_created_on_first_use_and_only_once() -> None:
 
         # Memoized: a second ensure is a no-op, not a second DescribeTable round trip.
         assert store.table in store.client._table_ready
-        await store.client.ensure_table(store.table)
+        await store.client.ensure_table(store.table, partition_key="scope_id")
 
 
 async def test_creating_a_table_that_already_exists_is_not_a_collision() -> None:
@@ -176,7 +176,7 @@ async def test_creating_a_table_that_already_exists_is_not_a_collision() -> None
     async with dynamo_budget_store() as store:
         fresh = DynamoClient(endpoint_url=store.client.endpoint_url)
         try:
-            await fresh.ensure_table(store.table)
+            await fresh.ensure_table(store.table, partition_key="scope_id")
         finally:
             await fresh.aclose()
 

@@ -25,8 +25,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+
+from headroom.core.limits import RateLimit
 
 __all__ = [
     "KeyRecord",
@@ -50,6 +52,13 @@ class Tenant:
     active: bool
     created_at: datetime
     updated_at: datetime
+    #: Phase 4b. Token-bucket limits, ``None`` per dimension meaning unlimited. They
+    #: live on this record — rather than beside the bucket in DynamoDB — because
+    #: BUILD_PLAN L2 puts *config* in Postgres and *token buckets* in DynamoDB, and
+    #: because the authenticator already reads this row on every request: the limits
+    #: arrive on the ``Principal`` for free, with no second query and no second cache
+    #: (docs/DECISIONS.md H-037).
+    limits: RateLimit = field(default_factory=RateLimit)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +80,11 @@ class VirtualKey:
     created_at: datetime
     updated_at: datetime
     revoked_at: datetime | None = None
+    #: Phase 4b, and the narrower of the two scopes a request is metered against: a
+    #: key's own bucket is consumed before its tenant's, so one noisy service cannot
+    #: spend the whole tenant's allowance. See :class:`Tenant.limits` for where they
+    #: live and why.
+    limits: RateLimit = field(default_factory=RateLimit)
 
     @property
     def revoked(self) -> bool:
@@ -162,6 +176,21 @@ class TenantStore(ABC):
         for during an incident, usually twice, and a second call that moved the
         timestamp would rewrite the one fact the incident review needs.
         """
+
+    # --- rate limits (Phase 4b) -----------------------------------------------------
+    #
+    # Separate methods rather than more ``COALESCE`` parameters on the two patchers
+    # above, because these have **replace** semantics and those have patch semantics:
+    # `/admin/limits` is a PUT, an absent dimension means *unlimited*, and "leave it
+    # alone" and "clear it" cannot both be spelled ``None`` in one call.
+
+    @abstractmethod
+    async def set_tenant_limits(self, tenant_id: str, limits: RateLimit) -> Tenant | None:
+        """Replace a tenant's rate limits wholesale. ``None`` if there is no such tenant."""
+
+    @abstractmethod
+    async def set_key_limits(self, key_id: str, limits: RateLimit) -> VirtualKey | None:
+        """Replace a key's rate limits wholesale. ``None`` if there is no such key."""
 
     @abstractmethod
     async def find_by_hash(self, key_hash: str) -> KeyRecord | None:

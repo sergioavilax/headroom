@@ -219,7 +219,13 @@ class BudgetGate:
     # --- admission ------------------------------------------------------------------
 
     async def admit(
-        self, ctx: RequestContext, dialect: Dialect, body: dict[str, Any], raw_body: bytes
+        self,
+        ctx: RequestContext,
+        dialect: Dialect,
+        body: dict[str, Any],
+        raw_body: bytes,
+        *,
+        estimate: Estimate | None = None,
     ) -> None:
         """Hold this request's worst case against its tenant's budget, or refuse it.
 
@@ -228,12 +234,20 @@ class BudgetGate:
         calls it before ``provider.open``, a refused request never reaches an upstream —
         which is asserted directly rather than reasoned about
         (``tests/test_budget_gate.py`` checks the MockProvider was never called).
+
+        ``estimate`` is Phase 4b's one seam: the rate limiter runs first and needs the
+        same bound in tokens, so the proxy computes it once and hands it to both gates.
+        Passing ``None`` recomputes it here, which keeps every existing caller — and the
+        gate's own tests — working unchanged. It is the *same* function either way; the
+        parameter exists to stop one request being measured twice, not to let two callers
+        measure it differently.
         """
         if ctx.tenant_id is None or ctx.model is None:  # pragma: no cover - proxy order
             return
-        estimate = estimate_usd(
-            dialect, body, raw_body, model=ctx.model, when=ctx.started_at, prices=self.prices
-        )
+        if estimate is None:
+            estimate = estimate_usd(
+                dialect, body, raw_body, model=ctx.model, when=ctx.started_at, prices=self.prices
+            )
         scope = BudgetScope.tenant(ctx.tenant_id)
         result = await self.store.reserve(
             scope, request_id=ctx.request_id, usd=estimate.usd, when=ctx.started_at

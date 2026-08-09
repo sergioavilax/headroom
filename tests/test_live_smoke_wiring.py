@@ -32,6 +32,7 @@ from headroom.core.context import RequestContext
 from headroom.core.errors import MissingCredential
 from headroom.db.memory import InMemoryTenantStore
 from headroom.policy.auth import Authenticator
+from headroom.policy.keys import hash_key
 
 from .support.live import LIVE_TENANT_NAME, provision
 
@@ -65,6 +66,25 @@ async def test_a_provisioned_smoke_credential_authenticates() -> None:
 
     assert ctx.tenant_id == identity.tenant.id
     assert ctx.key_id == identity.key.id
+
+
+async def test_a_provisioned_smoke_identity_is_uncapped_and_unlimited() -> None:
+    """Phase 4b's version of the same guard: the smokes must not gate themselves.
+
+    A live smoke costs real money and is run by hand, so a 429 or a 402 from Headroom's
+    own policy layer would burn an operator's time diagnosing a provider that was never
+    called. Neither gate can fire here — a freshly provisioned tenant has no budget and
+    no limits — and this asserts it keylessly rather than leaving it to be discovered on
+    a run that costs a dollar.
+    """
+    store = InMemoryTenantStore()
+    identity = await provision(store, key_name="wiring-test")
+
+    record = await store.find_by_hash(hash_key(identity.api_key))
+
+    assert record is not None
+    assert record.tenant.limits.configured is False
+    assert record.key.limits.configured is False
 
 
 async def test_a_live_smoke_that_sent_no_key_would_be_refused() -> None:
