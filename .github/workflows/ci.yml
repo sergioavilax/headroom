@@ -76,8 +76,10 @@ jobs:
       # Postgres half of the TenantStore contract suite, which applies `migrations/`
       # itself, so the schema is proved before the step below re-runs it; since Phase 4
       # it also includes the DynamoDB half of the BudgetStore contract suite and the
-      # D-019 stampede, which is the one test in this repo that *cannot* run against an
-      # in-memory double. Under H-012, `DYNAMODB_ENDPOINT_URL` being set explicitly
+      # D-019 stampede, and since Phase 4b the RateLimitStore contract suite and the
+      # rate-limit hammer with its three sabotages — the tests in this repo that
+      # *cannot* run against an in-memory double. Under H-012,
+      # `DYNAMODB_ENDPOINT_URL` being set explicitly
       # above means an unreachable container fails these tests rather than skipping
       # them. No AWS credential is set anywhere: the gateway supplies its own dummy
       # when — and only when — an emulator endpoint is configured.

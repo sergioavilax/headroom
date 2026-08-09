@@ -46,6 +46,8 @@ __all__ = [
     "ProviderOutOfScope",
     "ProviderTimeout",
     "ProviderUnavailable",
+    "RateLimitScopeExhausted",
+    "RateLimited",
     "RevokedCredential",
     "ScopeDenied",
     "UnknownCredential",
@@ -74,6 +76,17 @@ class HeadroomError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Extra response headers this failure carries. Empty for almost every one.
+
+        Added in Phase 4b for the one refusal that has something a caller must act on
+        *outside* the body — a rate limit's ``retry-after`` and the bucket that produced
+        it. A property rather than a constructor argument so that no call site can
+        invent headers for an error class that should not have any.
+        """
+        return {}
 
 
 # --- no answer from upstream ------------------------------------------------------
@@ -255,6 +268,92 @@ class BudgetExceeded(HeadroomError):
     status_code = 402
     reason = "budget_exceeded"
     source = SOURCE_GATEWAY
+
+
+#: Headers a gateway rate-limit refusal carries, in Headroom's own namespace. The
+#: namespace is the point: ``headroom/api/headers.py`` strips every ``x-headroom-*``
+#: header from every upstream response, so a header in this family can only have been
+#: written by this process. See :class:`RateLimited` and docs/DECISIONS.md H-038.
+RATELIMIT_SCOPE_HEADER: Final = "x-headroom-ratelimit-scope"
+RATELIMIT_LIMIT_HEADER: Final = "x-headroom-ratelimit-limit"
+RATELIMIT_REMAINING_HEADER: Final = "x-headroom-ratelimit-remaining"
+RATELIMIT_RESET_HEADER: Final = "x-headroom-ratelimit-reset"
+
+
+class RateLimited(HeadroomError):
+    """The tenant's or the key's token bucket had no room for this request. **429.**
+
+    Unlike a budget refusal — which is 402 precisely *because* retrying does not help
+    (H-032) — this one is the case 429 was invented for: it heals with time, the amount
+    of time is known exactly, and the honest thing to do is to say so. So this class
+    carries a ``retry-after`` and a budget refusal deliberately does not.
+
+    **The distinction P6 needs.** A provider's own 429 also reaches the caller, forwarded
+    verbatim with its status and body untouched (``headroom.api.proxy``), and the failover
+    logic in Phase 6 has to tell "our limiter refused this" from "Anthropic refused this"
+    — they call for opposite responses: shed load locally, or fail over to another
+    provider. Three independent markers make that decision cheap and unambiguous, and any
+    one of them is sufficient:
+
+    * ``x-headroom-error-source: gateway`` — an upstream error always says ``upstream``;
+    * ``headroom.reason: rate_limited`` in the body — a forwarded upstream body is never
+      given a ``headroom`` block;
+    * ``x-headroom-ratelimit-scope: tenant:requests`` — which bucket, and in a header
+      namespace no upstream response is allowed to write in (H-010, extended in H-038).
+
+    The dialect's own ``rate_limit_error`` type is used for the body, because the caller's
+    SDK has to raise something it knows; the *precision* lives in ``headroom.reason``,
+    which is H-009's rule unchanged.
+    """
+
+    status_code = 429
+    reason = "rate_limited"
+    source = SOURCE_GATEWAY
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        scope: str,
+        limit_per_min: int,
+        remaining: int,
+        retry_after_s: int | None,
+    ) -> None:
+        super().__init__(message)
+        self.scope = scope
+        self.limit_per_min = limit_per_min
+        self.remaining = remaining
+        self.retry_after_s = retry_after_s
+
+    @property
+    def headers(self) -> dict[str, str]:
+        built = {
+            RATELIMIT_SCOPE_HEADER: self.scope,
+            RATELIMIT_LIMIT_HEADER: str(self.limit_per_min),
+            RATELIMIT_REMAINING_HEADER: str(self.remaining),
+        }
+        if self.retry_after_s is not None:
+            # `retry-after` for every client that already knows it, and the namespaced
+            # spelling beside it so a Headroom-aware caller (the Phase 6 failover logic,
+            # the Phase 7 dashboard) never has to guess which hop set it.
+            built["retry-after"] = str(self.retry_after_s)
+            built[RATELIMIT_RESET_HEADER] = str(self.retry_after_s)
+        return built
+
+
+class RateLimitScopeExhausted(RateLimited):
+    """The request is larger than the bucket's whole capacity: waiting cannot help.
+
+    Reachable only on the tokens dimension — a request costs one unit of the requests
+    bucket and every limit is at least 1 — when a caller's estimated token count exceeds
+    the scope's entire tokens-per-minute allowance. It stays a 429 rather than becoming a
+    4xx about the request's size, because the request is fine and the *limit* is what
+    cannot accommodate it; but it carries **no ``retry-after``**, because every value
+    would be a lie and the honest header is the absent one. The message says what to
+    change (H-038).
+    """
+
+    reason = "rate_limit_exceeds_capacity"
 
 
 class ScopeDenied(HeadroomError):

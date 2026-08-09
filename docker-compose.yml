@@ -73,6 +73,11 @@ services:
       # Phase 4: the budget table. Created on first use here and in CI; created by
       # Terraform in Phase 9, where this same code finds it already there.
       HEADROOM_BUDGETS_TABLE: ${HEADROOM_BUDGETS_TABLE:-headroom_budgets}
+      # Phase 4b: the token buckets. A second table rather than a second item shape in
+      # the first one, because the two have opposite retention rules — a budget item
+      # must never be garbage-collected, and a bucket item is *safe* to reap since an
+      # absent bucket and a full one are the same state (docs/DECISIONS.md H-035).
+      HEADROOM_BUCKETS_TABLE: ${HEADROOM_BUCKETS_TABLE:-headroom_buckets}
       HEADROOM_LOG_LEVEL: ${HEADROOM_LOG_LEVEL:-INFO}
       # The root admin token (Phase 2), referenced from the host shell or the
       # gitignored `.env`, never valued here. Unset is a safe state: the admin API

@@ -15,7 +15,9 @@ from headroom.core.budgets import BudgetStore
 from headroom.core.config import ADMIN_TOKEN_ENV, GatewayConfig, load_config
 from headroom.core.errors import ConfigurationError
 from headroom.core.ledger import LedgerStore
+from headroom.core.limits import RateLimitStore
 from headroom.core.storage import TenantStore
+from headroom.db.buckets import DynamoRateLimitStore
 from headroom.db.budgets import DynamoBudgetStore
 from headroom.db.ledger import PostgresLedgerStore
 from headroom.db.tenants import PostgresTenantStore
@@ -24,6 +26,7 @@ from headroom.metering.prices import PriceBook, load_price_book
 from headroom.metering.writer import LedgerWriter
 from headroom.policy.auth import Authenticator
 from headroom.policy.budgets import BudgetGate
+from headroom.policy.limits import RateLimiter
 from headroom.policy.routing import RoutingTable
 
 # Imported for their registration side effects: each module calls `register_kind` at
@@ -68,6 +71,11 @@ class Gateway:
     #: inside it, because they answer different questions — the meter says what a
     #: request cost, the gate says whether it was allowed to.
     budgets: BudgetGate
+    #: Phase 4b. Token buckets, per key and per tenant, on the same conditional-write
+    #: discipline. Ahead of the budget gate on the request path rather than beside it:
+    #: it is the load shedder, and what it sheds is exactly the burst the budget gate
+    #: serialises on (docs/DECISIONS.md H-039).
+    limits: RateLimiter
     admin_token: str | None = None
 
     def provider_for(self, dialect: str, model: str) -> Provider:
@@ -83,6 +91,9 @@ class Gateway:
         # disconnect, and a hold that is not settled here is one the sweeper has to
         # find later. Money before bookkeeping.
         await self.budgets.aclose()
+        # The rate limiter has nothing to drain — a bucket consumption never settles —
+        # so this only releases its client's thread pool.
+        await self.limits.aclose()
         # The writer next, and deliberately: it drains its queue into the ledger
         # store, so closing the store out from under it would throw away exactly the
         # rows a graceful shutdown exists to save (docs/DECISIONS.md H-027).
@@ -99,6 +110,7 @@ def build_gateway(
     store: TenantStore | None = None,
     ledger: LedgerStore | None = None,
     budgets: BudgetStore | None = None,
+    limits: RateLimitStore | None = None,
 ) -> Gateway:
     """Construct a gateway from config (loaded from disk when not supplied).
 
@@ -128,6 +140,11 @@ def build_gateway(
     tenant_store = store if store is not None else PostgresTenantStore()
     ledger_store = ledger if ledger is not None else PostgresLedgerStore()
     budget_store = budgets if budgets is not None else DynamoBudgetStore()
+    # A second DynamoDB store, and deliberately its own client: the two tables have
+    # different access patterns and different retention rules, and sharing one thread
+    # pool would let a slow budget item queue behind a burst of bucket writes on exactly
+    # the path where the limiter exists to keep latency bounded.
+    bucket_store = limits if limits is not None else DynamoRateLimitStore()
     prices: PriceBook = load_price_book()
     return Gateway(
         config=resolved,
@@ -138,5 +155,6 @@ def build_gateway(
         ledger=ledger_store,
         meter=Meter(prices=prices, writer=LedgerWriter(ledger_store)),
         budgets=BudgetGate(store=budget_store, prices=prices),
+        limits=RateLimiter(store=bucket_store),
         admin_token=os.environ.get(ADMIN_TOKEN_ENV) or None,
     )

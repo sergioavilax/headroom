@@ -22,6 +22,7 @@ from uuid import UUID
 
 import asyncpg
 
+from headroom.core.limits import RateLimit
 from headroom.core.storage import (
     KeyRecord,
     Tenant,
@@ -33,11 +34,20 @@ from headroom.db.pool import DatabasePool
 
 __all__ = ["PostgresTenantStore"]
 
-_TENANT_COLUMNS = "id, name, active, created_at, updated_at"
+_LIMIT_COLUMNS = "requests_per_min, tokens_per_min"
+_TENANT_COLUMNS = f"id, name, active, created_at, updated_at, {_LIMIT_COLUMNS}"
 _KEY_COLUMNS = (
     "id, tenant_id, name, key_prefix, allowed_models, allowed_providers, "
-    "created_at, updated_at, revoked_at"
+    f"created_at, updated_at, revoked_at, {_LIMIT_COLUMNS}"
 )
+
+
+def _limits(row: asyncpg.Record, prefix: str = "") -> RateLimit:
+    """The two nullable columns as one record. NULL stays NULL — it means *unlimited*."""
+    return RateLimit(
+        requests_per_min=row[f"{prefix}requests_per_min"],
+        tokens_per_min=row[f"{prefix}tokens_per_min"],
+    )
 
 
 def _tenant(row: asyncpg.Record) -> Tenant:
@@ -47,6 +57,7 @@ def _tenant(row: asyncpg.Record) -> Tenant:
         active=row["active"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        limits=_limits(row),
     )
 
 
@@ -61,6 +72,7 @@ def _key(row: asyncpg.Record) -> VirtualKey:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         revoked_at=row["revoked_at"],
+        limits=_limits(row),
     )
 
 
@@ -218,16 +230,59 @@ class PostgresTenantStore(TenantStore):
         )
         return None if row is None else _key(row)
 
+    # --- rate limits (Phase 4b) -------------------------------------------------------
+    #
+    # Assignment, not COALESCE. Everywhere else in this file a NULL parameter means
+    # "leave this column alone"; here it means "clear this limit", because `/admin/limits`
+    # is a PUT and an absent dimension is the caller saying *unlimited*. The two
+    # meanings cannot share one statement, which is why these are two methods rather
+    # than four more parameters on the patchers above.
+
+    async def set_tenant_limits(self, tenant_id: str, limits: RateLimit) -> Tenant | None:
+        row = await self._fetch_by_id(
+            f"""
+            UPDATE tenants
+               SET requests_per_min = $2,
+                   tokens_per_min   = $3,
+                   updated_at       = now()
+             WHERE id = $1
+         RETURNING {_TENANT_COLUMNS}
+            """,
+            tenant_id,
+            limits.requests_per_min,
+            limits.tokens_per_min,
+        )
+        return None if row is None else _tenant(row)
+
+    async def set_key_limits(self, key_id: str, limits: RateLimit) -> VirtualKey | None:
+        row = await self._fetch_by_id(
+            f"""
+            UPDATE virtual_keys
+               SET requests_per_min = $2,
+                   tokens_per_min   = $3,
+                   updated_at       = now()
+             WHERE id = $1
+         RETURNING {_KEY_COLUMNS}
+            """,
+            key_id,
+            limits.requests_per_min,
+            limits.tokens_per_min,
+        )
+        return None if row is None else _key(row)
+
     async def find_by_hash(self, key_hash: str) -> KeyRecord | None:
         async with self.pool.connection() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT k.id, k.tenant_id, k.name, k.key_prefix, k.allowed_models,
                        k.allowed_providers, k.created_at, k.updated_at, k.revoked_at,
-                       t.name       AS tenant_name,
-                       t.active     AS tenant_active,
-                       t.created_at AS tenant_created_at,
-                       t.updated_at AS tenant_updated_at
+                       k.requests_per_min, k.tokens_per_min,
+                       t.name             AS tenant_name,
+                       t.active           AS tenant_active,
+                       t.created_at       AS tenant_created_at,
+                       t.updated_at       AS tenant_updated_at,
+                       t.requests_per_min AS tenant_requests_per_min,
+                       t.tokens_per_min   AS tenant_tokens_per_min
                   FROM virtual_keys k
                   JOIN tenants t ON t.id = k.tenant_id
                  WHERE k.key_hash = $1
@@ -236,12 +291,16 @@ class PostgresTenantStore(TenantStore):
             )
         if row is None:
             return None
+        # Both scopes' limits come out of the statement that authenticates the request.
+        # That is the whole reason they are columns here rather than items in DynamoDB:
+        # the rate limiter reads no configuration of its own (H-037).
         tenant = Tenant(
             id=str(row["tenant_id"]),
             name=row["tenant_name"],
             active=row["tenant_active"],
             created_at=row["tenant_created_at"],
             updated_at=row["tenant_updated_at"],
+            limits=_limits(row, "tenant_"),
         )
         return KeyRecord(key=_key(row), tenant=tenant)
 

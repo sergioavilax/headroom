@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 from headroom.core.context import RequestContext
@@ -45,6 +45,7 @@ from headroom.core.errors import (
     RevokedCredential,
     UnknownCredential,
 )
+from headroom.core.limits import RateLimit
 from headroom.core.storage import KeyRecord, TenantStore
 from headroom.policy.keys import hash_key, looks_like_key, scope_allows
 
@@ -106,6 +107,15 @@ class Principal:
     key_prefix: str
     allowed_models: tuple[str, ...] = ()
     allowed_providers: tuple[str, ...] = ()
+    #: Phase 4b. Both scopes' token-bucket limits, carried here because the lookup that
+    #: produced this principal already read both rows — so the rate limiter reads no
+    #: configuration of its own on the request path (docs/DECISIONS.md H-037). They
+    #: therefore inherit this cache's TTL exactly: **a limit change takes effect on the
+    #: next request in the process that made it, and within `AUTH_CACHE_TTL_S` seconds
+    #: everywhere else**, which is the same guarantee, and the same sentence, as a scope
+    #: change. Note what is *not* cached: the buckets themselves, which are never read.
+    tenant_limits: RateLimit = field(default_factory=RateLimit)
+    key_limits: RateLimit = field(default_factory=RateLimit)
 
     @classmethod
     def of(cls, record: KeyRecord) -> Principal:
@@ -116,6 +126,8 @@ class Principal:
             key_prefix=record.key.key_prefix,
             allowed_models=tuple(record.key.allowed_models),
             allowed_providers=tuple(record.key.allowed_providers),
+            tenant_limits=record.tenant.limits,
+            key_limits=record.key.limits,
         )
 
     # --- scope --------------------------------------------------------------------

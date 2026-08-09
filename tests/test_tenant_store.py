@@ -25,6 +25,7 @@ import asyncpg
 import pytest
 
 from headroom.core.errors import ConfigurationError, ControlPlaneUnavailable
+from headroom.core.limits import RateLimit
 from headroom.core.storage import TenantNameConflict, TenantStore
 from headroom.db.memory import InMemoryTenantStore
 from headroom.db.migrate import discover_migrations, run_migrations
@@ -262,6 +263,118 @@ async def test_unknown_keys_are_none_not_errors(store: TenantStore) -> None:
     assert await store.update_key(MISSING_ID, name="x") is None
     assert await store.revoke_key(MISSING_ID) is None
     assert await store.get_key("not-even-a-uuid") is None
+
+
+# --- rate limits (Phase 4b) ----------------------------------------------------------
+#
+# The configuration half of the token buckets lives on these two tables (H-037,
+# BUILD_PLAN L2), so it is a contract of this store and asserted against Postgres too.
+
+
+async def test_a_scope_is_unlimited_until_somebody_says_otherwise(store: TenantStore) -> None:
+    """NULL means unlimited, in both columns of both tables — which is why they are
+    nullable rather than defaulted to a large number: "no limit" and "a very high limit"
+    are different facts and an admin API has to be able to report which."""
+    tenant = await store.create_tenant("acme")
+    plaintext = await add_key(store, tenant.id)
+    record = await store.find_by_hash(hash_key(plaintext))
+    assert record is not None
+
+    assert tenant.limits.configured is False
+    assert record.key.limits.configured is False
+    assert record.tenant.limits.requests_per_min is None
+
+
+async def test_limits_are_replaced_wholesale_not_patched(store: TenantStore) -> None:
+    """The setter's semantics, and the reason it is a method of its own rather than two
+    more ``COALESCE`` parameters on ``update_tenant``: here ``None`` means *clear*."""
+    tenant = await store.create_tenant("acme")
+
+    both = await store.set_tenant_limits(
+        tenant.id, RateLimit(requests_per_min=60, tokens_per_min=9)
+    )
+    assert both is not None
+    assert (both.limits.requests_per_min, both.limits.tokens_per_min) == (60, 9)
+
+    one = await store.set_tenant_limits(tenant.id, RateLimit(tokens_per_min=9))
+    assert one is not None
+    assert one.limits.requests_per_min is None
+
+    cleared = await store.set_tenant_limits(tenant.id, RateLimit())
+    assert cleared is not None
+    assert cleared.limits.configured is False
+
+
+async def test_a_keys_limits_are_its_own(store: TenantStore) -> None:
+    """Two scopes, two records, no interaction: BUILD_PLAN's *per key and per tenant*."""
+    tenant = await store.create_tenant("acme")
+    plaintext = await add_key(store, tenant.id)
+    record = await store.find_by_hash(hash_key(plaintext))
+    assert record is not None
+
+    await store.set_tenant_limits(tenant.id, RateLimit(requests_per_min=100))
+    updated = await store.set_key_limits(record.key.id, RateLimit(requests_per_min=5))
+
+    assert updated is not None
+    assert updated.limits.requests_per_min == 5
+    reread = await store.get_tenant(tenant.id)
+    assert reread is not None
+    assert reread.limits.requests_per_min == 100
+
+
+async def test_setting_limits_on_something_that_does_not_exist_is_none(
+    store: TenantStore,
+) -> None:
+    assert await store.set_tenant_limits(MISSING_ID, RateLimit(requests_per_min=1)) is None
+    assert await store.set_key_limits(MISSING_ID, RateLimit(requests_per_min=1)) is None
+    assert await store.set_tenant_limits("banana", RateLimit(requests_per_min=1)) is None
+
+
+async def test_the_other_patchers_leave_limits_alone(store: TenantStore) -> None:
+    """Renaming a key, revoking it, or deactivating a tenant must not silently uncap it.
+
+    Easy to get wrong in the in-memory store, which rebuilds the record field by field —
+    and impossible to notice without this test, because uncapping is invisible until the
+    traffic arrives.
+    """
+    tenant = await store.create_tenant("acme")
+    plaintext = await add_key(store, tenant.id)
+    record = await store.find_by_hash(hash_key(plaintext))
+    assert record is not None
+    await store.set_tenant_limits(tenant.id, RateLimit(requests_per_min=7))
+    await store.set_key_limits(record.key.id, RateLimit(tokens_per_min=11))
+
+    renamed = await store.update_key(record.key.id, name="renamed")
+    revoked = await store.revoke_key(record.key.id)
+    deactivated = await store.update_tenant(tenant.id, active=False)
+
+    assert renamed is not None and renamed.limits.tokens_per_min == 11
+    assert revoked is not None and revoked.limits.tokens_per_min == 11
+    assert deactivated is not None and deactivated.limits.requests_per_min == 7
+
+
+async def test_the_authentication_lookup_carries_both_scopes_limits(
+    store: TenantStore,
+) -> None:
+    """**The property the whole placement rests on** (H-037).
+
+    The rate limiter reads no configuration of its own on the request path, because the
+    one statement that authenticates a request already returns both scopes' limits. If
+    this ever stopped being true, the limiter would need a query or a cache, and the
+    reason for putting the columns here would be gone.
+    """
+    tenant = await store.create_tenant("acme")
+    plaintext = await add_key(store, tenant.id)
+    record = await store.find_by_hash(hash_key(plaintext))
+    assert record is not None
+    await store.set_tenant_limits(tenant.id, RateLimit(requests_per_min=60))
+    await store.set_key_limits(record.key.id, RateLimit(requests_per_min=5, tokens_per_min=1_000))
+
+    after = await store.find_by_hash(hash_key(plaintext))
+
+    assert after is not None
+    assert after.tenant.limits == RateLimit(requests_per_min=60)
+    assert after.key.limits == RateLimit(requests_per_min=5, tokens_per_min=1_000)
 
 
 # --- the authentication lookup ------------------------------------------------------
