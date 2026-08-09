@@ -2651,3 +2651,43 @@ it.
 
 **Spend** — $0.00. No provider API was called in this phase; every test ran on the
 MockProvider, and the container demo talked to nothing outside the compose network.
+
+### CI
+
+CI on PR-4b ([run 31332854738](https://github.com/sergioavilax/headroom/actions/runs/31332854738)),
+all three jobs green on the first run, no annotations:
+
+```
+$ gh run view 31332854738 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 110 source files
+pytest (…service containers) | ====== 670 passed, 2 deselected, 1 warning in 20.82s ======
+pytest (…service containers) | tests/test_rate_limit_hammer.py::test_the_hammer PASSED
+pytest (…service containers) | tests/test_rate_limit_hammer.py::test_the_sabotage_over_admits PASSED
+pytest (…service containers) | tests/test_rate_limit_hammer.py::test_a_fixed_window_passes_the_hammer PASSED
+pytest (…service containers) | tests/test_rate_limit_hammer.py::test_the_fixed_window_admits_double_the_limit_across_the_boundary PASSED
+pytest (…service containers) | tests/test_rate_limit_hammer.py::test_an_unclamped_bucket_passes_the_hammer PASSED
+pytest (…service containers) | tests/test_rate_limit_hammer.py::test_an_unclamped_bucket_accumulates_an_hours_worth_of_credit PASSED
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**670 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+DynamoDB half of the rate-limit contract suite (12 parametrised tests) **and all nine
+hammer tests** executed against the service container rather than skipping. Under H-012 an
+explicitly-configured but unreachable endpoint fails rather than skips, and CI sets
+`DYNAMODB_ENDPOINT_URL` explicitly — so **the hammer and its three sabotages now run on
+every pull request**, beside the D-019 stampede.
+
+The six `test_429_distinguishability.py` tests run there too, which matters more than their
+number suggests: they are the contract Phase 6 will build its failover rule on, pinned
+before the code that reads it exists.
+
+No AWS credential is set anywhere in the workflow (`grep -c AWS_ACCESS` over the log
+returns `0`). The gateway supplies its own dummy when — and only when — an emulator
+endpoint is configured, which is why the job is still fully keyless (invariant 4).
