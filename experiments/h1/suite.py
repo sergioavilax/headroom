@@ -32,7 +32,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import REPO_ROOT, read_json
+from experiments.provenance import REPO_ROOT, read_json
 
 __all__ = [
     "EXCLUDED_REASON",

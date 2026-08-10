@@ -32,8 +32,8 @@ from operator import mul
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import RESULTS_DIR, provenance, write_json
 from experiments.h1.corpus import SPACES, H1Corpus, load_corpus, load_vectors
+from experiments.provenance import RESULTS_DIR, provenance, write_json
 
 __all__ = [
     "FAMILY_A",

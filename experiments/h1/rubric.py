@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from experiments.artifacts import content_hash
+from experiments.provenance import content_hash
 
 __all__ = [
     "PARAPHRASES_PER_QUESTION",

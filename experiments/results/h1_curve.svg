@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" role="img" aria-label="At the shipped 0.90 threshold 98 of 130 are answered from cache, and 92 of those answers are wrong. No threshold in 0.70–0.99 reaches zero wrong answers.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" role="img" aria-label="At the shipped 0.90 threshold 98 of 130 are answered from cache, and 92 of those answers are wrong. No threshold in 0.70-0.99 reaches zero wrong answers.">
 <title>Headroom H1 — the semantic-cache safety curve</title>
 <rect width="980" height="560" fill="#000000"/>
 <rect x="20" y="20" width="940" height="520" rx="10" fill="#131417" stroke="#26282f" stroke-width="1"/>
 <text x="62" y="56" fill="#f4f4f5" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="19" font-weight="600">The semantic-cache safety curve</text>
 <text x="62" y="78" fill="#a8a9b4" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5">At the shipped 0.90 threshold 98 of 130 are answered from cache, and 92 of those answers are wrong.</text>
-<text x="62" y="96" fill="#a8a9b4" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5">No threshold in 0.70–0.99 reaches zero wrong answers.</text>
+<text x="62" y="96" fill="#a8a9b4" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5">No threshold in 0.70-0.99 reaches zero wrong answers.</text>
 <rect x="62" y="123" width="10" height="10" rx="2" fill="#3987e5"/>
 <text x="78" y="132" fill="#a8a9b4" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5">served from cache</text>
 <rect x="193" y="123" width="10" height="10" rx="2" fill="#d03b3b"/>

@@ -2,8 +2,8 @@
  "schema": "h3_livekill/1",
  "provenance": {
   "produced_by": "experiments/h3/livekill.py",
-  "generated_at": "2026-08-10T20:24:40+00:00",
-  "headroom_commit": "870f36fff61852d10e2b400406674ca83b12f58d",
+  "generated_at": "2026-08-10T20:38:36+00:00",
+  "headroom_commit": "276b650a9a1b3c22580dd84185c7ec7fddf2fb3e",
   "notes": "The operator's two-GPU kill demo. Rows exported before the next `make test` truncated the ledger (H-029)."
  },
  "window": {

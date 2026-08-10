@@ -30,7 +30,7 @@ from typing import Any, Final
 
 import httpx
 
-from experiments.artifacts import RESULTS_DIR, provenance, write_json
+from experiments.provenance import RESULTS_DIR, provenance, write_json
 
 __all__ = ["DEFAULT_TENANT", "Check", "main", "run_checks"]
 

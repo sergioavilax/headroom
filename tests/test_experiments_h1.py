@@ -20,7 +20,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from experiments.artifacts import RESULTS_DIR, read_json
 from experiments.h1.build import CORPUS_PATH, EMBEDDING_DIMENSIONS, VECTORS_PATH
 from experiments.h1.checks import check_batch, check_paraphrase, salient_tokens
 from experiments.h1.corpus import (
@@ -41,6 +40,7 @@ from experiments.h1.sweep import (
     probe_outcomes,
     sweep,
 )
+from experiments.provenance import RESULTS_DIR, read_json
 from headroom.cache.keys import context_hash
 from headroom.core.cache import CacheEntry, CacheNamespace
 from headroom.db.memory import InMemoryResponseCacheStore

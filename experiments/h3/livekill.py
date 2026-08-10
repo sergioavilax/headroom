@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import RESULTS_DIR, provenance, read_json, write_json
+from experiments.provenance import RESULTS_DIR, provenance, read_json, write_json
 from headroom.policy.health import HealthPolicy
 
 __all__ = ["CHAIN_PREFIX", "Outage", "analyse", "main"]

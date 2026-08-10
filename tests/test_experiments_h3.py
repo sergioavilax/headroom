@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from experiments.artifacts import REPO_ROOT, RESULTS_DIR, read_json
 from experiments.h3.livekill import analyse
+from experiments.provenance import REPO_ROOT, RESULTS_DIR, read_json
 from headroom.policy.health import HealthPolicy
 
 EVIDENCE = REPO_ROOT / "docs" / "evidence" / "p8-experiments" / "h3-livekill-ledger-rows.json"
