@@ -1,0 +1,1190 @@
+{
+ "schema": "h1_paraphrases/1",
+ "provenance": {
+  "produced_by": "experiments/h1/generate.py",
+  "generated_at": "2026-08-10T21:05:10+00:00",
+  "headroom_commit": "e2abf5752eba8e209be72274c5f3444485d967da",
+  "inputs": {
+   "suite_hash": "6eef41c6706f309a",
+   "world_seed": 20260805,
+   "backline_commit": "9053bec4f98cc8d8bc1b1e0790fe44ec7d79a113"
+  },
+  "notes": "Paid, operator-run. Regenerating this file costs money; the sweep does not read it directly — build.py folds it into h1_corpus.json."
+ },
+ "rubric": {
+  "version": 1,
+  "hash": "5dc5c981548758892dea46147b84413fcf1ec22506658cc4536f77ac6ed80ee0",
+  "model": "claude-haiku-4-5",
+  "temperature": 1.0,
+  "max_output_tokens": 400,
+  "per_question": 3
+ },
+ "spend": {
+  "usd": "0.189785000000",
+  "cap_usd": "1.00",
+  "calls": 163,
+  "input_tokens": 89450,
+  "output_tokens": 20067,
+  "usd_per_mtok_in": "1.00",
+  "usd_per_mtok_out": "5.00",
+  "price_effective_from": "2026-08-08"
+ },
+ "questions": {
+  "abstention-001": {
+   "body": "What streaming royalty rate does Vera Nyx earn under their current deal?",
+   "paraphrases": [
+    "Under Vera Nyx's current deal, what is their streaming royalty rate?",
+    "What is the streaming royalty rate that Vera Nyx receives according to their current agreement?",
+    "According to their current deal, at what streaming royalty rate does Vera Nyx earn?"
+   ],
+   "attempts": 1
+  },
+  "abstention-002": {
+   "body": "What is Moss Delaney's net payable for 2026-03, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable does Moss Delaney receive for 2026-03?",
+    "For the period 2026-03, what is Moss Delaney's net payable following recoupment?",
+    "What amount is Moss Delaney's net payable for 2026-03 once recoupment has been applied?"
+   ],
+   "attempts": 1
+  },
+  "abstention-003": {
+   "body": "Does The Copper Sirens's agreement include a minimum guarantee per accounting period?",
+   "paraphrases": [
+    "Is there a minimum guarantee per accounting period specified in The Copper Sirens's agreement?",
+    "Does The Copper Sirens's agreement contain a minimum guarantee requirement for each accounting period?",
+    "Per accounting period, does The Copper Sirens's agreement guarantee a minimum amount?"
+   ],
+   "attempts": 1
+  },
+  "abstention-004": {
+   "body": "Which territories are excluded from Juniper Vale's deal?",
+   "paraphrases": [
+    "What territories does Juniper Vale's deal not cover?",
+    "Juniper Vale's deal excludes which territories?",
+    "From which territories is Juniper Vale's deal excluded?"
+   ],
+   "attempts": 1
+  },
+  "abstention-005": {
+   "body": "How much unrecouped balance remains on Cassian Wren's account as of 2026-06?",
+   "paraphrases": [
+    "What is the unrecouped balance on Cassian Wren's account as of 2026-06?",
+    "As of 2026-06, how much of Cassian Wren's account remains unrecouped?",
+    "Cassian Wren's account carries what unrecouped balance as of 2026-06?"
+   ],
+   "attempts": 1
+  },
+  "abstention-006": {
+   "body": "How many tracks does Halcyon Drift have in our catalog as primary artist?",
+   "paraphrases": [
+    "What is the total number of tracks attributed to Halcyon Drift as the primary artist in our catalog?",
+    "In our catalog, how many tracks list Halcyon Drift as their primary artist?",
+    "Our catalog contains how many tracks where Halcyon Drift is the primary artist?"
+   ],
+   "attempts": 1
+  },
+  "abstention-007": {
+   "body": "How many releases carry Petra Solano's tracks?",
+   "paraphrases": [
+    "Across how many releases are Petra Solano's tracks distributed?",
+    "What is the total number of releases featuring Petra Solano's tracks?",
+    "On how many releases do Petra Solano's tracks appear?"
+   ],
+   "attempts": 1
+  },
+  "abstention-008": {
+   "body": "What royalty rates does contract FBR-C-99901 set in its §3? I need the streaming figure.",
+   "paraphrases": [
+    "In §3 of contract FBR-C-99901, what streaming royalty rate is specified?",
+    "Contract FBR-C-99901's §3 establishes what royalty rates—specifically, what is the streaming figure?",
+    "What does §3 of contract FBR-C-99901 state regarding royalty rates for streaming?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-001": {
+   "body": "How many tracks does Kofi & The Arcade have in our catalog as primary artist?",
+   "paraphrases": [
+    "What is the count of tracks by Kofi & The Arcade listed in our catalog where they are credited as the primary artist?",
+    "In our catalog, how many tracks feature Kofi & The Arcade as primary artist?",
+    "Our catalog contains how many tracks for which Kofi & The Arcade is the primary artist?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-002": {
+   "body": "How many tracks does Gentle Arcade have in our catalog as primary artist?",
+   "paraphrases": [
+    "In our catalog, how many tracks list Gentle Arcade as the primary artist?",
+    "What is the count of tracks in our catalog where Gentle Arcade appears as primary artist?",
+    "How many primary-artist tracks by Gentle Arcade are in our catalog?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-003": {
+   "body": "How many tracks does Wren & The Isles have in our catalog as primary artist?",
+   "paraphrases": [
+    "What is the total count of tracks attributed to Wren & The Isles as the primary artist in our catalog?",
+    "In our catalog, how many tracks list Wren & The Isles as the primary artist?",
+    "Our catalog contains how many tracks where Wren & The Isles is the primary artist?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-004": {
+   "body": "How many tracks does Stellan Okonkwo have in our catalog as primary artist?",
+   "paraphrases": [
+    "What is the total number of tracks by Stellan Okonkwo as primary artist available in our catalog?",
+    "In our catalog, how many tracks list Stellan Okonkwo as the primary artist?",
+    "Our catalog contains how many tracks where Stellan Okonkwo is credited as primary artist?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-005": {
+   "body": "How many tracks does The Thorned Grotto have in our catalog as primary artist?",
+   "paraphrases": [
+    "In our catalog, how many tracks list The Thorned Grotto as the primary artist?",
+    "What is the count of tracks in our catalog where The Thorned Grotto appears as primary artist?",
+    "Our catalog contains how many tracks with The Thorned Grotto credited as primary artist?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-006": {
+   "body": "How many tracks does Marble Vertigo have in our catalog as primary artist?",
+   "paraphrases": [
+    "In our catalog, how many tracks list Marble Vertigo as the primary artist?",
+    "What is the count of tracks in our catalog where Marble Vertigo appears as primary artist?",
+    "How many primary artist tracks by Marble Vertigo are in our catalog?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-007": {
+   "body": "How many releases did the Night Shift Audio imprint put out in calendar 2024?",
+   "paraphrases": [
+    "In calendar 2024, what was the total number of releases issued by Night Shift Audio?",
+    "During 2024, how many releases were put out by the Night Shift Audio imprint?",
+    "What quantity of releases did Night Shift Audio issue throughout calendar 2024?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-008": {
+   "body": "How many releases did the Night Shift Audio imprint put out in calendar 2026?",
+   "paraphrases": [
+    "In calendar 2026, what was the total number of releases issued by Night Shift Audio?",
+    "How many releases did Night Shift Audio put out throughout 2026?",
+    "What number of releases did the Night Shift Audio imprint issue during calendar 2026?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-009": {
+   "body": "How many tracks are on the release \"Oceans & Oceans\"?",
+   "paraphrases": [
+    "What is the track count for \"Oceans & Oceans\"?",
+    "\"Oceans & Oceans\" contains how many tracks?",
+    "How many tracks does the release \"Oceans & Oceans\" have?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-010": {
+   "body": "How many tracks are on the release \"Slow Quarters\"?",
+   "paraphrases": [
+    "What is the track count for \"Slow Quarters\"?",
+    "\"Slow Quarters\" contains how many tracks?",
+    "How many tracks does the release \"Slow Quarters\" have?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-011": {
+   "body": "What is the ISRC of Rowan Stromberg's track \"Roses (Loud)\"?",
+   "paraphrases": [
+    "What ISRC corresponds to \"Roses (Loud)\" by Rowan Stromberg?",
+    "Find the ISRC for Rowan Stromberg's \"Roses (Loud)\".",
+    "Which ISRC identifies the track \"Roses (Loud)\" by Rowan Stromberg?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-012": {
+   "body": "What is the ISRC of The Silent Chorus's track \"Burnt Shadows\"?",
+   "paraphrases": [
+    "What ISRC identifies The Silent Chorus's track \"Burnt Shadows\"?",
+    "Find the ISRC for \"Burnt Shadows\" by The Silent Chorus.",
+    "The Silent Chorus recorded \"Burnt Shadows\"—what is its ISRC?"
+   ],
+   "attempts": 1
+  },
+  "catalog_lookup-013": {
+   "body": "In whole seconds, what is the stored duration of Lior Okonkwo's track \"Engines\"?",
+   "paraphrases": [
+    "What duration, measured in whole seconds, is stored for the track \"Engines\" by Lior Okonkwo?",
+    "How many whole seconds does the stored duration of Lior Okonkwo's \"Engines\" comprise?",
+    "State the stored duration of Lior Okonkwo's track \"Engines\" in whole seconds."
+   ],
+   "attempts": 1
+  },
+  "contract_terms-001": {
+   "body": "As of 2026-06-30, what royalty rate applies to Yuki Takeda's digital streaming revenue? Cite the governing clause.",
+   "paraphrases": [
+    "Identify the royalty rate that governs Yuki Takeda's digital streaming revenue as of 2026-06-30, and cite the clause that applies.",
+    "What clause establishes the royalty rate for Yuki Takeda's digital streaming revenue effective 2026-06-30?",
+    "By 2026-06-30, which governing clause sets Yuki Takeda's digital streaming royalty rate, and what is that rate?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-002": {
+   "body": "As of 2026-06-30, what royalty rate applies to Anouk Reverie's permanent download sales? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate is applicable to Anouk Reverie's permanent download sales as of 2026-06-30, and what governing clause establishes it?",
+    "Cite the governing clause that sets the royalty rate for Anouk Reverie's permanent download sales effective 2026-06-30.",
+    "As of 2026-06-30, which governing clause specifies the royalty rate for permanent download sales by Anouk Reverie?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-003": {
+   "body": "As of 2026-06-30, what royalty rate applies to The Cinder Spectra's sync licensing placements? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs The Cinder Spectra's sync licensing placements as of 2026-06-30, and which clause establishes it?",
+    "Identify the governing clause and the applicable royalty rate for The Cinder Spectra's sync licensing placements effective 2026-06-30.",
+    "As of 2026-06-30, which clause sets the royalty rate for The Cinder Spectra's sync licensing placements, and what is that rate?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-004": {
+   "body": "As of 2026-06-30, what royalty rate applies to Paloma & The Effigy's digital streaming revenue? Cite the governing clause.",
+   "paraphrases": [
+    "Which royalty rate governs Paloma & The Effigy's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
+    "Identify the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.",
+    "What clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-005": {
+   "body": "As of 2026-06-30, what royalty rate applies to Yuki Vance's permanent download sales? Cite the governing clause.",
+   "paraphrases": [
+    "Under which clause does Yuki Vance's permanent download sales royalty rate as of 2026-06-30 apply?",
+    "What governing clause establishes Yuki Vance's royalty rate for permanent download sales effective 2026-06-30?",
+    "Identify the clause governing Yuki Vance's permanent download sales royalty rate as of 2026-06-30."
+   ],
+   "attempts": 1
+  },
+  "contract_terms-006": {
+   "body": "As of 2026-06-30, what royalty rate applies to The Distant Hymnal's sync licensing placements? Cite the governing clause.",
+   "paraphrases": [
+    "By 2026-06-30, which governing clause establishes the royalty rate for The Distant Hymnal's sync licensing placements?",
+    "What royalty rate, effective 2026-06-30, governs The Distant Hymnal's sync licensing placements, and which clause controls it?",
+    "Identify the governing clause that sets the royalty rate applicable to The Distant Hymnal's sync licensing placements as of 2026-06-30."
+   ],
+   "attempts": 1
+  },
+  "contract_terms-007": {
+   "body": "As of 2026-06-30, what royalty rate applies to Celeste Canyons's digital streaming revenue? Cite the governing clause.",
+   "paraphrases": [
+    "Which royalty rate governs Celeste Canyons's digital streaming revenue as of 2026-06-30? Please cite the relevant clause.",
+    "Identify the royalty rate applicable to Celeste Canyons's digital streaming revenue on 2026-06-30, and provide the governing clause citation.",
+    "What clause governs the royalty rate that applies to Celeste Canyons's digital streaming revenue as of 2026-06-30?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-008": {
+   "body": "As of 2026-06-30, what royalty rate applies to The Slow Cathedral's digital streaming revenue? Cite the governing clause.",
+   "paraphrases": [
+    "Which royalty rate governs The Slow Cathedral's digital streaming revenue as of 2026-06-30, and what is the governing clause?",
+    "The Slow Cathedral's digital streaming revenue as of 2026-06-30 is subject to what royalty rate? Identify the governing clause.",
+    "Cite the governing clause that sets The Slow Cathedral's royalty rate for digital streaming revenue as of 2026-06-30."
+   ],
+   "attempts": 1
+  },
+  "contract_terms-009": {
+   "body": "As of 2026-06-30, what royalty rate applies to Clara & The Sanctuary's permanent download sales? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs Clara & The Sanctuary's permanent download sales as of 2026-06-30, and which clause establishes it?",
+    "Cite the clause that sets Clara & The Sanctuary's royalty rate for permanent downloads effective 2026-06-30.",
+    "Which clause determines the royalty rate applicable to Clara & The Sanctuary's permanent download sales on 2026-06-30?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-010": {
+   "body": "As of 2026-06-30, what royalty rate applies to Frost Paradox's sync licensing placements? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs Frost Paradox's sync licensing placements as of 2026-06-30, and which clause establishes it?",
+    "Identify the governing clause and the royalty rate that applies to sync licensing placements by Frost Paradox as of 2026-06-30.",
+    "As of 2026-06-30, which clause governs the royalty rate for Frost Paradox's sync licensing placements, and what is that rate?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-011": {
+   "body": "As of 2026-06-30, what royalty rate applies to Sable Isles's digital streaming revenue? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs Sable Isles's digital streaming revenue as of 2026-06-30, and which clause establishes it?",
+    "Identify the royalty rate applicable to Sable Isles's digital streaming revenue on 2026-06-30 and cite the controlling clause.",
+    "Which clause sets the royalty rate for Sable Isles's digital streaming revenue effective 2026-06-30?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-012": {
+   "body": "As of 2026-06-30, what royalty rate applies to Iron Parade's permanent download sales? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs Iron Parade's permanent download sales as of 2026-06-30, and which clause establishes it?",
+    "Which clause sets Iron Parade's royalty rate for permanent downloads as of 2026-06-30?",
+    "As of 2026-06-30, identify the governing clause and the royalty rate applicable to Iron Parade's permanent download sales."
+   ],
+   "attempts": 1
+  },
+  "contract_terms-013": {
+   "body": "As of 2026-06-30, what royalty rate applies to Wren & The Isles's sync licensing placements? Cite the governing clause.",
+   "paraphrases": [
+    "For Wren & The Isles, which sync licensing royalty rate is in effect as of 2026-06-30, and what governing clause establishes it?",
+    "Cite the governing clause that sets Wren & The Isles's sync licensing royalty rate applicable on 2026-06-30.",
+    "What governing clause determines the sync licensing royalty rate for Wren & The Isles that applies as of 2026-06-30?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-014": {
+   "body": "As of 2026-06-30, what royalty rate applies to Beatriz & The Cathedral's digital streaming revenue? Cite the governing clause.",
+   "paraphrases": [
+    "Which royalty rate governs Beatriz & The Cathedral's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
+    "Beatriz & The Cathedral's digital streaming revenue is subject to what royalty rate as of 2026-06-30? Identify the applicable governing clause.",
+    "As of 2026-06-30, cite the governing clause that sets the royalty rate for Beatriz & The Cathedral's digital streaming revenue."
+   ],
+   "attempts": 1
+  },
+  "contract_terms-015": {
+   "body": "As of 2026-06-30, what royalty rate applies to Sanne & The Karma's physical retail sales in the United Kingdom (GB)? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs Sanne & The Karma's physical retail sales in the United Kingdom (GB) as of 2026-06-30, and which clause establishes it?",
+    "Identify the royalty rate applicable to Sanne & The Karma's physical retail sales in the United Kingdom (GB) on 2026-06-30, citing the controlling clause.",
+    "Which clause sets the royalty rate for Sanne & The Karma's physical retail sales in the United Kingdom (GB) as of 2026-06-30?"
+   ],
+   "attempts": 1
+  },
+  "contract_terms-016": {
+   "body": "As of 2026-06-30, what royalty rate applies to Thorned Riot's physical retail sales in Germany (DE)? Cite the governing clause.",
+   "paraphrases": [
+    "What royalty rate governs Thorned Riot's physical retail sales in Germany (DE) as of 2026-06-30, and which clause establishes it?",
+    "Identify the governing clause and the applicable royalty rate for Thorned Riot's physical retail sales in Germany (DE) effective 2026-06-30.",
+    "As of 2026-06-30, which clause establishes the royalty rate for Thorned Riot's physical retail sales in the Germany (DE) territory?"
+   ],
+   "attempts": 1
+  },
+  "cross_collateral-001": {
+   "body": "The Analog Odyssey has 2 agreements with us that pool a single recoupment account. What unrecouped balance remained on the pooled account after 2026-04?",
+   "paraphrases": [
+    "After 2026-04, what unrecouped balance was left on the pooled recoupment account shared by The Analog Odyssey's 2 agreements with us?",
+    "What was the unrecouped balance remaining on The Analog Odyssey's pooled recoupment account—which combines 2 agreements with us—as of 2026-04?",
+    "The Analog Odyssey maintains 2 agreements with us that feed into a single pooled recoupment account. What unrecouped balance stood on that account at the end of 2026-04?"
+   ],
+   "attempts": 1
+  },
+  "cross_collateral-002": {
+   "body": "Esme Tempest has 2 agreements with us that pool a single recoupment account. What unrecouped balance remained on the pooled account after 2026-03?",
+   "paraphrases": [
+    "After 2026-03, what unrecouped balance was left on the pooled recoupment account that Esme Tempest shares across 2 agreements with us?",
+    "The pooled recoupment account linking Esme Tempest's 2 agreements with us had what unrecouped balance remaining as of 2026-03?",
+    "What unrecouped balance persisted on the single pooled recoupment account covering Esme Tempest's 2 agreements with us following 2026-03?"
+   ],
+   "attempts": 1
+  },
+  "cross_collateral-003": {
+   "body": "The Blazing Bloom has 2 agreements with us that pool a single recoupment account. What unrecouped balance remained on the pooled account after 2026-04?",
+   "paraphrases": [
+    "After 2026-04, what unrecouped balance was left on the pooled recoupment account shared across The Blazing Bloom's 2 agreements with us?",
+    "The Blazing Bloom maintains 2 agreements that combine into one pooled recoupment account with us; what unrecouped balance remained on that account following 2026-04?",
+    "Given that The Blazing Bloom's 2 agreements with us feed a single pooled recoupment account, what unrecouped balance was outstanding on it as of 2026-04?"
+   ],
+   "attempts": 1
+  },
+  "cross_collateral-006": {
+   "body": "Sparrow's deals share one pooled recoupment account. What is their net payable for 2025-12, after the pooled recoupment?",
+   "paraphrases": [
+    "After pooled recoupment is applied to Sparrow's deals' shared recoupment account, what net payable amount is owed for 2025-12?",
+    "Given that Sparrow's deals maintain one pooled recoupment account, calculate their net payable for 2025-12 following pooled recoupment.",
+    "What net payable does Sparrow receive for 2025-12 once pooled recoupment is deducted from their deals' shared account?"
+   ],
+   "attempts": 1
+  },
+  "hand-abstention-01": {
+   "body": "What does FBR-C-00502 §9 provide about audit rights?",
+   "paraphrases": [
+    "What audit rights are provided under §9 of FBR-C-00502?",
+    "§9 of FBR-C-00502 contains what provisions regarding audit rights?",
+    "According to FBR-C-00502 §9, what do the audit rights provisions state?"
+   ],
+   "attempts": 1
+  },
+  "hand-abstention-02": {
+   "body": "I heard Umbra's deal was amended this year to raise their download rate. What is the new download rate under that amendment?",
+   "paraphrases": [
+    "Under the amendment to Umbra's deal this year, what download rate was established?",
+    "What is the increased download rate that Umbra's amended deal specifies for this year?",
+    "Following the amendment made to Umbra's deal this year, what does the new download rate equal?"
+   ],
+   "attempts": 1
+  },
+  "hand-catalog_lookup-02": {
+   "body": "Which imprint released \"Drifting Mirrors EP\"?",
+   "paraphrases": [
+    "What label put out \"Drifting Mirrors EP\"?",
+    "\"Drifting Mirrors EP\" was released by which imprint?",
+    "Which record label released \"Drifting Mirrors EP\"?"
+   ],
+   "attempts": 1
+  },
+  "hand-contract_terms-02": {
+   "body": "As of 2025-11-25, what streaming royalty rate applies to The Cinder Spectra? Cite the governing clause.",
+   "paraphrases": [
+    "What streaming royalty rate governs The Cinder Spectra as of 2025-11-25, and which clause establishes it?",
+    "As of 2025-11-25, identify the streaming royalty rate for The Cinder Spectra and cite the applicable governing clause.",
+    "Which governing clause sets the streaming royalty rate that applies to The Cinder Spectra as of 2025-11-25?"
+   ],
+   "attempts": 1
+  },
+  "hand-contract_terms-03": {
+   "body": "Before any amendments changed it, what streaming royalty rate did The Cinder Spectra's original agreement set when it was first signed? This is a question about the historical terms, not what applies today.",
+   "paraphrases": [
+    "What streaming royalty rate did The Cinder Spectra's original agreement establish at the time of its initial signing, prior to any amendments?",
+    "At the moment The Cinder Spectra's original agreement was first signed, what streaming royalty rate did it set before any subsequent amendments took effect?",
+    "What streaming royalty rate was specified in The Cinder Spectra's original agreement when it was initially signed, before any amendments were made to it?"
+   ],
+   "attempts": 1
+  },
+  "hand-contract_terms-04": {
+   "body": "We have a sync inquiry for the Japanese market. Under Astrid Dunes's current agreement, is Japan (JP) inside the licensed territory? Cite the clause.",
+   "paraphrases": [
+    "Does Astrid Dunes's current agreement cover Japan (JP) as part of the licensed territory, given a sync inquiry for the Japanese market? Provide the relevant clause.",
+    "Cite the clause in Astrid Dunes's current agreement that addresses whether Japan (JP) falls within the licensed territory for this sync inquiry in the Japanese market.",
+    "For the Japanese market sync inquiry: according to Astrid Dunes's current agreement, is Japan (JP) included in the licensed territory? Show the clause."
+   ],
+   "attempts": 2
+  },
+  "hand-cross_collateral-02": {
+   "body": "For 2026-01, how much of Voltage's earnings — across every one of their pooled deals — went to recoupment rather than payout?",
+   "paraphrases": [
+    "In 2026-01, what percentage of Voltage's total earnings from all pooled deals combined was allocated to recoupment instead of payout?",
+    "During 2026-01, across Voltage's complete portfolio of pooled deals, what share of earnings went toward recoupment as opposed to payout?",
+    "Of Voltage's pooled-deal earnings for 2026-01, how much was directed to recoupment rather than distributed as payout?"
+   ],
+   "attempts": 1
+  },
+  "hand-multi_step-01": {
+   "body": "Run reconciliation for 2025-07: scan the period's statements for anomalies, compute proposed allocations with any corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $1,000 for 2025-07?",
+   "paraphrases": [
+    "After running reconciliation for 2025-07 by scanning statements for anomalies, computing proposed allocations while excluding corrupt reporting, and submitting one batch with flags for human review, identify which artists should receive more than $1,000 in 2025-07.",
+    "For 2025-07, reconcile by examining the period's statements for anomalies, calculating allocations with any corrupt reporting removed, submitting a single batch with attached flags to humans for review—then determine: what artists merit payment exceeding $1,000 in 2025-07?",
+    "Perform reconciliation of 2025-07 statements to locate anomalies, propose allocations excluding corrupt reporting, and deliver exactly one flagged batch for human review. Which artists warrant more than $1,000 payment in 2025-07?"
+   ],
+   "attempts": 1
+  },
+  "hand-recoupment_state-01": {
+   "body": "How much unrecouped balance remained on The Stray Sirens's account at the end of 2026-06?",
+   "paraphrases": [
+    "What was The Stray Sirens's unrecouped balance at 2026-06 close?",
+    "At the conclusion of 2026-06, what unrecouped balance stood on The Stray Sirens's account?",
+    "The Stray Sirens's account carried what unrecouped balance as of 2026-06 end?"
+   ],
+   "attempts": 1
+  },
+  "hand-recoupment_state-02": {
+   "body": "In 2026-04, how much of Umbra's royalties were withheld against their unrecouped balance?",
+   "paraphrases": [
+    "During 2026-04, what amount of Umbra's royalties were held back due to their unrecouped balance?",
+    "What portion of Umbra's royalties in 2026-04 was retained against their unrecouped balance?",
+    "As of 2026-04, how much was withheld from Umbra's royalties to offset their unrecouped balance?"
+   ],
+   "attempts": 1
+  },
+  "hand-royalty_math-01": {
+   "body": "What is The Stray Sirens's net payable for 2025-07, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable does The Stray Sirens have for 2025-07?",
+    "For the period 2025-07, what is The Stray Sirens's net payable once recoupment has been applied?",
+    "What amount is The Stray Sirens owed as net payable for 2025-07, following recoupment?"
+   ],
+   "attempts": 1
+  },
+  "hand-royalty_math-02": {
+   "body": "The Vivid Quarry's deal terminated on 2026-01-31, but their recordings keep earning. How much gross royalty did their catalog generate for 2026-06, months after termination?",
+   "paraphrases": [
+    "After The Vivid Quarry's deal ended on 2026-01-31, their catalog continued to produce revenue. What gross royalty amount did it generate in 2026-06?",
+    "The Vivid Quarry's contract terminated on 2026-01-31, yet their recordings remained revenue-generating. In 2026-06, what gross royalty did their catalog earn?",
+    "Despite termination on 2026-01-31, The Vivid Quarry's catalog kept earning royalties. How much gross royalty did it generate for the month 2026-06?"
+   ],
+   "attempts": 1
+  },
+  "hand-royalty_math-03": {
+   "body": "What is Astrid Dunes's net payable for 2026-06, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what is Astrid Dunes's net payable for 2026-06?",
+    "For the period 2026-06, what does Astrid Dunes owe as net payable once recoupment has been applied?",
+    "What amount is net payable to Astrid Dunes in 2026-06 following recoupment?"
+   ],
+   "attempts": 1
+  },
+  "hand-royalty_math-04": {
+   "body": "What is Umbra's net payable for 2025-11, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what is Umbra's net payable for 2025-11?",
+    "For the period 2025-11, what does Umbra owe as net payable once recoupment is applied?",
+    "What net payable amount is due to Umbra in 2025-11 following recoupment?"
+   ],
+   "attempts": 1
+  },
+  "hand-royalty_math-05": {
+   "body": "Before any recoupment, how much gross royalty did Umbra's catalog earn in 2026-04?",
+   "paraphrases": [
+    "What gross royalty amount did Umbra's catalog generate in 2026-04 prior to recoupment?",
+    "In 2026-04, before recoupment was applied, what were the gross royalties earned by Umbra's catalog?",
+    "Gross royalties from Umbra's catalog for 2026-04, calculated before any recoupment, totaled how much?"
+   ],
+   "attempts": 1
+  },
+  "hand-sql_analytics-01": {
+   "body": "How many distinct tracks (by ISRC) earned sync licensing revenue in Q1 2026 — statement lines dated 2026-01 through 2026-03?",
+   "paraphrases": [
+    "In Q1 2026, how many tracks with distinct ISRCs generated sync licensing revenue across statement lines dated 2026-01 through 2026-03?",
+    "What count of unique ISRCs produced sync licensing revenue during the period 2026-01 through 2026-03 (Q1 2026) according to statement lines?",
+    "Across statement lines dated 2026-01 through 2026-03, how many separate tracks identified by ISRC earned sync licensing revenue in Q1 2026?"
+   ],
+   "attempts": 1
+  },
+  "multi_step-001": {
+   "body": "Run reconciliation for 2025-08: scan the period's statements for anomalies, compute proposed allocations with corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $500 for 2025-08?",
+   "paraphrases": [
+    "For 2025-08, which artists merit payment exceeding $500 after you reconcile statements by identifying anomalies, calculate allocations with corrupt reporting removed, and send one flagged batch to human review?",
+    "After reconciling 2025-08 by scanning for anomalies, computing proposed allocations excluding corrupt reporting, and submitting a single flagged batch for human review, which artists should receive more than $500?",
+    "Which artists qualify for more than $500 in 2025-08 payments, given that you reconcile the period by detecting anomalies in statements, deriving allocations with corrupt reporting excluded, and delivering exactly one flagged batch for human review?"
+   ],
+   "attempts": 1
+  },
+  "multi_step-002": {
+   "body": "Run reconciliation for 2025-09: scan the period's statements for anomalies, compute proposed allocations with corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $1,500 for 2025-09?",
+   "paraphrases": [
+    "After running reconciliation for 2025-09 by scanning statements for anomalies, computing proposed allocations with corrupt reporting excluded, and submitting exactly one batch for human review with flags attached, which artists are entitled to payment exceeding $1,500 for 2025-09?",
+    "Perform reconciliation for 2025-09: identify anomalies in period statements, calculate proposed allocations excluding corrupt reporting, submit one batch for human review with your flags, then identify which artists merit payment above $1,500 for 2025-09.",
+    "Which artists should receive more than $1,500 in payment for 2025-09, following completion of reconciliation that includes scanning 2025-09 statements for anomalies, computing proposed allocations with corrupt reporting excluded, and submitting exactly one batch for human review with flags attached?"
+   ],
+   "attempts": 1
+  },
+  "multi_step-003": {
+   "body": "Run reconciliation for 2025-10: scan the period's statements for anomalies, compute proposed allocations with corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $2,000 for 2025-10?",
+   "paraphrases": [
+    "For 2025-10, perform reconciliation by examining the period's statements for anomalies, calculating proposed allocations while excluding corrupt reporting, and submitting a single batch flagged for human review; which artists should receive more than $2,000 in 2025-10?",
+    "Reconcile 2025-10 by scanning statements for anomalies, computing proposed allocations with corrupt reporting excluded, and submitting exactly one flagged batch for human review—then identify which artists merit payment exceeding $2,000 for 2025-10.",
+    "Execute reconciliation on 2025-10: identify statement anomalies, produce proposed allocations excluding corrupt reporting, submit one batch with flags for human review, and report which artists qualify for more than $2,000 in 2025-10 compensation."
+   ],
+   "attempts": 1
+  },
+  "multi_step-004": {
+   "body": "Run reconciliation for 2025-11: scan the period's statements for anomalies, compute proposed allocations with corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $750 for 2025-11?",
+   "paraphrases": [
+    "Perform a reconciliation of 2025-11 by reviewing the period's statements for anomalies, calculating proposed allocations with corrupt reporting removed, and submitting a single batch flagged for human review; which artists merit payment exceeding $750 during 2025-11?",
+    "After reconciling 2025-11—scanning statements for anomalies, computing allocations excluding corrupt reporting, and submitting one flagged batch for human review—identify which artists should receive more than $750 in 2025-11.",
+    "Reconcile 2025-11 through statement review for anomalies, allocation computation with corrupt reporting excluded, and submission of exactly one flagged batch to human review; then list the artists qualifying for payment above $750 in 2025-11."
+   ],
+   "attempts": 1
+  },
+  "multi_step-005": {
+   "body": "Run reconciliation for 2026-01: scan the period's statements for anomalies, compute proposed allocations with corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $1,250 for 2026-01?",
+   "paraphrases": [
+    "After running reconciliation for 2026-01 by scanning statements for anomalies, computing proposed allocations with corrupt reporting excluded, and submitting exactly one batch for human review with your flags attached, which artists should receive more than $1,250 for 2026-01?",
+    "Perform reconciliation for 2026-01: identify anomalies in the period's statements, calculate proposed allocations excluding corrupt reporting, and submit one batch for human review bearing your flags. Which artists merit payment exceeding $1,250 for 2026-01?",
+    "Reconcile 2026-01 by examining statements for anomalies, deriving proposed allocations with corrupt reporting set aside, and presenting exactly one batch to human reviewers with flags noted. For 2026-01, name the artists who should be paid above $1,250."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-001": {
+   "body": "Scan every statement for period 2025-07 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Examine all statements from period 2025-07 for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, reporting only genuine out-of-tolerance findings, not as a batch.",
+    "Review each statement covering period 2025-07 to identify reporting anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, dashboard divergence—and report only genuine out-of-tolerance findings without batch submission.",
+    "For period 2025-07, scan all statements to detect reporting anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine out-of-tolerance findings, excluding batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-002": {
+   "body": "Scan every statement for period 2025-08 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Review all statements from period 2025-08 for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, reporting only genuine out-of-tolerance findings without submitting a batch.",
+    "Examine every statement covering period 2025-08 to identify reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, dashboard divergence — and report only genuine findings that exceed tolerance thresholds; do not submit a batch.",
+    "Scan all statements for the period 2025-08 flagging reporting anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report genuine out-of-tolerance findings only and refrain from batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-003": {
+   "body": "Scan every statement for period 2025-09 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Examine all statements covering period 2025-09 for reporting anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence—and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "Review each statement in period 2025-09 to identify reporting anomalies: duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Surface only genuine, out-of-tolerance findings. Do not submit a batch.",
+    "For period 2025-09, scan all statements for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, reporting genuine, out-of-tolerance findings only and avoiding batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-004": {
+   "body": "Scan every statement for period 2025-10 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Review all statements from period 2025-10 for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, reporting only genuine out-of-tolerance findings and excluding batch submissions.",
+    "Examine each statement covering period 2025-10 to identify reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "For period 2025-10, scan all statements to detect reporting anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, providing only genuine out-of-tolerance findings and no batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-005": {
+   "body": "Scan every statement for period 2025-11 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Examine all statements from period 2025-11 and identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings and do not submit a batch.",
+    "Review each statement for the period 2025-11 to detect anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — reporting only genuine, out-of-tolerance findings; do not submit a batch.",
+    "Scan statements for period 2025-11 for reporting anomalies (duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence); report genuine, out-of-tolerance findings only and do not submit a batch."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-006": {
+   "body": "Scan every statement for period 2025-12 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Examine all statements with period 2025-12 to identify reporting anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence—and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "Check every statement for period 2025-12 for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings and do not submit a batch.",
+    "For period 2025-12, scan all statements to detect reporting anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence—then report only genuine, out-of-tolerance findings without a batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-007": {
+   "body": "Scan every statement for period 2026-01 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Review all statements covering period 2026-01 for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, flagging only genuine out-of-tolerance findings and excluding batch submissions.",
+    "Examine each statement in period 2026-01 to identify reporting anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, dashboard divergence—and report only genuine, out-of-tolerance results without submitting a batch.",
+    "For period 2026-01, audit all statements against reporting anomalies (duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, dashboard divergence) and surface only genuine out-of-tolerance findings, not as a batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-008": {
+   "body": "Scan every statement for period 2026-02 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Review all statements covering 2026-02 to identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, reporting only genuine out-of-tolerance findings without submitting a batch.",
+    "Examine each statement for the 2026-02 period in search of anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings; do not submit a batch.",
+    "For period 2026-02, scan all statements to detect anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, submitting only genuine out-of-tolerance findings and not a batch."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-009": {
+   "body": "Scan every statement for period 2026-03 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Review all statements covering the period 2026-03 and flag reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings and do not submit a batch.",
+    "Examine each statement for the period 2026-03 to identify reporting anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence—and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "Scan all statements for period 2026-03 to detect reporting anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; submit only genuine, out-of-tolerance findings and do not submit a batch."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-010": {
+   "body": "Scan every statement for period 2026-04 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "For period 2026-04, examine all statements and identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings and do not submit a batch.",
+    "Scan all statements covering period 2026-04 to detect anomalies—duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence—and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "Review every statement for period 2026-04 looking for reporting anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; submit only genuine, out-of-tolerance findings and do not submit a batch."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-011": {
+   "body": "Scan every statement for period 2026-05 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Examine all statements covering period 2026-05 for reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence, reporting only genuine findings that exceed tolerance thresholds and submitting them individually rather than as a batch.",
+    "Review each statement for the period 2026-05 to identify reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "Across all statements for 2026-05, locate reporting anomalies such as duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report genuine out-of-tolerance findings only, not as a batch submission."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-012": {
+   "body": "Scan every statement for period 2026-06 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
+   "paraphrases": [
+    "Review all statements covering the 2026-06 period for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings without submitting a batch.",
+    "Examine every statement for the 2026-06 period to identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings and do not submit a batch.",
+    "Anomalies in statements for 2026-06 — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — should be scanned across every statement and reported only if genuine and out-of-tolerance; do not submit a batch."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-013": {
+   "body": "Scan one statement only: statement id 203 (PulseWave Distribution, period 2025-08). Report every out-of-tolerance anomaly on it. Do not submit a batch.",
+   "paraphrases": [
+    "Review statement id 203 from PulseWave Distribution covering period 2025-08 and list all out-of-tolerance anomalies found on that statement only. Do not process multiple statements.",
+    "Identify every out-of-tolerance anomaly present on statement id 203 (PulseWave Distribution, period 2025-08). Examine only this single statement; do not submit a batch.",
+    "For statement id 203 (PulseWave Distribution, period 2025-08), report all out-of-tolerance anomalies. Scan this statement alone; submission of a batch is not permitted."
+   ],
+   "attempts": 1
+  },
+  "reconciliation-014": {
+   "body": "Scan one statement only: statement id 303 (PulseWave Distribution, period 2025-09). Report every out-of-tolerance anomaly on it. Do not submit a batch.",
+   "paraphrases": [
+    "Report every out-of-tolerance anomaly found on statement id 303 (PulseWave Distribution, period 2025-09). Scan only this one statement; do not submit a batch.",
+    "Examine statement id 303 (PulseWave Distribution, period 2025-09) for every out-of-tolerance anomaly. Limit your scan to this single statement and do not submit a batch.",
+    "Locate and report all out-of-tolerance anomalies on statement id 303 (PulseWave Distribution, period 2025-09). Scan one statement only; do not submit a batch."
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-001": {
+   "body": "As of the end of 2026-06, is Stellan Okonkwo's recoupment account fully recouped?",
+   "paraphrases": [
+    "By the end of 2026-06, has Stellan Okonkwo's recoupment account reached full recoupment?",
+    "At 2026-06's conclusion, is Stellan Okonkwo's recoupment account fully recouped?",
+    "Has Stellan Okonkwo's recoupment account been fully recouped as of 2026-06's end?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-002": {
+   "body": "As of the end of 2026-06, is Yuki Takeda's recoupment account fully recouped?",
+   "paraphrases": [
+    "By the conclusion of 2026-06, has Yuki Takeda's recoupment account reached full recoupment?",
+    "At 2026-06's end, has Yuki Takeda's recoupment account been fully recouped?",
+    "As of 2026-06's close, is the recoupment account for Yuki Takeda fully recouped?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-003": {
+   "body": "As of the end of 2026-06, is Gentle Paradox's recoupment account fully recouped?",
+   "paraphrases": [
+    "By 2026-06's end, has Gentle Paradox achieved full recoupment on their account?",
+    "Will Gentle Paradox's recoupment account be fully recouped by the conclusion of 2026-06?",
+    "At 2026-06's close, does Gentle Paradox have a fully recouped recoupment account?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-004": {
+   "body": "As of the end of 2026-06, is The Gentle Reverie's recoupment account fully recouped?",
+   "paraphrases": [
+    "By 2026-06's end, has The Gentle Reverie's recoupment account reached full recoupment?",
+    "Has The Gentle Reverie's recoupment account been fully recouped as of 2026-06's conclusion?",
+    "At the close of 2026-06, does The Gentle Reverie's recoupment account show complete recoupment?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-005": {
+   "body": "As of the end of 2026-06, is Omar & The Monolith's recoupment account fully recouped?",
+   "paraphrases": [
+    "By 2026-06's end, has Omar & The Monolith's recoupment account achieved full recoupment?",
+    "Has Omar & The Monolith's recoupment account been fully recouped as of 2026-06's conclusion?",
+    "At the conclusion of 2026-06, does Omar & The Monolith's recoupment account show full recoupment?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-006": {
+   "body": "As of the end of 2026-06, is Dusky Harbor's recoupment account fully recouped?",
+   "paraphrases": [
+    "By 2026-06's end, has Dusky Harbor fully recouped its recoupment account?",
+    "At the conclusion of 2026-06, will Dusky Harbor's recoupment account be fully recouped?",
+    "Has Dusky Harbor's recoupment account achieved full recoupment as of 2026-06's close?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-007": {
+   "body": "As of the end of 2026-06, is Paradox's recoupment account fully recouped?",
+   "paraphrases": [
+    "By 2026-06's conclusion, has Paradox's recoupment account reached full recoupment?",
+    "At the close of 2026-06, will Paradox's recoupment account be fully recouped?",
+    "Has Paradox's recoupment account achieved full recoupment by the end of 2026-06?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-008": {
+   "body": "What unrecouped balance remained on Sanne & The Karma's account at the end of 2026-01?",
+   "paraphrases": [
+    "At the end of 2026-01, what was the unrecouped balance still owed on Sanne & The Karma's account?",
+    "How much unrecouped balance remained on Sanne & The Karma's account as of 2026-01's close?",
+    "What unrecouped balance was outstanding on Sanne & The Karma's account by the end of 2026-01?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-009": {
+   "body": "What unrecouped balance remained on The Vivid Quarry's account at the end of 2026-06?",
+   "paraphrases": [
+    "At the end of 2026-06, what was the unrecouped balance still owed on The Vivid Quarry's account?",
+    "The Vivid Quarry's account held what unrecouped balance as of 2026-06's close?",
+    "How much unrecouped balance was outstanding on The Vivid Quarry's account when 2026-06 ended?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-010": {
+   "body": "What unrecouped balance remained on Horizon's account at the end of 2026-02?",
+   "paraphrases": [
+    "By the end of 2026-02, what unrecouped balance was still outstanding on Horizon's account?",
+    "At 2026-02's conclusion, how much unrecouped balance remained owed on Horizon's account?",
+    "What amount of unrecouped balance had not been recovered on Horizon's account as of 2026-02's end?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-011": {
+   "body": "What unrecouped balance remained on Viggo Ibarra's account at the end of 2026-03?",
+   "paraphrases": [
+    "At the close of 2026-03, what was the unrecouped balance still owed on Viggo Ibarra's account?",
+    "How much unrecouped balance existed on Viggo Ibarra's account as of 2026-03's end?",
+    "Viggo Ibarra's account held what unrecouped balance at the termination of 2026-03?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-012": {
+   "body": "In which month did Felix & The Chorus's recoupment account first reach a fully recouped (zero) balance? Consider the seeded accounting window, 2025-07 through 2026-06.",
+   "paraphrases": [
+    "Considering the seeded accounting window of 2025-07 through 2026-06, in which month did Felix & The Chorus's recoupment account achieve a fully recouped (zero) balance for the first time?",
+    "During the seeded accounting window from 2025-07 through 2026-06, when did Felix & The Chorus's recoupment account first reach zero balance?",
+    "Within the seeded accounting window 2025-07 through 2026-06, what month saw Felix & The Chorus's recoupment account first become fully recouped at zero balance?"
+   ],
+   "attempts": 1
+  },
+  "recoupment_state-013": {
+   "body": "In which month did Thicket's recoupment account first reach a fully recouped (zero) balance? Consider the seeded accounting window, 2025-07 through 2026-06.",
+   "paraphrases": [
+    "During the accounting window of 2025-07 through 2026-06, in what month did Thicket's recoupment account achieve a fully recouped (zero) balance for the first time?",
+    "Within the seeded accounting window spanning 2025-07 through 2026-06, when did Thicket's recoupment account first attain a fully recouped (zero) balance?",
+    "Considering the seeded accounting window 2025-07 through 2026-06, what month marks the first instance of Thicket's recoupment account reaching a fully recouped (zero) balance?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-001": {
+   "body": "What is Mariko Chorus's net payable for 2026-02, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount is Mariko Chorus owed for 2026-02?",
+    "For 2026-02, what is Mariko Chorus's net payable amount following recoupment?",
+    "What does Mariko Chorus net for 2026-02 after recoupment is applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-002": {
+   "body": "What is Ruth Moreau's net payable for 2025-11, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what is Ruth Moreau's net payable for 2025-11?",
+    "Ruth Moreau's net payable for 2025-11, following recoupment, equals what?",
+    "What amount is Ruth Moreau's net payable for 2025-11 once recoupment is applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-003": {
+   "body": "What is Northern Quarry's net payable for 2025-08, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what does Northern Quarry owe as net payable in 2025-08?",
+    "For the period 2025-08, what is Northern Quarry's net payable amount once recoupment is applied?",
+    "Northern Quarry's net payable for 2025-08, calculated after recoupment, is what?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-004": {
+   "body": "What is Freja Norup's net payable for 2025-10, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount does Freja Norup have for 2025-10?",
+    "For 2025-10, what is Freja Norup's net payable following recoupment?",
+    "What does Freja Norup owe net for 2025-10 after recoupment is applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-005": {
+   "body": "What is Satellites's net payable for 2025-12, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what does Satellites owe as net payable for 2025-12?",
+    "For the period 2025-12, what is Satellites's net payable once recoupment has been applied?",
+    "What amount is Satellites's net payable in 2025-12 following recoupment?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-006": {
+   "body": "What is Hugo Sanctuary's net payable for 2026-04, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what does Hugo Sanctuary owe as net payable for 2026-04?",
+    "What net payable amount is due to Hugo Sanctuary for 2026-04 once recoupment is applied?",
+    "Following recoupment, calculate Hugo Sanctuary's net payable for 2026-04."
+   ],
+   "attempts": 1
+  },
+  "royalty_math-007": {
+   "body": "What is The Blazing Bloom's net payable for 2025-07, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount is due to The Blazing Bloom for 2025-07?",
+    "For the period 2025-07, what is The Blazing Bloom's net payable following recoupment?",
+    "What does The Blazing Bloom owe in net payable for 2025-07 once recoupment has been applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-008": {
+   "body": "What is Kofi & The Lantern's net payable for 2026-04, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount is due to Kofi & The Lantern for 2026-04?",
+    "For the period 2026-04, what is Kofi & The Lantern's net payable following recoupment?",
+    "What does Kofi & The Lantern net as payable for 2026-04 once recoupment is applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-009": {
+   "body": "What is Vivid Paradox's net payable for 2025-09, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what amount is Vivid Paradox's net payable for 2025-09?",
+    "For the period 2025-09, what does Vivid Paradox owe as net payable once recoupment is applied?",
+    "What is the net payable owed to Vivid Paradox for 2025-09 following recoupment?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-010": {
+   "body": "What is Esme Tempest's net payable for 2025-10, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount is owed to Esme Tempest for 2025-10?",
+    "For the period 2025-10, what is the net payable to Esme Tempest following recoupment?",
+    "What does Esme Tempest receive as net payable for 2025-10 once recoupment has been applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-011": {
+   "body": "What is Freja Signal's net payable for 2025-09, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount is owed to Freja Signal for 2025-09?",
+    "For the period 2025-09, what is Freja Signal's net payable following recoupment?",
+    "What amount does Freja Signal have as net payable for 2025-09 once recoupment has been applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-012": {
+   "body": "What is Viggo Ibarra's net payable for 2025-09, after recoupment?",
+   "paraphrases": [
+    "After recoupment, what net payable amount is due to Viggo Ibarra for 2025-09?",
+    "For the period 2025-09, calculate Viggo Ibarra's net payable following recoupment.",
+    "What does Viggo Ibarra receive as net payable for 2025-09 once recoupment is applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-013": {
+   "body": "Before recoupment, how much gross royalty did Drifting Vessel's catalog earn in 2026-05?",
+   "paraphrases": [
+    "What was the gross royalty earned by Drifting Vessel's catalog in 2026-05, prior to recoupment?",
+    "In 2026-05, how much did Drifting Vessel's catalog generate in gross royalty before recoupment was applied?",
+    "Prior to recoupment, what gross royalty amount did Drifting Vessel's catalog earn during 2026-05?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-014": {
+   "body": "Before recoupment, how much gross royalty did Yuki Vance's catalog earn in 2025-12?",
+   "paraphrases": [
+    "What was the gross royalty earned by Yuki Vance's catalog during 2025-12, prior to recoupment?",
+    "In 2025-12, prior to recoupment, how much did Yuki Vance's catalog generate in gross royalties?",
+    "How much gross royalty did Yuki Vance's catalog earn in 2025-12 before recoupment?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-015": {
+   "body": "Before recoupment, how much gross royalty did Nikolai Sanctuary's catalog earn in 2026-03?",
+   "paraphrases": [
+    "What gross royalty amount, prior to recoupment, was generated by Nikolai Sanctuary's catalog during 2026-03?",
+    "In 2026-03, before recoupment was applied, how much in gross royalties did Nikolai Sanctuary's catalog generate?",
+    "How much gross royalty did Nikolai Sanctuary's catalog earn in 2026-03 before recoupment?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-016": {
+   "body": "Before recoupment, how much gross royalty did Velvet Voltage's catalog earn in 2026-04?",
+   "paraphrases": [
+    "What gross royalty amount did Velvet Voltage's catalog generate in 2026-04, prior to recoupment?",
+    "In 2026-04, how much gross royalty was earned by Velvet Voltage's catalog before recoupment?",
+    "Velvet Voltage's catalog earned how much in gross royalty during 2026-04, before recoupment was applied?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-017": {
+   "body": "How much of Sparrow's 2026-02 royalties were applied to their unrecouped balance rather than paid out?",
+   "paraphrases": [
+    "Of Sparrow's 2026-02 royalties, what portion went toward their unrecouped balance instead of being distributed as payment?",
+    "What percentage of Sparrow's 2026-02 royalties were credited to their unrecouped balance rather than paid out?",
+    "In 2026-02, how much of Sparrow's royalties were applied against their unrecouped balance as opposed to paid out?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-018": {
+   "body": "How much of Beatriz Romano's 2026-04 royalties were applied to their unrecouped balance rather than paid out?",
+   "paraphrases": [
+    "What portion of Beatriz Romano's 2026-04 royalties went toward reducing their unrecouped balance instead of being paid to them?",
+    "Of Beatriz Romano's 2026-04 royalties, how much was applied to the unrecouped balance rather than distributed as payment?",
+    "In 2026-04, what amount of Beatriz Romano's royalties was retained to offset their unrecouped balance instead of being paid out?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-019": {
+   "body": "How much of The Rusted Fjord's 2026-02 royalties were applied to their unrecouped balance rather than paid out?",
+   "paraphrases": [
+    "What portion of The Rusted Fjord's 2026-02 royalties went toward reducing their unrecouped balance instead of being distributed as payment?",
+    "Of The Rusted Fjord's 2026-02 royalties, how much was applied against their unrecouped balance as opposed to being paid out?",
+    "In 2026-02, how much of The Rusted Fjord's royalties were directed to their unrecouped balance rather than paid to them?"
+   ],
+   "attempts": 1
+  },
+  "royalty_math-020": {
+   "body": "How much of The Analog Odyssey's 2025-12 royalties were applied to their unrecouped balance rather than paid out?",
+   "paraphrases": [
+    "What portion of The Analog Odyssey's 2025-12 royalties went toward reducing their unrecouped balance instead of being distributed as payment?",
+    "Of The Analog Odyssey's 2025-12 royalties, how much was applied against their unrecouped balance as opposed to being paid out?",
+    "The Analog Odyssey's 2025-12 royalties were split between payment and recouping their unrecouped balance—what amount went to the recoupment?"
+   ],
+   "attempts": 1
+  },
+  "sql_analytics-001": {
+   "body": "How many line items does the SyncBridge Licensing statement for 2026-05 contain (statement id 1106)?",
+   "paraphrases": [
+    "What is the count of line items in statement id 1106, the SyncBridge Licensing statement for 2026-05?",
+    "Statement id 1106 is the SyncBridge Licensing statement for 2026-05; how many line items are listed in it?",
+    "The SyncBridge Licensing statement for 2026-05 (statement id 1106) contains how many line items?"
+   ],
+   "attempts": 1
+  },
+  "sql_analytics-002": {
+   "body": "How many line items does the Kinetic Digital statement for 2025-12 contain (statement id 601)?",
+   "paraphrases": [
+    "What is the count of line items in Kinetic Digital's statement 601 for 2025-12?",
+    "Statement 601, issued by Kinetic Digital for 2025-12, comprises how many line items?",
+    "How many line items appear on the Kinetic Digital statement id 601 dated 2025-12?"
+   ],
+   "attempts": 1
+  },
+  "sql_analytics-005": {
+   "body": "Which territory reported the most units on the Chorusly store in 2026-01 (statement lines dated 2026-01)?",
+   "paraphrases": [
+    "In 2026-01, which territory had the highest unit count reported on the Chorusly store according to statement lines dated 2026-01?",
+    "What territory accounted for the most units sold on the Chorusly store in 2026-01 based on statement lines dated 2026-01?",
+    "Of all territories on the Chorusly store with statement lines dated 2026-01, which one reported the greatest number of units in that period?"
+   ],
+   "attempts": 1
+  },
+  "sql_analytics-006": {
+   "body": "Which store reported the highest total units across 2025-08?",
+   "paraphrases": [
+    "In 2025-08, which store had the greatest total units reported?",
+    "What store achieved the highest total unit count during 2025-08?",
+    "Which store's total units for 2025-08 exceeded all others?"
+   ],
+   "attempts": 1
+  },
+  "sql_analytics-007": {
+   "body": "What is the total gross amount, in USD, of the SyncBridge Licensing statement for 2025-11 (statement id 506)?",
+   "paraphrases": [
+    "Statement 506 from SyncBridge Licensing for 2025-11 shows what total gross amount in USD?",
+    "In USD, what is the total gross amount reported in the SyncBridge Licensing statement 506 for 2025-11?",
+    "The SyncBridge Licensing statement for 2025-11 (statement id 506) contains what total gross amount, expressed in USD?"
+   ],
+   "attempts": 1
+  }
+ },
+ "unresolved": [
+  {
+   "id": "hand-catalog_lookup-01",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Counting",
+    "attempt 3, candidate 2: lost name: Counting",
+    "attempt 3, candidate 3: lost code: EP; lost name: Counting"
+   ]
+  },
+  {
+   "id": "hand-contract_terms-01",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Please",
+    "attempt 3, candidate 2: lost name: Please",
+    "attempt 3, candidate 3: lost name: Please"
+   ]
+  },
+  {
+   "id": "cross_collateral-004",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Across",
+    "attempt 3, candidate 2: lost name: Across",
+    "attempt 3, candidate 3: lost name: Across"
+   ]
+  },
+  {
+   "id": "cross_collateral-005",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Across",
+    "attempt 3, candidate 2: lost name: Across",
+    "attempt 3, candidate 3: lost name: Across"
+   ]
+  },
+  {
+   "id": "hand-cross_collateral-01",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Across",
+    "attempt 3, candidate 2: lost name: Across",
+    "attempt 3, candidate 3: lost name: Across"
+   ]
+  },
+  {
+   "id": "sql_analytics-003",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Summing",
+    "attempt 3, candidate 2: lost name: Summing",
+    "attempt 3, candidate 3: lost name: Summing"
+   ]
+  },
+  {
+   "id": "sql_analytics-004",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Summing",
+    "attempt 3, candidate 2: lost name: Summing",
+    "attempt 3, candidate 3: lost name: Summing"
+   ]
+  },
+  {
+   "id": "sql_analytics-008",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Across",
+    "attempt 3, candidate 2: lost name: Across",
+    "attempt 3, candidate 3: lost name: Across"
+   ]
+  },
+  {
+   "id": "hand-sql_analytics-02",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Exactly",
+    "attempt 3, candidate 2: lost name: Exactly",
+    "attempt 3, candidate 3: lost name: Exactly"
+   ]
+  },
+  {
+   "id": "hand-reconciliation-01",
+   "failures": [
+    "attempt 3, candidate 1: lost code: ONLY; lost name: Audit",
+    "attempt 3, candidate 2: lost code: ONLY",
+    "attempt 3, candidate 3: lost code: ONLY; lost name: Audit"
+   ]
+  },
+  {
+   "id": "multi_step-006",
+   "failures": [
+    "attempt 3, candidate 1: lost code: US; lost name: Suppose",
+    "attempt 3, candidate 2: lost name: States, Suppose, United",
+    "attempt 3, candidate 3: lost code: US; lost name: Suppose"
+   ]
+  },
+  {
+   "id": "multi_step-007",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Germany, Suppose",
+    "attempt 3, candidate 2: lost name: Suppose",
+    "attempt 3, candidate 3: lost name: Germany, Suppose"
+   ]
+  },
+  {
+   "id": "multi_step-008",
+   "failures": [
+    "attempt 3, candidate 1: lost code: US; lost name: Suppose",
+    "attempt 3, candidate 2: lost code: US; lost name: Suppose",
+    "attempt 3, candidate 3: lost code: US; lost name: Suppose"
+   ]
+  },
+  {
+   "id": "multi_step-009",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Suppose",
+    "attempt 3, candidate 2: lost name: Kingdom, Suppose, United",
+    "attempt 3, candidate 3: lost name: Kingdom, Suppose, United"
+   ]
+  },
+  {
+   "id": "multi_step-010",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Suppose",
+    "attempt 3, candidate 2: lost name: Kingdom, Suppose, United",
+    "attempt 3, candidate 3: lost name: Kingdom, Suppose, United"
+   ]
+  },
+  {
+   "id": "hand-multi_step-02",
+   "failures": [
+    "attempt 3, candidate 1: lost name: Kingdom, Suppose, United",
+    "attempt 3, candidate 2: lost name: Suppose",
+    "attempt 3, candidate 3: lost name: Kingdom, Suppose, United"
+   ]
+  }
+ ]
+}

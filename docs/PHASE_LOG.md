@@ -5133,3 +5133,71 @@ committed artifact whose hash covers its texts and its equivalence matrix. Inclu
 curve from the published corpus — so **the numbers in `REPORT.md` are regenerated on every
 pull request rather than trusted**. Phase 11's doc-pinning discipline, arriving three phases
 early because a published finding is exactly the thing that must not drift from its input.
+
+---
+
+### Phase 8 addendum — the entity checker's false positives (pre-measurement, H-068)
+
+**Not a new phase; a correction on the open PR-8 branch, before any measurement exists.**
+
+The operator ran the paid paraphrase batch. It landed **114/130 for $0.19** and left **16
+UNRESOLVED**, and the failure log showed the cause was the checker, not the model: the
+mechanical entity extractor was reading sentence-initial capitalised common words as entity
+names that a paraphrase must preserve. Verbatim from the run — `Suppose` (×6), `Across`
+(×4), `Summing` (×2), `Counting`, `Please`, `Exactly`, `Audit`, plus the code `ONLY`. The
+failures were identical across all 3 candidates over all 3 attempts, so re-drawing could
+never have cleared them: the rule admitted no correct answer.
+
+**Shipped**
+
+- `experiments/h1/checks.py` — three narrow amendments, argued per case in **H-068**:
+  sentence position is not entityhood (exempt only when the word both opens a sentence *and*
+  is an ordinary English word); ALL-CAPS emphasis at length ≥ 3 is not a code; and a gloss
+  the body writes itself (`United States (US)`) becomes one `AliasGroup` satisfied by either
+  spelling, with `U.S.` normalising to `US`. The exemptions apply to the **body** only —
+  `salient_tokens` still reads a candidate literally, so a paraphrase that opens with
+  `Voltage has …` is not failed for losing the name it opens with.
+- `tests/test_experiments_h1.py` — **27 new tests, 1148 → 1175**. All 16 failing questions
+  have their extraction pinned per question, asserting both halves: the spurious token
+  absent *and* the real entities still required. Plus five faithful paraphrases of stuck
+  questions that now pass, and the guards that keep the amendment narrow — `EP` still
+  required exactly, an alias group still failing when both spellings go, a common word still
+  required mid-clause, a real name still required at a sentence start.
+- `experiments/RUNBOOK.md` — the exact `--only` command for the 16, with the harness's own
+  projection (`worst case $0.043393`, ~$0.13 if every question needs all three rounds).
+- `docs/DECISIONS.md` — H-068, including the per-case adjudication the correction turns on.
+
+**Adjudicated per case, not by one rule**
+
+`US ≡ U.S. ≡ United States` (and `GB`, `DE`, `JP`) — **canonical-variant equivalence
+accepted**, because the question's own text writes the gloss, and the run produced correct
+paraphrases resolving in *both* directions. `EP` — **exact survival still required**: it
+fixes the scope of `hand-catalog_lookup-01`, has no in-text gloss, and two of three
+candidates kept it unprompted, so the requirement costs nothing. `ONLY` — **dropped**, as
+emphasis capitalisation of a word already droppable in title case. A paraphrase that drops
+or changes a real entity, period token or figure still fails, which is the poison H1
+measures.
+
+**Verified rather than assumed**
+
+- The 114 committed paraphrases were re-validated against the corrected checker: **342
+  paraphrases, 0 new failures.** Nothing moved to unresolved.
+- The exemption's blast radius was measured over all 130 bodies: it changes the status of
+  the eight tokens listed above and **nothing else** — no artist, track, label, ISRC,
+  statement id, figure or period.
+
+**Deferred to the operator (invariant: Claude Code never runs spend)**
+
+The 16 still need regenerating — the generator never persisted the rejected drafts, so the
+candidates that would now pass are gone. The `--only` command is in the runbook, costs about
+$0.05, and leaves the 114 untouched. `build.py` still refuses to assemble a corpus while
+`unresolved` is non-empty, so nothing downstream can quietly proceed without it.
+
+**Gate**
+
+```
+uv run ruff check .          All checks passed!
+uv run ruff format --check . 163 files already formatted
+uv run mypy                  Success: no issues found in 162 source files
+uv run pytest                1175 passed, 2 deselected, 1 warning in 17.23s
+```

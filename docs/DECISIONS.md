@@ -3688,3 +3688,128 @@ committed to `docs/evidence/p8-experiments/` in this PR and the raw query output
 after which the volume may be wiped freely. The mock half runs in CI on every pull request and is
 reproducible by a stranger; the live half is the operator's desk and is labelled as such, exactly
 as P6's two-GPU demo already is.
+
+---
+
+## H-068 — The entity check counted sentence position as entityhood; amended before any measurement (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the paid paraphrase batch. It completed **114/130 with 16
+UNRESOLVED**, and every one of the 16 failed on the same shape:
+
+```
+hand-catalog_lookup-01   lost name: Counting          (candidate 3 also: lost code: EP)
+hand-contract_terms-01   lost name: Please
+cross_collateral-004     lost name: Across
+cross_collateral-005     lost name: Across
+hand-cross_collateral-01 lost name: Across
+sql_analytics-003        lost name: Summing
+sql_analytics-004        lost name: Summing
+sql_analytics-008        lost name: Across
+hand-sql_analytics-02    lost name: Exactly
+hand-reconciliation-01   lost code: ONLY; lost name: Audit
+multi_step-006 / -008    lost name: Suppose; lost code: US / lost name: States, Suppose, United
+multi_step-007           lost name: Germany, Suppose
+multi_step-009 / -010    lost name: Suppose; lost name: Kingdom, Suppose, United
+hand-multi_step-02       lost name: Kingdom, Suppose, United
+```
+
+`Suppose`, `Please`, `Across`, `Counting`, `Summing`, `Exactly` and `Audit` are not entities.
+They are ordinary words that happen to open a sentence, and `_NAME`'s `\b[A-Z][a-z]+\b` cannot
+tell a capital that means *proper noun* from a capital that means *this is where the sentence
+starts*. No faithful paraphrase can preserve them: rewording a question is exactly the operation
+that moves its first word. The failures were **identical across all 3 candidates over all 3
+attempts**, which is the diagnostic — a rule no correct answer satisfies is not strictness, it is
+a stuck generator burning `MAX_ROUNDS` on every draw.
+
+The module's own docstring argues the asymmetry that made over-broadness the right *default*: a
+false positive costs a regeneration, a false negative costs a probe that quietly asks a different
+question. That argument holds and is not retracted. What it assumed is that a false positive is
+*payable*. For these 16 it is not payable at any price, because the correct answer sits outside
+the accepted set.
+
+**This is a pre-measurement amendment (risk register item 3).** The batch is fixed before any
+measurement exists: no sweep, figure or analysis has read `h1_paraphrases.json`, the corpus is
+not built from it, and no H1 number exists anywhere in the repo. The checker is corrected against
+*failures*, never against a curve.
+
+**Decision — three narrow amendments, and the exemptions apply to the body, never to the
+candidate.**
+
+1. **Position is not entityhood.** A capitalised word is exempt only when it opens a sentence
+   **and** is an ordinary English word (`COMMON_WORDS`). The conjunction is the safety property:
+   drop the first clause and the track `"Bones"` stops being required; drop the second and
+   `Voltage has more than one agreement` loses its artist. Only spaces and tabs are stepped over
+   when deciding "opens a sentence", so `"Bones"` and `(Kinetic Digital` — quoted, bracketed —
+   are not sentence openings and keep their capital's meaning. A name is exempt only if *every*
+   occurrence is positional; one mid-clause use makes it an entity everywhere in that body.
+2. **ALL-CAPS emphasis is not a code.** `report ONLY findings that are genuinely out of
+   tolerance` is emphasis; `_CODE` read it as an identifier and three of three candidates dropped
+   it. Exempt only at length ≥ 3 and only for words already in the lexicon, which is what keeps
+   `US`, `GB`, `DE` and `EP` codes.
+3. **A gloss the body writes itself declares an equivalence.** `United States (US)` is one entity
+   with two spellings *because the question says so*, so the pair becomes one `AliasGroup`
+   satisfied by either. `U.S.` normalises to `US` on both sides of the comparison. Losing **both**
+   spellings still fails.
+
+**Per-case adjudication, as asked.**
+
+* **`US` ≡ `U.S.` ≡ `United States`, and `GB` / `DE` / `JP` likewise — canonical-variant
+  equivalence, accepted.** Not from a hardcoded world model: the equivalence is read out of the
+  question's own text, which writes `in the United States (US)`. A prompt that introduces an
+  abbreviation has licensed it. Both directions are legitimate and the run produced both —
+  candidates 1 and 3 of `multi_step-006` kept the long form and dropped `(US)`, candidate 2 kept
+  `US` and dropped the long form. Failing either is failing a correct answer. Four groups exist
+  across the 130 bodies: `United Kingdom (GB)` ×4, `Germany (DE)` ×2, `United States (US)` ×2,
+  `Japan (JP)` ×1.
+* **`EP` — exact-token survival required.** The opposite call, deliberately. `EP` fixes the
+  *scope* of `hand-catalog_lookup-01` ("original album or EP, plus any compilations"); a
+  paraphrase that drops it asks a narrower question and the answer key stops applying. The
+  question glosses nothing, so there is no in-text licence, and unlike a country it has no
+  standard punctuation variant. The run itself decides it: **two of the three candidates kept
+  `EP`**. A token two of three drafts preserve unprompted costs nothing to require, so it stays
+  exact and the third candidate stays refused.
+* **`ONLY` — dropped as a requirement.** Emphasis capitalisation of a word `STOPWORDS` already
+  lists as droppable in its title case (`Only`); consistency demanded one answer for both. The
+  honest limit: the mechanical layer now protects no spelling of "only" in that question, and a
+  paraphrase that drops the restriction changes the task. That was already true — the layer has
+  never protected lower-case prose — and it belongs to the operator spot-check, the second clause
+  of §P8.H1's QA chain, not to this module.
+* **`Germany`, `United`, `Kingdom`, `States` — still required, but satisfiable by their glossed
+  code.** They are real entities and their loss must still be caught; the alias group is what
+  makes "loss" mean *the referent is gone* rather than *the spelling changed*.
+
+**Alternatives considered.** *Add the seven words to `STOPWORDS`* — one line, and it drops
+`Across`, `Counting` and `Audit` everywhere including mid-clause, where a capital is real
+evidence; the fix would silently unprotect any future entity sharing those spellings. *Exempt
+every sentence-initial capital regardless of the word* — no lexicon to maintain, and it stops
+requiring `Voltage`, `Germany` and `Meridian` wherever a question opens with them, a false
+negative in exactly the class this module exists to prevent. *Raise `MAX_ROUNDS`, or hand-write
+the 16 paraphrases* — treats a broken rule as bad luck, and hand-written probes are not the
+instrument the pre-registration describes. *Ship the 114 and report on those* — an uneven corpus
+that reweights itself toward whatever the model found easy, which `build.py` already refuses.
+
+**Consequences.**
+
+* **The 114 already committed were re-validated against the corrected checker: 342 paraphrases,
+  0 new failures.** Nothing moved to unresolved. Expected, since the amendment only ever removes
+  requirements — but run rather than assumed, because "expected" is not a measurement.
+* **Blast radius, measured over all 130 bodies:** the amendment stops requiring exactly `Suppose`
+  ×6, `Across` ×4, `Summing` ×2, `Counting`, `Please`, `Exactly`, `Audit`, and the code `ONLY`.
+  No artist, track, label, ISRC, statement id, figure or period changes status. The 16 pinned
+  tests are per-question and assert both halves — spurious token absent, real entities present.
+* **The 16 still need regeneration.** The generator never persisted rejected candidates, so the
+  drafts that would now pass are gone. `--only` re-runs exactly those ids for about $0.05; the
+  command is in `experiments/RUNBOOK.md` and is the operator's to run.
+* **Residual, stated rather than hidden.** An alias group is satisfied by either spelling, so a
+  paraphrase substituting `United States (GB)` for `United Kingdom (GB)` would keep `GB` and pass
+  the mechanical layer. Catching a *substituted* entity rather than a dropped one needs a check
+  on the tokens a paraphrase **adds**, and the run's own data says that check is not viable as
+  written: 46 of the 114 accepted questions contain a paraphrase introducing a capitalised word
+  the body lacks, nearly all sentence-opening verbs (`Identify` ×13, `Examine` ×13, `Review`
+  ×12). Substitution stays with the operator spot-check, which exists for precisely this.
+* **`Counting Crows` is the shape of the remaining false negative:** a real name whose first word
+  is a common word *and* which opens the question. Its second word stays required, so the entity
+  is never wholly unprotected. No such name is in this suite; recorded so the next reader need
+  not rediscover it.

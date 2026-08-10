@@ -72,6 +72,38 @@ ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate
   ```bash
   uv run python -m experiments.h1.generate --only royalty_math-004,contract_terms-011
   ```
+  The ids to pass are printed by `build.py` when it refuses, and are in the artifact's
+  `unresolved` list. `--only` re-runs **just those** — the 114 already bought are untouched.
+
+#### The 2026-08-10 run: 114/130, and the 16 that need re-running
+
+The first full run completed 114 of 130 for **$0.19**. The other 16 were unresolvable
+against a checker bug, not against a model failure: sentence-initial common words
+(`Suppose`, `Across`, `Counting`, `Summing`, `Exactly`, `Please`, `Audit`) were being
+extracted as entity names that had to survive, and no faithful paraphrase can keep them. The
+extractor was corrected in **H-068** — before any measurement existed — and the 114 already
+committed were re-validated against the corrected rule with **0 new failures**.
+
+The rejected drafts were never persisted, so those 16 have to be drawn again. One command,
+**~$0.05**, resumable, and it will not touch the 114. The harness's own projection for the
+16 is `worst case $0.043393` for a single round each, against the unchanged `$1.00` stop:
+
+```bash
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate --only \
+hand-catalog_lookup-01,hand-contract_terms-01,cross_collateral-004,cross_collateral-005,\
+hand-cross_collateral-01,sql_analytics-003,sql_analytics-004,sql_analytics-008,\
+hand-sql_analytics-02,hand-reconciliation-01,multi_step-006,multi_step-007,\
+multi_step-008,multi_step-009,multi_step-010,hand-multi_step-02
+```
+
+Confirm it with `--dry-run` first (free) — it prints `16 to generate` and the worst case.
+A question that needs all three attempts costs up to three times its share, so the true
+ceiling for this command is ~$0.13; the harness stops at `$1.00` either way.
+
+`EP` in `hand-catalog_lookup-01` is still required exactly (H-068 explains why), so that one
+question can still legitimately fail; two of its three original candidates kept the token, so
+a re-draw is expected to clear it. Anything still `unresolved` after this run is a real
+finding, not a checker artefact — re-read the failure lines before re-running.
 
 ### 1c. The spot-check — **your gate, not the harness's**
 
