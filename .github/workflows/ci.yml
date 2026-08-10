@@ -78,7 +78,11 @@ jobs:
       # it also includes the DynamoDB half of the BudgetStore contract suite and the
       # D-019 stampede, and since Phase 4b the RateLimitStore contract suite and the
       # rate-limit hammer with its three sabotages — the tests in this repo that
-      # *cannot* run against an in-memory double. Under H-012,
+      # *cannot* run against an in-memory double. Phase 6's chaos suite runs here too
+      # and needs no service at all, which is the point of it: the failover matrix, the
+      # splice sabotage, and three fault intensities against the mock chain are fully
+      # keyless, so BUILD_PLAN §P6's "chaos suite green in CI" is a property of every
+      # pull request rather than of a machine with two GPUs. Under H-012,
       # `DYNAMODB_ENDPOINT_URL` being set explicitly
       # above means an unreachable container fails these tests rather than skipping
       # them. No AWS credential is set anywhere: the gateway supplies its own dummy

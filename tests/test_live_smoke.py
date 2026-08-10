@@ -8,7 +8,11 @@ them by hand, once, after CI is green:
     uv run pytest -m live -k anthropic -v       # just the paid one
 
 **Setup is the compose stack and one env var.** ``make up`` (the migrations are applied
-by the test itself, idempotently) plus ``ANTHROPIC_API_KEY`` or ``VLLM_BASE_URL``.
+by the test itself, idempotently) plus ``ANTHROPIC_API_KEY`` or ``VLLM_BASE_URL`` — which
+since Phase 6 is *instance A* of the operator's pair, the primary of the shipped
+``vllm_a → vllm_b`` chain. Each smoke asserts its request was served by the provider it
+was routed to (``failover_hops == 0``), because a chain means a smoke pointed at a broken
+primary would otherwise be quietly served by the fallback and pass.
 Nothing else: since Phase 2 every ``/v1/*`` request needs a virtual key, and each test
 provisions its own — a ``live-smoke`` tenant, reused across runs, and a key minted fresh
 for this one and revoked on the way out (``tests/support/live.py``). These tests sent no
@@ -162,3 +166,13 @@ async def assert_billed_to_the_smoke_tenant(
         f"not to the smoke tenant {live.identity.tenant.id}"
     )
     assert row.key_id == live.identity.key.id
+    # Phase 6 made this necessary. The shipped OpenAI route is a chain (vllm_a → vllm_b),
+    # so a smoke pointed at a *broken* primary would now be quietly served by the fallback
+    # and pass — which is the one thing a smoke must never do. A hop here is not a failure
+    # of the gateway; it is a failure of the thing the operator meant to smoke, and it has
+    # to be loud.
+    assert row.failover_hops == 0, (
+        f"row {request_id} was served by {row.provider!r} after failing over from "
+        f"{row.failover_from!r} ({row.failover_error}) — the instance this smoke was "
+        "pointed at did not serve it, so the smoke proved something else"
+    )

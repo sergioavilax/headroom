@@ -2462,3 +2462,427 @@ $10 run to answer a question §P8.H1 answers better and for free.
 **Consequences.** The H2 tenant now has a documented configuration requirement and the
 report has one more line in it. §P8.H1 keeps a separate tenant, which is also what stops
 its seeded corpus from polluting H2's ledger rows.
+
+---
+
+## H-048 — Failover stops at the first downstream byte, and the guard is checked (Phase 6)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P6 states the rule and asks for the decision to be logged: *"if
+the primary fails **before first token**, the request replays against the fallback
+transparently; if a stream dies **after first token**, the caller gets a terminal error
+event and failover does *not* silently splice mid-answer — that semantic is documented as
+a decision (H-xxx), because splicing is how gateways serve Frankenstein responses."*
+
+What makes splicing worse than an ordinary bug is that it is *invisible*. Two providers'
+answers welded end to end produce a stream whose frames are well formed, whose terminal
+marker is present, and which every SDK on the far end returns as one complete message.
+Nothing in the transcript says two models wrote it, and nothing downstream can check.
+H-008 drew the same line a phase earlier for a different reason ("a stream that ends early
+ends in a terminal error event"); this is that line made load-bearing.
+
+**Decision.** **A request may be retried for exactly as long as nothing about its response
+has been committed to the client — and the predicate for that is
+`RequestContext.first_token_out_at is None`.**
+
+Three things make it a design rather than a rule:
+
+- **The executor owns everything up to the commit point and nothing after it.**
+  `Failover.open` is called on the line that used to read `provider.open`, and it returns
+  the response that will be served. There is no path in `headroom/api/proxy.py` from a
+  forwarded byte back into it, so in the shipped gateway the boundary holds
+  *structurally*.
+- **It is checked anyway, on every retry.** "Structurally unreachable" is a property of
+  today's call sites, and call sites change. When the guard sees that a byte has gone out
+  it stops and raises the last failure. `tests/test_failover_boundary.py` drives the
+  executor directly with the mark set, because that is the only way to test something the
+  proxy cannot reach.
+- **The commit point is later than it looks, and that is worth having.** A *non-streamed*
+  response is read in full before anything is sent, so a connection that dies mid-body has
+  still committed nothing — and is still safe to fail over. The executor therefore reads
+  non-streamed bodies **inside** the retry loop rather than after it, which is the whole
+  reason `BufferedUpstreamResponse` exists. Operationally this is the difference between
+  killing a container mid-request and losing that request, or not.
+
+After the boundary, H-008's discipline is unchanged: a terminal error event in the
+caller's own dialect, no `message_stop`, no `[DONE]`, and an honest `upstream_stream_cut`.
+
+**The sabotage is executed rather than described.**
+`tests/test_failover_boundary.py::test_the_sabotage_serves_a_frankenstein_answer` mounts a
+naive `_passthrough` — fifteen lines, each locally reasonable, that opens the fallback when
+the stream dies and keeps yielding — over the real one, and measures what the caller gets:
+
+```
+shipped   "The capital of France is " + event: error(upstream_stream_cut)
+spliced   "The capital of France is The capital of Germany is Berlin."
+          two message_start frames, one message_stop, no error event anywhere,
+          HTTP 200, stop_reason "end_turn"
+```
+
+The frightening assertion in that test is not that the text is wrong. It is
+`assert "error" not in events`.
+
+**Alternatives considered.** *Splice and re-frame properly* — strip the second stream's
+opening frames, renumber indices, emit one coherent message. It requires parsing and
+re-emitting somebody else's SSE, which H-007 refuses even on the happy path, and it cannot
+be made correct anyway: the fallback is answering a question the caller has already been
+handed half an answer to, and no amount of re-framing turns half of one answer plus all of
+another into an answer. *Buffer every streamed response so a retry is always safe* —
+correct, and it throws away first-token latency, which is the product (H-008 rejected the
+same trade). *Retry after the first byte only while no content delta has been emitted* — a
+narrower window that is genuinely safe, and it makes the boundary a function of dialect
+semantics rather than of transport, so every new content-block type is a fresh chance to
+get it wrong. The predicate stays "has any byte left".
+
+**Consequences.** A mid-stream fault is caller-visible and always will be — §P8.H3
+pre-registers exactly that, and the number it reports is "terminal error events: 100%". The
+gateway therefore cannot promise zero caller-visible failures, only zero *silent* ones, and
+the README says so. `first_token_out_at` is now a load-bearing field rather than a timing
+convenience: anything that set it early would disable failover, and anything that set it
+late would enable a splice.
+
+---
+
+## H-049 — What triggers a hop, what never does, and how a chain is configured (Phase 6)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P6 names the triggers in five words — *"on 429/5xx"* — plus the
+transport faults the MockProvider injects. It says nothing about the exclusions, and the
+exclusions are where a failover phase does damage: this gateway issues its own 429 (rate
+limit, H-038) and its own 402 (budget, H-032), and *failing over on either would be the
+precise inversion of what they are for*. A rate limit exists to shed load; moving the
+excess to a second provider is not shedding it. A budget refusal exists to stop spending;
+spending it somewhere else is not stopping.
+
+**Decision — the trigger set is closed and small.**
+
+| Situation | Hop? | Why |
+|---|---|---|
+| `ProviderTimeout`, `ProviderUnavailable` | **yes** | no answer at all; another box may have one |
+| body dies mid-read, non-streamed | **yes** | nothing committed downstream yet (H-048) |
+| upstream **429** | **yes** | that provider is shedding; another may not be |
+| upstream **5xx** (500…599, incl. 529) | **yes** | BUILD_PLAN's own list |
+| upstream 4xx other than 429 | **no** | describes the *request*; the next provider says the same thing one round trip later |
+| gateway 402 / 429 / 403 / 404 | **no** | see below |
+| `ConfigurationError` (a missing key) | **no** | routing around one's own misconfiguration is how it stays undiscovered for a month |
+| mid-stream cut | **no** | H-048 |
+
+**The gateway's own refusals are excluded structurally, not by a condition.** They are
+raised by `gateway.limits` / `gateway.budgets` **before** the executor exists in the call
+path, and none of them is a `ProviderError` — which is the only exception class
+`headroom/policy/failover.py` catches. So there is no `if` in that file that could get the
+distinction wrong, and the test asserts the strong form: not "the header says gateway" but
+**no provider in the chain was called at all**. H-038 built the three distinguishability
+markers for this phase to read; what this phase actually needed was for the question never
+to arise.
+
+**Decision — chains are per-route configuration, and failover is opt-in.**
+
+```yaml
+routes:
+  openai:
+    - prefix: ""
+      provider: vllm_a
+      fallbacks: [vllm_b]
+      max_attempts: 3        # optional, 1..5
+```
+
+`fallbacks` defaults to empty and `max_attempts` to one attempt per candidate, so **a rule
+that mentions neither behaves exactly as it did in Phase 5** — one call, no retry, no
+backoff, no breaker on its path. That is what makes the phase additive for the `claude-`
+route that spends real money and for every deployment that has configured nothing. The
+attempt sequence wraps when `max_attempts` exceeds the chain (`a, b, a`), so a
+single-provider route can ask to be *retried* rather than abandoned; a repeat inside
+`fallbacks` itself is refused, because it would make `failover_hops` count a hop that never
+left the provider.
+
+**Decision — BUILD_PLAN L4 stops being structural and becomes checked.** Routing is per
+dialect, so a chain lives inside one dialect's rules and is same-dialect by construction —
+but nothing structural stops `fallbacks: [anthropic]` under an `openai:` route, which would
+hand a chat-completions body to the Messages API *on exactly the day the primary went
+down*. That is the cross-dialect translation L4 puts permanently out of scope, arriving
+through a config file instead of through a translation layer. So `register_kind` now
+requires each kind to declare which dialects it speaks, and `build_gateway` refuses to
+start on a rule that crosses one — primaries included, because a rule that applied only to
+the new feature would be a rule the old feature can still break.
+
+**Decision — a scope narrows a chain and can never widen it.** A key scoped to `vllm_a` and
+not `vllm_b` is not served by `vllm_b` when `vllm_a` fails. Authorization outranks
+availability: an outage must not be able to widen a permission. The primary is still checked
+by `Principal.require_provider` and still answers 403, so filtering the rest can only narrow
+something already authorised.
+
+**Alternatives considered.** *Retry every 5xx **and** every 4xx* — a 400 retried against a
+second provider is a second 400 and one more round trip of latency, sold as resilience.
+*Treat a gateway 429 as retryable against a different provider* — the inversion above; worth
+naming because a library that only sees status codes would do it. *Fail over on a missing
+credential* — defensible for a rotated key, and it means a broken provider serves zero
+traffic while looking configured. *Chains as a top-level `chains:` block referenced by name*
+— tidier when many routes share one chain, and it puts the answer to "where does this model
+go when it fails" one indirection away from the rule that routes it. *No per-route
+`max_attempts`* — then "retry with backoff" is only reachable by adding a second provider,
+which is not a knob, it is a purchase.
+
+**Consequences.** `MAX_ATTEMPT_LIMIT = 5` is a published ceiling: an unbounded retry budget
+on the first-token path is a self-inflicted denial of service, and a number an operator can
+raise without a code change is a number somebody eventually sets to 50 during an incident.
+`register_kind` gained a required keyword, a deliberate tightening of a registration
+contract with three in-repo call sites. And a fallback naming an undefined provider now
+fails at load — the worst typo to find late, because it is invisible until the primary is
+down.
+
+---
+
+## H-050 — Backoff is paid to a provider that already failed, not to a fresh one (Phase 6)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P6 asks for *"retry with jittered exponential backoff"* and names
+no parameters. Two things therefore have to be decided: the curve, and — much more
+consequentially — *when the gateway sleeps at all*.
+
+Almost every retry library answers the second question with "before every attempt after the
+first", because almost every retry library was written for **one** endpoint. Applied to a
+failover chain that is simply wrong: nothing about `vllm_a` being down suggests `vllm_b`
+needs a moment to collect itself, and on a gateway whose entire product is first-token
+latency an unnecessary 50 ms is 50 ms of the thing being sold.
+
+**Decision — the delay is a function of how many times *this* provider has failed *this*
+request.** Moving to a fresh candidate costs nothing. Coming back to one that has already
+failed here pays `uniform(0, min(cap, base · 2^k))`, with `k` counting that provider's prior
+failures in this request.
+
+**Decision — the parameters, published rather than tuned in place:** `base_s = 0.05`,
+`multiplier = 2.0`, `cap_s = 2.0`, **full jitter**. Full jitter rather than a fixed delay
+because the failure being prevented is a *synchronised* retry — a burst that all failed at
+the same instant would otherwise all come back at the same instant, and a fixed delay merely
+moves the stampede. `BackoffPolicy.worst_case_s` publishes the bound: three attempts against
+one provider sleep at most **150 ms** in total, five attempts at most 750 ms, and with full
+jitter the expectation is half of that.
+
+**Decision — `sleep` and `jitter` are injected.** A backoff verified by actually waiting is
+a test somebody deletes the week the suite gets slow; a jittered one verified against a real
+RNG is a test that flakes. CI passes a recorder that appends the requested duration and
+returns immediately, and asserts the exact schedule. The curve is tested separately, against
+`BackoffPolicy`, with the jitter supplied as a number.
+
+**Decision — an upstream's own `retry-after` is forwarded and never slept on.** A provider
+that answers 429 with `retry-after: 30` is telling the *caller* something useful, and that
+header still crosses untouched (H-010). What the gateway must not do is honour it itself: a
+30-second sleep inside a request is an upstream being allowed to stall this gateway, and the
+correct response to "come back in 30 seconds" is to go somewhere else now.
+
+**Alternatives considered.** *Sleep before every retry including the first fallback* — the
+conventional implementation, and the one the sabotage run executes; it fails
+`test_moving_to_a_fresh_provider_costs_no_delay` and adds latency to precisely the case
+failover exists to make fast. *Decorrelated jitter* (AWS's other recommendation) — better
+under sustained contention, and it needs state across attempts for a chain that is at most
+five attempts long. *No jitter, exponential only* — simpler, and it synchronises retries,
+which is the failure mode. *A total deadline instead of a per-retry cap* — a better
+guarantee, and it wants a clock inside the executor; the arithmetic bound above is exact
+without one, and is asserted.
+
+**Consequences.** The three numbers are published and pinned by
+`tests/test_failover_backoff.py`, so changing one is a diff with a justification attached.
+An emergent behaviour worth recording, because it falls out of this entry plus H-052 and
+would otherwise be rediscovered: once a breaker has tripped, a single-provider route with
+`max_attempts: 3` stops paying its retry budget — the first two slots are skipped and only
+the final one, which a breaker may never skip, is attempted. Retries against a provider we
+already know is down are exactly the retries worth not making.
+
+---
+
+## H-051 — What a ledger row says about a hop (Phase 6)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** `failover_hops` has been a column since `migrations/0002` (H-024), reserved for
+this phase. The session brief asks for more than a count: *"the row records which provider
+ultimately served and which failed (decide the shape for intermediate failures; log it)"*.
+Three facts are in play and no single column carries them: who served, who was passed over,
+and what the caller was eventually handed.
+
+**Decision — three columns, and they answer different questions.**
+
+- **`provider`** moves with the executor and names **who served**. On an exhausted chain it
+  names the last candidate, because that is whose answer the caller received — which keeps
+  it consistent with `upstream_status` on the same row.
+- **`failover_hops`** counts **slots that did not serve**. Zero means the primary served it,
+  which is what the column has claimed since `0002`.
+- **`failover_from` / `failover_error`** (new, `migrations/0006`) name the **first**
+  candidate passed over and why.
+
+The first/last split is the load-bearing part. `error_reason` and `upstream_status` already
+describe the *last* thing that happened — the failure a caller was handed when a chain ran
+out. What no existing column could say is why the request left where it was routed, and that
+is the operational question: *we are serving from `vllm_b`; what happened to `vllm_a`?*
+Between them, one row describes a two-link chain completely. A longer chain is summarised
+here and written out in full on the structured log line, which carries the whole trail as
+`["vllm_a:upstream_status_529", "vllm_b:ok"]`.
+
+**Decision — a breaker-skipped candidate counts as a hop.** It was not tried, so it did not
+fail; it is still a slot that did not serve, and `failover_hops > 0` means "the primary did
+not serve this request". The alternative — counting only real attempts — makes the hop count
+drop back to zero the moment an outage becomes *persistent* enough for the breaker to trip,
+which is exactly when somebody is reading it. `failover_error` says `breaker_open`, so the
+two cases stay distinguishable where it matters.
+
+**Decision — the upstream timing mark is rewound between attempts.** A failed attempt's
+error body stamps `first_upstream_byte_at`, and marks are idempotent, so without an explicit
+rewind that stamp becomes the *served* response's first byte — and `passthrough_overhead_ms`,
+defined as *first upstream byte → first byte out*, would silently include the entire
+failover sequence. That column is what §P8.H2 publishes against a pre-registered p50 < 50 ms,
+so this is the difference between a gateway-cost metric and a failover-duration metric.
+`RequestContext.restart_upstream_timing` is the only place in the project where a mark moves
+backwards, and it is a named method rather than an assignment so the one legitimate reason to
+do it is written beside it. `ttft_ms` deliberately keeps the whole wait, because that is what
+the caller experienced.
+
+**Alternatives considered.** *One `failover_trail TEXT` column holding
+`vllm_a:529>vllm_b:ok`* — complete for any chain length, and it encodes structure in a
+string, which is the kind of schema that ages into a parser. *A `failover_attempts` table
+joined on `request_id`* — fully normalised, and it puts "why did this leave `vllm_a`" one
+join away from the row that answers everything else about the request; the same argument
+`0003` and `0005` made for widening this table rather than adding another. *Record the last
+failure instead of the first* — already on the row, twice, as `error_reason` and
+`upstream_status`. *A `CHECK` tying the three columns together* — a constraint spanning three
+columns fails a row for a bookkeeping slip and loses the invoice line with it; the writer
+keeps them consistent and the tests assert it.
+
+**Consequences.** `failover_from` and `failover_error` are stable columns from here, and
+`upstream_status_<code>` / `breaker_open` join the stable identifier set the ledger stores
+and Phase 7 charts. A partial index on `failover_hops > 0` serves the dashboard's "show me
+the requests that failed over" and §P8.H3's own query without indexing the overwhelming
+majority of rows, which have nothing to say. And one property is now asserted rather than
+hoped: a request that hops writes exactly **one** row.
+
+---
+
+## H-052 — Provider health is in-process, and a breaker never skips the last candidate (Phase 6)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P6 asks for *"provider health tracking (rolling error/latency
+windows)"* and *"a circuit breaker [that] trips a provider out of rotation after a threshold
+and probes it back in"*. Where the evidence lives, and what a breaker is allowed to refuse,
+are both left open.
+
+**Decision — health is in memory, per process, and never shared.** Not Postgres, not
+DynamoDB. BUILD_PLAN L2 reserves DynamoDB for token buckets and budget reservations *only*,
+and the deeper reason is that a breaker is **not a fact about the world**: it is a record of
+what *this* process has been able to reach. A Fargate task whose own network path is broken
+must trip its own breaker without convincing the other three that Anthropic is down, and a
+task that has just started must be free to find out for itself. The cost — a cold process
+pays a few failures before it learns — is bounded by `min_samples`, and `/admin/providers`
+says plainly that it reports one gateway's experience.
+
+**Decision — the thresholds, published:** a rolling window of **20** observations, a floor of
+**5** before anything can trip, a failure ratio of **0.5**, and a **10-second** cooldown. A
+ratio over a window rather than a streak, because a provider failing half its requests is
+worse than one failing all of them — every failed request costs a timeout and it succeeds
+just often enough to look alive, which a consecutive-failures rule never catches. Ten seconds
+because it has to be long enough not to hammer a sick provider and short enough that recovery
+is visible in a demo somebody is filming.
+
+**Decision — a provider is scored when its response *finishes*, not when it starts.** An
+upstream that answers headers and then dies mid-answer is not a healthy upstream, and that is
+precisely what `docker kill` on a live vLLM produces. So the executor scores the attempts it
+can judge on its own (a transport failure, a retryable status, a body it read to the end) and
+says nothing about a live stream; `headroom/api/proxy.py` scores that one when the stream
+ends. One attempt, one observation, never two. Two exclusions follow: an upstream **4xx that
+is not 429 counts as a success**, because a 400 is a healthy provider correctly refusing a
+bad request and counting it would let one tenant's malformed payloads trip a breaker for
+everybody else; and a **client disconnect is scored by nobody**, because the caller hanging
+up is not evidence about an upstream.
+
+**Decision — the breaker never skips the last remaining candidate.** Tripping is only useful
+when there is somewhere else to go. On a single-provider route a breaker that refused would
+replace an upstream's 529 — which a caller can read and act on — with a gateway error about a
+decision they cannot see: it would convert a provider's outage into *this gateway's*, which
+is strictly worse than trying and failing. So the final slot is always attempted, which also
+makes it the natural probe.
+
+**Decision — half-open admits exactly one probe, and a probe that succeeds clears the
+window.** One probe, because a recovered provider stampeded by everything that queued behind
+it is a second outage. Clearing the window, because otherwise the failures that tripped the
+breaker are still in it and the very next blip satisfies the ratio again — the bug that turns
+a ten-second outage into a ten-minute one. Lifetime counters survive the clear; they are the
+record, not the verdict.
+
+**Alternatives considered.** *Share health through DynamoDB so every task benefits* —
+contradicts L2, adds a read to the hot path, and makes one task's broken network everybody's
+outage. *Consecutive failures as the trip rule* — simpler, and blind to the half-failing
+provider. *Latency-based tripping (p95 above a bound)* — genuinely useful, and it needs a
+baseline per model and per prompt size, which is a research project; the latency window is
+recorded and reported, and nothing trips on it yet. *A background task that reopens breakers
+on a timer* — one more thing to run and to fail silently; the transition happens on the
+request that finds the cooldown elapsed, which needs no scheduler.
+
+**Consequences.** `HealthTracker.admit` is a query with a side effect — it performs the
+open → half-open transition — which is the same trade H-032 took for the budget sweep on
+`GET /admin/budgets`, and taken for the same reason: the transition and the decision are the
+same event. `/admin/providers` reports state, window, ratio, latency percentiles, and last
+error, which is what Phase 7's health tiles read; `DELETE /admin/providers/{name}/health` is
+the incident-response route, spelled with `/health` because a `DELETE` on the provider itself
+would read as *remove this provider*, which a running gateway can never do.
+
+---
+
+## H-053 — One admission per request, however many providers it takes (Phase 6)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The session brief: *"a failed-then-retried request must not double-reserve or
+double-bill. State how the P4 reservation travels across hops; test the arithmetic under a
+failover."* Every previous phase put something on the admission path — a bucket consumption
+(H-039), a cache lookup (H-046), a budget reservation (H-032) — and a phase that makes one
+request touch several providers is exactly the phase that could start running them several
+times.
+
+**Decision — the executor sits strictly *inside* one admission, and that is the whole
+answer.** The pipeline is unchanged and gains one line in the middle of its last step:
+
+```
+authenticate (401) → read the body → model scope (403) → route → provider scope (403)
+  → rate limit (429) → cache → budget reservation (402)
+  → [ failover executor: attempt … attempt ]
+  → settle → one ledger row
+```
+
+Admission happens before the executor exists in the call path and settlement after it has
+finished, so the number of hops is invisible to money **by construction**. There is no
+compensating action, no second reservation, and nothing to keep in sync — the same shape
+H-036 and H-039 chose for the same reason: the bug this project keeps refusing to add is *an
+operation whose absence breaks an invariant*.
+
+**Decision — a hop does not consume a second rate-limit unit.** The limiter meters *client
+requests*, not upstream attempts. A hop is the gateway's own decision about how to serve one
+request, and charging a tenant rate for it would make a provider outage look like the tenant
+misbehaving — at exactly the moment their traffic most needs to get through.
+
+**Decision — settlement follows the *final* outcome, and H-025/H-031 need no amendment.**
+Every provider answered ≥400 → no model ran anywhere → cost is a measured `0` and the hold is
+released. Every provider timed out → two providers were *sent* the request and neither
+answered → `usage_unknown`, NULL on the invoice, and the hold settles at the **estimate**,
+because releasing it would be a cheerful guess that two round trips to a model cost nothing.
+The ledger and the budget disagree on that row, visibly, on purpose — H-031's documented
+disagreement, reached by a longer road.
+
+Stated as arithmetic, and asserted: **a request that hops costs exactly what a request that
+does not hop costs.** Two identical requests, one served by the primary and one only after a
+failover, move the tenant's counter by `2 × $0.0000115` and not by three of anything.
+
+**Alternatives considered.** *Reserve per attempt and release the losers* — the natural
+reading of "retry", and it puts a compensating release on the hot path for every hop, which
+is D-019's shape with a new noun. *Charge a bucket unit per attempt* — defensible as "the
+gateway did more work", and it punishes tenants for outages. *Widen the reservation when a
+hop happens* — the estimate already bounds one request's worst case, and a hop does not make
+that request bigger. *A separate "failover attempts" counter in DynamoDB* — a third store
+write on the latency path, for a number the ledger already carries per row.
+
+**Consequences.** `tests/test_failover_ledger.py` asserts the arithmetic on the tenant's own
+counters rather than on the code's shape, because "structurally impossible" is a claim about
+today's pipeline. The one place a hop *is* invisible to money is the estimate's blind spot,
+unchanged from H-034: an unpriced model is invisible to the cap whether it hops or not.

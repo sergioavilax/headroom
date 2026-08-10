@@ -1,0 +1,14 @@
+# The first post-kill request: HTTP 200, failover_hops 1. From /tmp/gateway.log:
+{
+  "request_id": "hr_bc06ff1352f047f69a33f4d7c96b5477",
+  "provider": "vllm_b",
+  "failover_hops": 1,
+  "failover_from": "vllm_a",
+  "failover_error": "upstream_unavailable",
+  "failover_attempts": [
+    "vllm_a:upstream_unavailable",
+    "vllm_b:ok"
+  ],
+  "outcome": "ok",
+  "status": 200
+}

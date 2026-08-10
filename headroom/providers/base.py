@@ -17,6 +17,10 @@ them very differently:
 
 That line — *before or after the first byte* — is the one the resilience phase is
 built on, so it is drawn here, in the interface, rather than left to each provider.
+Phase 6 cashed it: ``headroom/policy/failover.py`` refuses to retry once
+``RequestContext.first_token_out_at`` is set, and ``tests/test_failover_boundary.py``
+executes the splice that would otherwise happen so the horror is a measurement rather
+than a warning (docs/DECISIONS.md H-048).
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from dataclasses import dataclass, field
 
 from headroom.core.context import RequestContext
 
-__all__ = ["Provider", "UpstreamRequest", "UpstreamResponse"]
+__all__ = ["BufferedUpstreamResponse", "Provider", "UpstreamRequest", "UpstreamResponse"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +79,61 @@ class UpstreamResponse(ABC):
     @abstractmethod
     async def aclose(self) -> None:
         """Release the connection. Always called, including on client disconnect."""
+
+
+class BufferedUpstreamResponse(UpstreamResponse):
+    """A response whose body is already in hand, wearing the streaming interface.
+
+    Phase 6 needs this for one reason: **the failover executor has to read some bodies
+    before it can decide whether the request is finished.** A 529 must be read (and its
+    connection released) before the next provider is tried, and a non-streamed 200 must
+    be read *inside* the retry loop so that a connection dying mid-body can still fail
+    over — nothing has gone downstream yet, so nothing can be spliced.
+
+    Materialising the result as an ``UpstreamResponse`` rather than as a bare
+    ``(status, headers, body)`` triple is what keeps ``headroom/api/proxy.py`` unchanged:
+    ``_buffered_response`` calls ``aread()`` exactly as it always has, and on one of
+    these that call is a return statement. Nothing above the executor learns that
+    retries exist.
+
+    ``aclose`` is a genuine no-op — the connection this came from was released by
+    whoever built it, which is the executor, in the one place that owns retries.
+    """
+
+    __slots__ = ("_body", "_ctx", "_headers", "_status_code")
+
+    def __init__(
+        self,
+        status_code: int,
+        headers: Mapping[str, str],
+        body: bytes,
+        ctx: RequestContext | None = None,
+    ) -> None:
+        self._status_code = status_code
+        self._headers = dict(headers)
+        self._body = body
+        self._ctx = ctx
+
+    @property
+    def status_code(self) -> int:
+        return self._status_code
+
+    @property
+    def headers(self) -> Mapping[str, str]:
+        return self._headers
+
+    async def aiter_bytes(self) -> AsyncIterator[bytes]:
+        if self._ctx is not None:
+            self._ctx.mark_first_upstream_byte()
+        yield self._body
+
+    async def aread(self) -> bytes:
+        if self._ctx is not None:
+            self._ctx.mark_first_upstream_byte()
+        return self._body
+
+    async def aclose(self) -> None:
+        return None
 
 
 class Provider(ABC):

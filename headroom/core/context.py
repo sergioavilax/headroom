@@ -150,6 +150,26 @@ class RequestContext:
     #: streaming path to record bytes at all.
     cache_plan: CachePlan | None = None
 
+    # --- what failover did (Phase 6) -------------------------------------------------
+    # ``provider`` above is *who served* — it moves as the executor moves. These three
+    # say what it took to get there, and they are written by exactly one place
+    # (``headroom/policy/failover.py``).
+    #: Chain slots that did **not** serve this request. Zero means the primary did.
+    #: A candidate skipped because its breaker was open counts the same as one that was
+    #: tried and failed: the question this answers is "did the primary serve it".
+    failover_hops: int = 0
+    #: The first candidate passed over. ``None`` when there were none. Complementary to
+    #: ``error_reason`` / ``upstream_status``, which carry the *last* failure on a row
+    #: whose chain was exhausted (docs/DECISIONS.md H-051).
+    failover_from: str | None = None
+    #: Why that first candidate was passed over — ``upstream_status_529``,
+    #: ``upstream_timeout``, ``breaker_open``.
+    failover_error: str | None = None
+    #: Every slot, in order, as ``provider:outcome``. The log line's copy of the whole
+    #: story — and the line the P6 demo screenshots, because it is where both providers
+    #: appear by name.
+    failover_attempts: tuple[str, ...] = ()
+
     # --- when --------------------------------------------------------------------
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     received_at: float = field(default_factory=time.perf_counter)
@@ -163,6 +183,23 @@ class RequestContext:
         """First byte of the upstream response body arrived. Idempotent."""
         if self.first_upstream_byte_at is None:
             self.first_upstream_byte_at = time.perf_counter()
+
+    def restart_upstream_timing(self) -> None:
+        """Forget a failed attempt's first upstream byte. The one mark that moves back.
+
+        Called by the failover executor before every attempt (docs/DECISIONS.md H-051).
+        A 529 body read from provider A stamps ``first_upstream_byte_at``, and if that
+        stamp survived into provider B's response the derived
+        ``passthrough_overhead_ms`` — *first upstream byte → first byte out*, the column
+        §P8.H2 publishes against a pre-registered p50 — would silently include the entire
+        failover sequence. ``ttft_ms`` is measured from ``received_at`` and therefore
+        still carries the whole wait, which is what the caller actually experienced.
+
+        Deliberately not idempotent and deliberately not exposed anywhere else: it is a
+        method rather than an assignment so that the one legitimate reason to rewind a
+        mark is written down beside it.
+        """
+        self.first_upstream_byte_at = None
 
     def mark_first_token_out(self) -> None:
         """First byte released downstream. Idempotent.
@@ -309,6 +346,15 @@ class RequestContext:
             "cache_similarity": self.cache_similarity,
             "cache_avoided_usd": format_usd(self.cache_avoided_usd),
             "cache_source_request_id": self.cache_source_request_id,
+            # Phase 6. `provider` above already says who served; these say what it took.
+            # `failover_attempts` is null on the overwhelming majority of requests — the
+            # ones where the primary answered — and on the interesting ones it names
+            # every provider involved and why each was passed over, which is the line
+            # the two-GPU kill demo is read from.
+            "failover_hops": self.failover_hops,
+            "failover_from": self.failover_from,
+            "failover_error": self.failover_error,
+            "failover_attempts": list(self.failover_attempts) or None,
             "upstream_latency_ms": _round(self.upstream_latency_ms),
             "ttft_ms": _round(self.time_to_first_token_ms),
             "passthrough_overhead_ms": _round(self.passthrough_overhead_ms),

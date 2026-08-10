@@ -159,6 +159,17 @@ class Principal:
                 f"(allowed: {_render(self.allowed_providers)})"
             )
 
+    def permits_provider(self, provider: str) -> bool:
+        """The same question as :meth:`require_provider`, asked without raising.
+
+        Phase 6 needs it for the failover chain: a fallback the key may not reach is
+        dropped from the chain rather than refused with a 403, because the *route*
+        resolved to a primary the key is allowed to use and only the alternates are being
+        narrowed. Authorization outranks availability — a scope is not something an
+        outage may widen (docs/DECISIONS.md H-049).
+        """
+        return scope_allows(self.allowed_providers, provider)
+
     def stamp(self, ctx: RequestContext) -> None:
         """Write this identity onto the request context.
 

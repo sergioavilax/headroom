@@ -48,3 +48,20 @@ async def gateway() -> AsyncIterator[GatewayHarness]:
     """A keyless gateway wired to a fresh MockProvider, served over ASGI."""
     async with gateway_harness() as harness:
         yield harness
+
+
+@pytest.fixture
+async def chain() -> AsyncIterator[GatewayHarness]:
+    """The same gateway with a two-link same-dialect failover chain: ``mock_a → mock_b``.
+
+    Phase 6's fixture, and the reason it is separate from :func:`gateway` is the phase's
+    own claim: a route with no ``fallbacks`` makes exactly one attempt, so every test
+    written before this phase keeps running against a gateway with no retry, no backoff,
+    and no breaker anywhere on its path. Failover is something a test opts into, exactly
+    as an operator does.
+
+    Both providers share one script book. A script registered under ``"name@mock_a"``
+    binds to that instance alone, which is how one request makes A fail and B serve.
+    """
+    async with gateway_harness(chain=("mock_a", "mock_b")) as harness:
+        yield harness
