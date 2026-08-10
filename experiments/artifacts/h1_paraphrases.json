@@ -2,8 +2,8 @@
  "schema": "h1_paraphrases/1",
  "provenance": {
   "produced_by": "experiments/h1/generate.py",
-  "generated_at": "2026-08-10T21:33:46+00:00",
-  "headroom_commit": "696fec9aaa9a9948b2dd140c334b951c691ef30d",
+  "generated_at": "2026-08-10T21:40:51+00:00",
+  "headroom_commit": "d57aa3377cb75d44197e179b697ef369bc914e75",
   "inputs": {
    "suite_hash": "6eef41c6706f309a",
    "world_seed": 20260805,
@@ -20,11 +20,11 @@
   "per_question": 3
  },
  "spend": {
-  "usd": "0.019801000000",
+  "usd": "0.001111000000",
   "cap_usd": "1.00",
-  "calls": 15,
-  "input_tokens": 8426,
-  "output_tokens": 2275,
+  "calls": 1,
+  "input_tokens": 546,
+  "output_tokens": 113,
   "usd_per_mtok_in": "1.00",
   "usd_per_mtok_out": "5.00",
   "price_effective_from": "2026-08-08"
@@ -249,9 +249,9 @@
   "contract_terms-004": {
    "body": "As of 2026-06-30, what royalty rate applies to Paloma & The Effigy's digital streaming revenue? Cite the governing clause.",
    "paraphrases": [
-    "Which royalty rate governs Paloma & The Effigy's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
-    "Identify the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.",
-    "What clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?"
+    "What royalty rate, effective 2026-06-30, governs Paloma & The Effigy's digital streaming revenue, and which clause establishes it?",
+    "Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.",
+    "Which governing clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?"
    ],
    "attempts": 1
   },
