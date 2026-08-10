@@ -17,11 +17,17 @@ from __future__ import annotations
 import json
 import pathlib
 from datetime import UTC, datetime
+from typing import Final
 
 import pytest
 
 from experiments.h1.build import CORPUS_PATH, EMBEDDING_DIMENSIONS, VECTORS_PATH
-from experiments.h1.checks import check_batch, check_paraphrase, salient_tokens
+from experiments.h1.checks import (
+    check_batch,
+    check_paraphrase,
+    required_tokens,
+    salient_tokens,
+)
 from experiments.h1.corpus import (
     SPACES,
     H1Corpus,
@@ -179,6 +185,219 @@ def test_salient_tokens_keep_identifiers_and_drop_sentence_openers() -> None:
     assert {"Yuki", "Takeda"} <= tokens["name"]
     assert "As" not in tokens["name"]  # a stop-word a paraphrase may legitimately drop
     assert "22" in tokens["number"]
+
+
+# --- H-068: the extractor's false positives, pinned per question --------------------------
+#
+# The first generation run left 16 of 130 questions UNRESOLVED, every one of them on a
+# capitalised common word that no faithful paraphrase can keep. Each row below is one of
+# those 16: what the extractor must **stop** demanding, and what it must still demand from
+# the very same sentence. The second half is the point — the amendment is only correct if it
+# is narrow, so every real entity in a repaired question is named here explicitly.
+
+_PINNED: Final = [
+    # (question id, spurious names, spurious codes, required names, required codes, aliases)
+    ("hand-catalog_lookup-01", {"Counting"}, set(), {"Cinder", "Spectra", "Gilded"}, {"EP"}, ()),
+    ("hand-contract_terms-01", {"Please"}, set(), {"Cinder", "Spectra"}, set(), ()),
+    ("cross_collateral-004", {"Across"}, set(), {"Felix", "Chorus"}, set(), ()),
+    ("cross_collateral-005", {"Across"}, set(), {"Paloma", "Gardens"}, set(), ()),
+    ("hand-cross_collateral-01", {"Across"}, set(), {"Voltage"}, set(), ()),
+    ("sql_analytics-003", {"Summing"}, set(), {"Bones"}, {"ISRC", "QZFBR2100139"}, ()),
+    ("sql_analytics-004", {"Summing"}, set(), {"Distant", "Umbrellas"}, {"ISRC"}, ()),
+    ("sql_analytics-008", {"Across"}, set(), {"Meridian", "Musikvertrieb"}, set(), ()),
+    ("hand-sql_analytics-02", {"Exactly"}, set(), {"Meridian", "Musikvertrieb"}, set(), ()),
+    ("hand-reconciliation-01", {"Audit"}, {"ONLY"}, {"Kinetic", "Digital"}, set(), ()),
+    (
+        "multi_step-006",
+        {"Suppose"},
+        set(),
+        {"Yuki", "Takeda"},
+        set(),
+        (("United States", "US"),),
+    ),
+    ("multi_step-007", {"Suppose"}, set(), {"Blazing", "Atlas"}, set(), (("Germany", "DE"),)),
+    (
+        "multi_step-008",
+        {"Suppose"},
+        set(),
+        {"Paloma", "Effigy"},
+        set(),
+        (("United States", "US"),),
+    ),
+    (
+        "multi_step-009",
+        {"Suppose"},
+        set(),
+        {"Esme", "Spectra"},
+        set(),
+        (("United Kingdom", "GB"),),
+    ),
+    (
+        "multi_step-010",
+        {"Suppose"},
+        set(),
+        {"Vivid", "Quarry"},
+        set(),
+        (("United Kingdom", "GB"),),
+    ),
+    (
+        "hand-multi_step-02",
+        {"Suppose"},
+        set(),
+        {"Maren", "Aurora"},
+        set(),
+        (("United Kingdom", "GB"),),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("question_id", "spurious_names", "spurious_codes", "names", "codes", "aliases"),
+    _PINNED,
+    ids=[row[0] for row in _PINNED],
+)
+def test_the_sixteen_unresolved_questions_extract_entities_and_nothing_else(
+    corpus: H1Corpus,
+    question_id: str,
+    spurious_names: set[str],
+    spurious_codes: set[str],
+    names: set[str],
+    codes: set[str],
+    aliases: tuple[tuple[str, str], ...],
+) -> None:
+    """The bodies come from the committed corpus, so a suite edit cannot leave this stale."""
+    body = corpus.question(question_id).body
+    required = required_tokens(body)
+
+    assert not spurious_names & required.tokens["name"], "sentence position is not entityhood"
+    assert not spurious_codes & required.tokens["code"], "ALL-CAPS emphasis is not a code"
+    assert names <= required.tokens["name"], "a real name stopped being required"
+    assert codes <= required.tokens["code"], "a real code stopped being required"
+    assert {(group.name, group.code) for group in required.groups} == set(aliases)
+    # Whatever the body glosses is required as a pair, never as two independent demands.
+    for phrase, code in aliases:
+        assert not set(phrase.split()) & required.tokens["name"]
+        assert code not in required.tokens["code"]
+
+
+@pytest.mark.parametrize(
+    ("question_id", "candidate"),
+    [
+        (
+            "hand-catalog_lookup-01",
+            "How many releases in our catalog include The Cinder Spectra's track "
+            '"Gilded Satellites, Pt. 3", counting every original album or EP as well as '
+            "any compilations it appears on?",
+        ),
+        (
+            "cross_collateral-004",
+            "Taking every one of Felix & The Chorus's cross-collateralized deals together, "
+            "what portion of their 2025-10 royalties was applied to recoupment?",
+        ),
+        (
+            "hand-reconciliation-01",
+            "Please audit statement id 1201 for me (Kinetic Digital, period 2026-06). Look "
+            "through it for reporting anomalies and report only the findings genuinely out "
+            "of tolerance; if something was measured but falls inside tolerance, say so in "
+            "prose without flagging it. Submit nothing.",
+        ),
+        (
+            "multi_step-006",
+            "If Yuki Takeda earns $10,000 of streaming revenue in the US during 2026-02, "
+            "what royalty would that revenue generate before recoupment under the terms "
+            "governing as of 2026-02-28? Cite the rate clause you applied.",
+        ),
+        (
+            "multi_step-009",
+            "Assume Esme Spectra earns $30,000 in streaming revenue in the United Kingdom "
+            "during 2026-02. Under the terms governing as of 2026-02-28, what royalty does "
+            "that revenue generate before recoupment? Cite the rate clause you applied.",
+        ),
+    ],
+    ids=["gerund-opener", "preposition-opener", "imperative-opener", "alias-code", "alias-name"],
+)
+def test_a_faithful_paraphrase_of_a_stuck_question_now_passes(
+    corpus: H1Corpus, question_id: str, candidate: str
+) -> None:
+    """The failing 16 failed identically on 3 candidates over 3 attempts, so the rule
+    admitted no correct answer. These are the answers it now admits — one per pattern, and
+    the two alias cases resolve the *opposite* way from each other on purpose."""
+    result = check_paraphrase(body=corpus.question(question_id).body, candidate=candidate)
+    assert result.ok, result.failures
+
+
+@pytest.mark.parametrize(
+    ("candidate", "expected_failure"),
+    [
+        # Dropping the release type narrows the question's scope, and two of the run's three
+        # candidates kept `EP` — a rule that costs nothing to satisfy stays exact (H-068).
+        (
+            "How many releases in our catalog carry The Cinder Spectra's track "
+            '"Gilded Satellites, Pt. 3", counting compilations too?',
+            "lost code: EP",
+        ),
+        # The gloss widens what counts as survival; it does not make the entity optional.
+        (
+            "How many releases does The Cinder Spectra's track have in our catalog, "
+            "counting original albums, EPs and any compilations it appears on?",
+            "lost name: Gilded",
+        ),
+    ],
+)
+def test_the_amendment_did_not_stop_the_checker_catching_a_real_loss(
+    corpus: H1Corpus, candidate: str, expected_failure: str
+) -> None:
+    body = corpus.question("hand-catalog_lookup-01").body
+    result = check_paraphrase(body=body, candidate=candidate)
+    assert not result.ok
+    assert any(expected_failure in failure for failure in result.failures), result.failures
+
+
+def test_an_alias_group_still_fails_when_both_spellings_are_gone(corpus: H1Corpus) -> None:
+    """`United States (US)` may be either spelling. It may not be neither, and it may not
+    become a different country — the drop is what the mechanical layer sees."""
+    body = corpus.question("multi_step-009").body
+    result = check_paraphrase(
+        body=body,
+        candidate=(
+            "Assume Esme Spectra earns $30,000 in streaming revenue during 2026-02. Under "
+            "the terms governing as of 2026-02-28, what royalty would that revenue "
+            "generate before recoupment? Cite the rate clause you applied."
+        ),
+    )
+    assert not result.ok
+    assert any("lost entity" in failure for failure in result.failures), result.failures
+
+
+def test_a_dotted_acronym_reads_as_the_undotted_code() -> None:
+    """`U.S.` is `US` on both sides of the comparison, not a token that vanished."""
+    assert "US" in salient_tokens("Revenue in the U.S. during 2026-02.")["code"]
+
+
+def test_a_common_word_is_only_exempt_where_position_explains_its_capital() -> None:
+    """The conjunction is the whole safety property: drop either clause and a real name
+    starts disappearing from the required set."""
+    # Common word, but not sentence-initial: the capital means something.
+    assert "Across" in required_tokens("The album Across The Water sold 900 units.").tokens["name"]
+    # Sentence-initial, but not a common word: still an entity.
+    assert "Voltage" in required_tokens("Voltage has two agreements with us.").tokens["name"]
+    # Both clauses: exempt.
+    assert "Across" not in required_tokens("Across both deals, what is owed?").tokens["name"]
+
+
+def test_a_paraphrase_may_open_with_the_name_it_has_to_keep(corpus: H1Corpus) -> None:
+    """The exemptions belong to the *body*, never to the candidate. Were they applied to the
+    candidate, this paraphrase would be failed for losing the name it opens with."""
+    body = corpus.question("hand-cross_collateral-01").body
+    result = check_paraphrase(
+        body=body,
+        candidate=(
+            "Voltage holds several agreements with us that pool one recoupment account. "
+            "Taking all of those deals together, what unrecouped balance was left after "
+            "2026-06?"
+        ),
+    )
+    assert result.ok, result.failures
 
 
 # --- rendering ground truth ---------------------------------------------------------------
