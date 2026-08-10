@@ -1,0 +1,5475 @@
+{
+ "schema": "h1_probes/1",
+ "corpus_hash": "772eb2bce496b28b6e610e1165ab3220ab20a94242c9a87ee1aaffee4d5887fc",
+ "provenance": {
+  "produced_by": "experiments/h1/sweep.py",
+  "generated_at": "2026-08-10T20:04:55+00:00",
+  "headroom_commit": "aa134f4a6cfb8ef4f5712dfdcd0f9c798bee2a03"
+ },
+ "spaces": {
+  "prompt": [
+   {
+    "probe": "catalog_lookup-001#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-001",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.956631
+     },
+     {
+      "entry": "catalog_lookup-004",
+      "similarity": 0.926196
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.923218
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-002#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-002",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-001",
+      "similarity": 0.956631
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.924285
+     },
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.922507
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-003#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-003",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.926783
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.924109
+     },
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.92033
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-004#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-004",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-001",
+      "similarity": 0.926196
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.921678
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.920136
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-005#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-005",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.939957
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.926783
+     },
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.922507
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-006#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-006",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.939957
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.931325
+     },
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.924285
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-007#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-007",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-008",
+      "similarity": 0.995636
+     },
+     {
+      "entry": "catalog_lookup-001",
+      "similarity": 0.868224
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.86694
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-008#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-008",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-007",
+      "similarity": 0.995636
+     },
+     {
+      "entry": "catalog_lookup-001",
+      "similarity": 0.869374
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.86698
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-009#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-009",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.932003
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.90694
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.903479
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-010#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-010",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.932003
+     },
+     {
+      "entry": "abstention-007",
+      "similarity": 0.908974
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.905138
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-011#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-011",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-012",
+      "similarity": 0.891956
+     },
+     {
+      "entry": "hand-catalog_lookup-02",
+      "similarity": 0.822377
+     },
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.814895
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-012#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-012",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-011",
+      "similarity": 0.891956
+     },
+     {
+      "entry": "hand-catalog_lookup-02",
+      "similarity": 0.843401
+     },
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.807217
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-013#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-013",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.869033
+     },
+     {
+      "entry": "catalog_lookup-004",
+      "similarity": 0.843711
+     },
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.841143
+     }
+    ]
+   },
+   {
+    "probe": "hand-catalog_lookup-01#novel",
+    "family": "novel_question",
+    "asked": "hand-catalog_lookup-01",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "abstention-007",
+      "similarity": 0.842226
+     },
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.836475
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.828365
+     }
+    ]
+   },
+   {
+    "probe": "hand-catalog_lookup-02#novel",
+    "family": "novel_question",
+    "asked": "hand-catalog_lookup-02",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-012",
+      "similarity": 0.843401
+     },
+     {
+      "entry": "catalog_lookup-011",
+      "similarity": 0.822377
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.797757
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-001#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-001",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.922804
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.92194
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.912356
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-002#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-002",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.926316
+     },
+     {
+      "entry": "contract_terms-012",
+      "similarity": 0.908861
+     },
+     {
+      "entry": "contract_terms-009",
+      "similarity": 0.908695
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-003#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-003",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.938503
+     },
+     {
+      "entry": "hand-contract_terms-01",
+      "similarity": 0.908517
+     },
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.90801
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-004#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-004",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.907033
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.905091
+     },
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.902728
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-005#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-005",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.926316
+     },
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.922804
+     },
+     {
+      "entry": "contract_terms-009",
+      "similarity": 0.911746
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-006#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-006",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-013",
+      "similarity": 0.922959
+     },
+     {
+      "entry": "contract_terms-010",
+      "similarity": 0.918046
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.90801
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-007#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-007",
+    "category": "contract_terms",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.922227
+     },
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.92194
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.911543
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-008#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-008",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-014",
+      "similarity": 0.962038
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.929118
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.922227
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-009#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-009",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.911746
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.908788
+     },
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.908695
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-010#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-010",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.918046
+     },
+     {
+      "entry": "contract_terms-013",
+      "similarity": 0.908088
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.900438
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-011#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-011",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.929118
+     },
+     {
+      "entry": "contract_terms-014",
+      "similarity": 0.915322
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.911543
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-012#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-012",
+    "category": "contract_terms",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.908861
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.90818
+     },
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.906554
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-013#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-013",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.922959
+     },
+     {
+      "entry": "contract_terms-010",
+      "similarity": 0.908088
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.906644
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-014#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-014",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.962038
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.915322
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.909561
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-015#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-015",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-004",
+      "similarity": 0.84523
+     },
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.844559
+     },
+     {
+      "entry": "contract_terms-012",
+      "similarity": 0.844464
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-016#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-016",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-012",
+      "similarity": 0.870756
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.853162
+     },
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.850316
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-01#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-01",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.959533
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.908517
+     },
+     {
+      "entry": "hand-contract_terms-03",
+      "similarity": 0.90477
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-02#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-02",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-01",
+      "similarity": 0.959533
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.938503
+     },
+     {
+      "entry": "hand-contract_terms-03",
+      "similarity": 0.918202
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-03#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-03",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.918202
+     },
+     {
+      "entry": "hand-contract_terms-01",
+      "similarity": 0.90477
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.875431
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-04#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-04",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-03",
+      "similarity": 0.766012
+     },
+     {
+      "entry": "abstention-004",
+      "similarity": 0.762556
+     },
+     {
+      "entry": "royalty_math-006",
+      "similarity": 0.731809
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-001#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-001",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.902324
+     },
+     {
+      "entry": "abstention-002",
+      "similarity": 0.897002
+     },
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.895937
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-002#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-002",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.916375
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.913696
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.910127
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-003#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-003",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.913645
+     },
+     {
+      "entry": "abstention-002",
+      "similarity": 0.904336
+     },
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.901146
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-004#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-004",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.953339
+     },
+     {
+      "entry": "royalty_math-012",
+      "similarity": 0.935662
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.931623
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-005#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-005",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.914062
+     },
+     {
+      "entry": "royalty_math-002",
+      "similarity": 0.910127
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.909226
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-006#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-006",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.921009
+     },
+     {
+      "entry": "hand-royalty_math-03",
+      "similarity": 0.91522
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.910961
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-007#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-007",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.895842
+     },
+     {
+      "entry": "royalty_math-009",
+      "similarity": 0.895816
+     },
+     {
+      "entry": "royalty_math-001",
+      "similarity": 0.890276
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-008#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-008",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.910644
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.901863
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.89824
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-009#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-009",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.901648
+     },
+     {
+      "entry": "royalty_math-010",
+      "similarity": 0.896644
+     },
+     {
+      "entry": "royalty_math-007",
+      "similarity": 0.895816
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-010#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-010",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.911985
+     },
+     {
+      "entry": "royalty_math-009",
+      "similarity": 0.896644
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.894814
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-011#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-011",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.953339
+     },
+     {
+      "entry": "royalty_math-012",
+      "similarity": 0.921314
+     },
+     {
+      "entry": "royalty_math-006",
+      "similarity": 0.910961
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-012#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-012",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.935662
+     },
+     {
+      "entry": "recoupment_state-011",
+      "similarity": 0.932014
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.921314
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-013#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-013",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-015",
+      "similarity": 0.93637
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.930753
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.927974
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-014#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-014",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.92799
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.926606
+     },
+     {
+      "entry": "royalty_math-015",
+      "similarity": 0.926512
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-015#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-015",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.93637
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.927444
+     },
+     {
+      "entry": "royalty_math-014",
+      "similarity": 0.926512
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-016#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-016",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.930753
+     },
+     {
+      "entry": "royalty_math-014",
+      "similarity": 0.926606
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.918422
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-017#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-017",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.943401
+     },
+     {
+      "entry": "royalty_math-018",
+      "similarity": 0.94266
+     },
+     {
+      "entry": "royalty_math-020",
+      "similarity": 0.928065
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-018#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-018",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.94266
+     },
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.932292
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.931356
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-019#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-019",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.943401
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.933151
+     },
+     {
+      "entry": "royalty_math-018",
+      "similarity": 0.932292
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-020#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-020",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.928065
+     },
+     {
+      "entry": "royalty_math-018",
+      "similarity": 0.927335
+     },
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.922622
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-01#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-01",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.935264
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.901146
+     },
+     {
+      "entry": "abstention-002",
+      "similarity": 0.897852
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-02#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-02",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.849883
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.816271
+     },
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.815675
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-03#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-03",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-006",
+      "similarity": 0.91522
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.913813
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.905258
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-04#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-04",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.931623
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.921487
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.914062
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-05#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-05",
+    "category": "royalty_math",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.929827
+     },
+     {
+      "entry": "royalty_math-014",
+      "similarity": 0.92799
+     },
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.927974
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-001#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-001",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-002",
+      "similarity": 0.913247
+     },
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.893357
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.88476
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-002#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-002",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.918343
+     },
+     {
+      "entry": "recoupment_state-001",
+      "similarity": 0.913247
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.88967
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-003#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-003",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.960243
+     },
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.934666
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.882349
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-004#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-004",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.934666
+     },
+     {
+      "entry": "recoupment_state-002",
+      "similarity": 0.918343
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.909229
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-005#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-005",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.909229
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.890023
+     },
+     {
+      "entry": "recoupment_state-002",
+      "similarity": 0.88967
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-006#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-006",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.902902
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.880904
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.879169
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-007#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-007",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.960243
+     },
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.89511
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.890023
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-008#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-008",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.93376
+     },
+     {
+      "entry": "recoupment_state-011",
+      "similarity": 0.927711
+     },
+     {
+      "entry": "abstention-005",
+      "similarity": 0.922009
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-009#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-009",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.937097
+     },
+     {
+      "entry": "abstention-005",
+      "similarity": 0.919895
+     },
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.919889
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-010#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-010",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.937097
+     },
+     {
+      "entry": "recoupment_state-011",
+      "similarity": 0.935614
+     },
+     {
+      "entry": "recoupment_state-008",
+      "similarity": 0.93376
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-011#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-011",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.935614
+     },
+     {
+      "entry": "royalty_math-012",
+      "similarity": 0.932014
+     },
+     {
+      "entry": "recoupment_state-008",
+      "similarity": 0.927711
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-012#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-012",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-013",
+      "similarity": 0.916287
+     },
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.791777
+     },
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.782194
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-013#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-013",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-012",
+      "similarity": 0.916287
+     },
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.785132
+     },
+     {
+      "entry": "hand-cross_collateral-02",
+      "similarity": 0.784929
+     }
+    ]
+   },
+   {
+    "probe": "hand-recoupment_state-01#novel",
+    "family": "novel_question",
+    "asked": "hand-recoupment_state-01",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.935264
+     },
+     {
+      "entry": "abstention-005",
+      "similarity": 0.933679
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.919889
+     }
+    ]
+   },
+   {
+    "probe": "hand-recoupment_state-02#novel",
+    "family": "novel_question",
+    "asked": "hand-recoupment_state-02",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.933151
+     },
+     {
+      "entry": "royalty_math-018",
+      "similarity": 0.931356
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.929827
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-001#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-001",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-002",
+      "similarity": 0.909711
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.881156
+     },
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.868442
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-002#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-002",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.909711
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.883505
+     },
+     {
+      "entry": "royalty_math-010",
+      "similarity": 0.859672
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-003#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-003",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-007",
+      "similarity": 0.869526
+     },
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.868442
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.858279
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-004#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-004",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-005",
+      "similarity": 0.910599
+     },
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.893081
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.887255
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-005#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-005",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-004",
+      "similarity": 0.910599
+     },
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.880627
+     },
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.877178
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-006#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-006",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.858618
+     },
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.857088
+     },
+     {
+      "entry": "abstention-002",
+      "similarity": 0.848508
+     }
+    ]
+   },
+   {
+    "probe": "hand-cross_collateral-01#novel",
+    "family": "novel_question",
+    "asked": "hand-cross_collateral-01",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-cross_collateral-02",
+      "similarity": 0.910534
+     },
+     {
+      "entry": "recoupment_state-008",
+      "similarity": 0.885209
+     },
+     {
+      "entry": "cross_collateral-002",
+      "similarity": 0.883505
+     }
+    ]
+   },
+   {
+    "probe": "hand-cross_collateral-02#novel",
+    "family": "novel_question",
+    "asked": "hand-cross_collateral-02",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.910534
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.874801
+     },
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.874472
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-001#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-001",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-sql_analytics-02",
+      "similarity": 0.856809
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.840689
+     },
+     {
+      "entry": "sql_analytics-002",
+      "similarity": 0.840392
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-002#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-002",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.840392
+     },
+     {
+      "entry": "hand-sql_analytics-02",
+      "similarity": 0.821893
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.80907
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-003#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-003",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.948903
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.833598
+     },
+     {
+      "entry": "sql_analytics-008",
+      "similarity": 0.825224
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-004#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-004",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.948903
+     },
+     {
+      "entry": "sql_analytics-008",
+      "similarity": 0.845339
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.827314
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-005#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-005",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-006",
+      "similarity": 0.880607
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.799192
+     },
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.789085
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-006#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-006",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-005",
+      "similarity": 0.880607
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.79308
+     },
+     {
+      "entry": "royalty_math-014",
+      "similarity": 0.791981
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-007#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-007",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.83213
+     },
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.822355
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.820981
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-008#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-008",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-sql_analytics-02",
+      "similarity": 0.865099
+     },
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.845339
+     },
+     {
+      "entry": "catalog_lookup-007",
+      "similarity": 0.843991
+     }
+    ]
+   },
+   {
+    "probe": "hand-sql_analytics-01#novel",
+    "family": "novel_question",
+    "asked": "hand-sql_analytics-01",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.840689
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.833598
+     },
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.827314
+     }
+    ]
+   },
+   {
+    "probe": "hand-sql_analytics-02#novel",
+    "family": "novel_question",
+    "asked": "hand-sql_analytics-02",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-008",
+      "similarity": 0.865099
+     },
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.856809
+     },
+     {
+      "entry": "sql_analytics-002",
+      "similarity": 0.821893
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-001#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-001",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.99904
+     },
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.998912
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.998891
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-002#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-002",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.999107
+     },
+     {
+      "entry": "reconciliation-001",
+      "similarity": 0.99904
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.999017
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-003#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-003",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.998969
+     },
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.998962
+     },
+     {
+      "entry": "reconciliation-004",
+      "similarity": 0.998889
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-004#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-004",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.99918
+     },
+     {
+      "entry": "reconciliation-006",
+      "similarity": 0.998974
+     },
+     {
+      "entry": "reconciliation-003",
+      "similarity": 0.998889
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-005#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-005",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-006",
+      "similarity": 0.999432
+     },
+     {
+      "entry": "reconciliation-004",
+      "similarity": 0.99918
+     },
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.999107
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-006#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-006",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.999432
+     },
+     {
+      "entry": "reconciliation-004",
+      "similarity": 0.998974
+     },
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.998969
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-007#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-007",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.999494
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.999493
+     },
+     {
+      "entry": "reconciliation-012",
+      "similarity": 0.999361
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-008#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-008",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.999539
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.999494
+     },
+     {
+      "entry": "reconciliation-012",
+      "similarity": 0.999434
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-009#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-009",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.99937
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.999239
+     },
+     {
+      "entry": "reconciliation-012",
+      "similarity": 0.999018
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-010#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-010",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.999539
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.999493
+     },
+     {
+      "entry": "reconciliation-012",
+      "similarity": 0.999421
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-011#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-011",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.99928
+     },
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.999143
+     },
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.999017
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-012#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-012",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.999434
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.999421
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.999361
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-013#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-013",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-014",
+      "similarity": 0.99494
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.933377
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.933011
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-014#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-014",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-013",
+      "similarity": 0.99494
+     },
+     {
+      "entry": "reconciliation-009",
+      "similarity": 0.93149
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.931126
+     }
+    ]
+   },
+   {
+    "probe": "hand-reconciliation-01#novel",
+    "family": "novel_question",
+    "asked": "hand-reconciliation-01",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-013",
+      "similarity": 0.909683
+     },
+     {
+      "entry": "reconciliation-014",
+      "similarity": 0.907201
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.906216
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-001#novel",
+    "family": "novel_question",
+    "asked": "multi_step-001",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.992569
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.986722
+     },
+     {
+      "entry": "multi_step-003",
+      "similarity": 0.986372
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-002#novel",
+    "family": "novel_question",
+    "asked": "multi_step-002",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.992569
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.98946
+     },
+     {
+      "entry": "multi_step-003",
+      "similarity": 0.987554
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-003#novel",
+    "family": "novel_question",
+    "asked": "multi_step-003",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.987554
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.986813
+     },
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.986372
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-004#novel",
+    "family": "novel_question",
+    "asked": "multi_step-004",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.985679
+     },
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.985178
+     },
+     {
+      "entry": "multi_step-003",
+      "similarity": 0.984896
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-005#novel",
+    "family": "novel_question",
+    "asked": "multi_step-005",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.987206
+     },
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.986537
+     },
+     {
+      "entry": "multi_step-003",
+      "similarity": 0.983843
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-006#novel",
+    "family": "novel_question",
+    "asked": "multi_step-006",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.894448
+     },
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.889361
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.878955
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-007#novel",
+    "family": "novel_question",
+    "asked": "multi_step-007",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.892386
+     },
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.889361
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.882088
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-008#novel",
+    "family": "novel_question",
+    "asked": "multi_step-008",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.869433
+     },
+     {
+      "entry": "contract_terms-004",
+      "similarity": 0.868819
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.862613
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-009#novel",
+    "family": "novel_question",
+    "asked": "multi_step-009",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-multi_step-02",
+      "similarity": 0.892099
+     },
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.888174
+     },
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.882088
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-010#novel",
+    "family": "novel_question",
+    "asked": "multi_step-010",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.892386
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.888174
+     },
+     {
+      "entry": "hand-multi_step-02",
+      "similarity": 0.872431
+     }
+    ]
+   },
+   {
+    "probe": "hand-multi_step-01#novel",
+    "family": "novel_question",
+    "asked": "hand-multi_step-01",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.98946
+     },
+     {
+      "entry": "multi_step-005",
+      "similarity": 0.987206
+     },
+     {
+      "entry": "multi_step-003",
+      "similarity": 0.986813
+     }
+    ]
+   },
+   {
+    "probe": "hand-multi_step-02#novel",
+    "family": "novel_question",
+    "asked": "hand-multi_step-02",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.892099
+     },
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.877343
+     },
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.872431
+     }
+    ]
+   },
+   {
+    "probe": "abstention-001#novel",
+    "family": "novel_question",
+    "asked": "abstention-001",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.867945
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.857421
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.845126
+     }
+    ]
+   },
+   {
+    "probe": "abstention-002#novel",
+    "family": "novel_question",
+    "asked": "abstention-002",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.913907
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.904336
+     },
+     {
+      "entry": "royalty_math-002",
+      "similarity": 0.898864
+     }
+    ]
+   },
+   {
+    "probe": "abstention-003#novel",
+    "family": "novel_question",
+    "asked": "abstention-003",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.810298
+     },
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.799261
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.795012
+     }
+    ]
+   },
+   {
+    "probe": "abstention-004#novel",
+    "family": "novel_question",
+    "asked": "abstention-004",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-005",
+      "similarity": 0.766049
+     },
+     {
+      "entry": "sql_analytics-006",
+      "similarity": 0.765398
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.764748
+     }
+    ]
+   },
+   {
+    "probe": "abstention-005#novel",
+    "family": "novel_question",
+    "asked": "abstention-005",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.933679
+     },
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.933455
+     },
+     {
+      "entry": "recoupment_state-008",
+      "similarity": 0.922009
+     }
+    ]
+   },
+   {
+    "probe": "abstention-006#novel",
+    "family": "novel_question",
+    "asked": "abstention-006",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.931325
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.924109
+     },
+     {
+      "entry": "catalog_lookup-004",
+      "similarity": 0.921678
+     }
+    ]
+   },
+   {
+    "probe": "abstention-007#novel",
+    "family": "novel_question",
+    "asked": "abstention-007",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.908974
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.906563
+     },
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.902321
+     }
+    ]
+   },
+   {
+    "probe": "abstention-008#novel",
+    "family": "novel_question",
+    "asked": "abstention-008",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.843804
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.841867
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.83492
+     }
+    ]
+   },
+   {
+    "probe": "hand-abstention-01#novel",
+    "family": "novel_question",
+    "asked": "hand-abstention-01",
+    "category": "abstention",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "abstention-003",
+      "similarity": 0.78456
+     },
+     {
+      "entry": "abstention-008",
+      "similarity": 0.764301
+     },
+     {
+      "entry": "abstention-004",
+      "similarity": 0.762385
+     }
+    ]
+   },
+   {
+    "probe": "hand-abstention-02#novel",
+    "family": "novel_question",
+    "asked": "hand-abstention-02",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.812498
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.810437
+     },
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.802989
+     }
+    ]
+   }
+  ],
+  "body": [
+   {
+    "probe": "catalog_lookup-001#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-001",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.815775
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.729758
+     },
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.69826
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-002#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-002",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-001",
+      "similarity": 0.815775
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.7308
+     },
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.730105
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-003#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-003",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.728178
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.71033
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.709126
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-004#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-004",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "abstention-006",
+      "similarity": 0.733763
+     },
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.701964
+     },
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.701142
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-005#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-005",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.795319
+     },
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.730105
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.728178
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-006#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-006",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.795319
+     },
+     {
+      "entry": "abstention-006",
+      "similarity": 0.776301
+     },
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.7308
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-007#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-007",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-008",
+      "similarity": 0.957967
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.624892
+     },
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.617864
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-008#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-008",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-007",
+      "similarity": 0.957967
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.664155
+     },
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.621787
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-009#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-009",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.715598
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.708154
+     },
+     {
+      "entry": "abstention-007",
+      "similarity": 0.675521
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-010#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-010",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.715598
+     },
+     {
+      "entry": "abstention-007",
+      "similarity": 0.684111
+     },
+     {
+      "entry": "catalog_lookup-002",
+      "similarity": 0.676096
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-011#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-011",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.614044
+     },
+     {
+      "entry": "catalog_lookup-012",
+      "similarity": 0.610807
+     },
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.575403
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-012#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-012",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-011",
+      "similarity": 0.610807
+     },
+     {
+      "entry": "hand-catalog_lookup-02",
+      "similarity": 0.583657
+     },
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.570041
+     }
+    ]
+   },
+   {
+    "probe": "catalog_lookup-013#novel",
+    "family": "novel_question",
+    "asked": "catalog_lookup-013",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-004",
+      "similarity": 0.663852
+     },
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.645977
+     },
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.639608
+     }
+    ]
+   },
+   {
+    "probe": "hand-catalog_lookup-01#novel",
+    "family": "novel_question",
+    "asked": "hand-catalog_lookup-01",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.672665
+     },
+     {
+      "entry": "catalog_lookup-003",
+      "similarity": 0.653724
+     },
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.652521
+     }
+    ]
+   },
+   {
+    "probe": "hand-catalog_lookup-02#novel",
+    "family": "novel_question",
+    "asked": "hand-catalog_lookup-02",
+    "category": "catalog_lookup",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "abstention-006",
+      "similarity": 0.646294
+     },
+     {
+      "entry": "catalog_lookup-008",
+      "similarity": 0.594007
+     },
+     {
+      "entry": "catalog_lookup-007",
+      "similarity": 0.589088
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-001#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-001",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.885887
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.878029
+     },
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.869209
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-002#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-002",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.875964
+     },
+     {
+      "entry": "contract_terms-009",
+      "similarity": 0.871264
+     },
+     {
+      "entry": "contract_terms-012",
+      "similarity": 0.863942
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-003#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-003",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.903456
+     },
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.893889
+     },
+     {
+      "entry": "contract_terms-013",
+      "similarity": 0.888039
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-004#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-004",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.874086
+     },
+     {
+      "entry": "contract_terms-014",
+      "similarity": 0.865494
+     },
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.864094
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-005#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-005",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.875964
+     },
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.869209
+     },
+     {
+      "entry": "contract_terms-009",
+      "similarity": 0.864939
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-006#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-006",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-013",
+      "similarity": 0.900866
+     },
+     {
+      "entry": "contract_terms-010",
+      "similarity": 0.898831
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.893889
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-007#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-007",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.878029
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.869174
+     },
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.860077
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-008#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-008",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-014",
+      "similarity": 0.935953
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.883425
+     },
+     {
+      "entry": "contract_terms-007",
+      "similarity": 0.860077
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-009#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-009",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.871264
+     },
+     {
+      "entry": "contract_terms-012",
+      "similarity": 0.867988
+     },
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.864939
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-010#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-010",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.898831
+     },
+     {
+      "entry": "contract_terms-013",
+      "similarity": 0.891321
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.882889
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-011#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-011",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.883425
+     },
+     {
+      "entry": "contract_terms-014",
+      "similarity": 0.878163
+     },
+     {
+      "entry": "contract_terms-004",
+      "similarity": 0.874086
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-012#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-012",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-009",
+      "similarity": 0.867988
+     },
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.863942
+     },
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.853601
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-013#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-013",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.900866
+     },
+     {
+      "entry": "contract_terms-010",
+      "similarity": 0.891321
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.888039
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-014#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-014",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-008",
+      "similarity": 0.935953
+     },
+     {
+      "entry": "contract_terms-011",
+      "similarity": 0.878163
+     },
+     {
+      "entry": "contract_terms-004",
+      "similarity": 0.865494
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-015#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-015",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-004",
+      "similarity": 0.777342
+     },
+     {
+      "entry": "contract_terms-002",
+      "similarity": 0.772463
+     },
+     {
+      "entry": "contract_terms-016",
+      "similarity": 0.770582
+     }
+    ]
+   },
+   {
+    "probe": "contract_terms-016#novel",
+    "family": "novel_question",
+    "asked": "contract_terms-016",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-012",
+      "similarity": 0.798311
+     },
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.777911
+     },
+     {
+      "entry": "contract_terms-015",
+      "similarity": 0.770582
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-01#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-01",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.913524
+     },
+     {
+      "entry": "hand-contract_terms-03",
+      "similarity": 0.85092
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.845102
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-02#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-02",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-01",
+      "similarity": 0.913524
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.903456
+     },
+     {
+      "entry": "hand-contract_terms-03",
+      "similarity": 0.83245
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-03#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-03",
+    "category": "contract_terms",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-01",
+      "similarity": 0.85092
+     },
+     {
+      "entry": "hand-contract_terms-02",
+      "similarity": 0.83245
+     },
+     {
+      "entry": "contract_terms-003",
+      "similarity": 0.772737
+     }
+    ]
+   },
+   {
+    "probe": "hand-contract_terms-04#novel",
+    "family": "novel_question",
+    "asked": "hand-contract_terms-04",
+    "category": "contract_terms",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-03",
+      "similarity": 0.655772
+     },
+     {
+      "entry": "contract_terms-006",
+      "similarity": 0.650699
+     },
+     {
+      "entry": "contract_terms-010",
+      "similarity": 0.648475
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-001#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-001",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.731769
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.726829
+     },
+     {
+      "entry": "abstention-002",
+      "similarity": 0.721129
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-002#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-002",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.746177
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.737551
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.722357
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-003#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-003",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.770247
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.759397
+     },
+     {
+      "entry": "royalty_math-007",
+      "similarity": 0.741419
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-004#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-004",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.848977
+     },
+     {
+      "entry": "royalty_math-012",
+      "similarity": 0.791566
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.788792
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-005#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-005",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.779788
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.777795
+     },
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.769629
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-006#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-006",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.762705
+     },
+     {
+      "entry": "hand-royalty_math-03",
+      "similarity": 0.761395
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.753206
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-007#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-007",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.797798
+     },
+     {
+      "entry": "royalty_math-009",
+      "similarity": 0.751416
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.741419
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-008#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-008",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.723347
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.716249
+     },
+     {
+      "entry": "royalty_math-010",
+      "similarity": 0.70944
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-009#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-009",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.77979
+     },
+     {
+      "entry": "royalty_math-010",
+      "similarity": 0.761445
+     },
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.757207
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-010#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-010",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-002",
+      "similarity": 0.794828
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.771362
+     },
+     {
+      "entry": "royalty_math-009",
+      "similarity": 0.761445
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-011#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-011",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.848977
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.777795
+     },
+     {
+      "entry": "royalty_math-012",
+      "similarity": 0.771366
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-012#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-012",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-011",
+      "similarity": 0.846963
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.791566
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.771366
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-013#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-013",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-015",
+      "similarity": 0.772743
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.762448
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.758659
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-014#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-014",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.76106
+     },
+     {
+      "entry": "contract_terms-005",
+      "similarity": 0.760156
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.745072
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-015#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-015",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.772743
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.736738
+     },
+     {
+      "entry": "royalty_math-006",
+      "similarity": 0.721857
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-016#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-016",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-013",
+      "similarity": 0.762448
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.761587
+     },
+     {
+      "entry": "royalty_math-014",
+      "similarity": 0.76106
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-017#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-017",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-018",
+      "similarity": 0.828534
+     },
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.815058
+     },
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.801545
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-018#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-018",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.828534
+     },
+     {
+      "entry": "royalty_math-020",
+      "similarity": 0.778908
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.768568
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-019#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-019",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.815058
+     },
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.774144
+     },
+     {
+      "entry": "royalty_math-020",
+      "similarity": 0.755357
+     }
+    ]
+   },
+   {
+    "probe": "royalty_math-020#novel",
+    "family": "novel_question",
+    "asked": "royalty_math-020",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.831639
+     },
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.797795
+     },
+     {
+      "entry": "royalty_math-018",
+      "similarity": 0.778908
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-01#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-01",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.82137
+     },
+     {
+      "entry": "royalty_math-011",
+      "similarity": 0.725433
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.724889
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-02#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-02",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.810118
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.776162
+     },
+     {
+      "entry": "royalty_math-009",
+      "similarity": 0.715844
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-03#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-03",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-006",
+      "similarity": 0.761395
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.748339
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.746688
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-04#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-04",
+    "category": "royalty_math",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.821391
+     },
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.795429
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.788792
+     }
+    ]
+   },
+   {
+    "probe": "hand-royalty_math-05#novel",
+    "family": "novel_question",
+    "asked": "hand-royalty_math-05",
+    "category": "royalty_math",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-02",
+      "similarity": 0.845505
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.795429
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.761587
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-001#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-001",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-002",
+      "similarity": 0.800623
+     },
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.77189
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.756474
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-002#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-002",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.835575
+     },
+     {
+      "entry": "recoupment_state-001",
+      "similarity": 0.800623
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.778969
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-003#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-003",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.919414
+     },
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.883186
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.775491
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-004#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-004",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.883186
+     },
+     {
+      "entry": "recoupment_state-002",
+      "similarity": 0.835575
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.822447
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-005#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-005",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.821534
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.805447
+     },
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.775491
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-006#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-006",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.808224
+     },
+     {
+      "entry": "recoupment_state-007",
+      "similarity": 0.785822
+     },
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.758989
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-007#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-007",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-003",
+      "similarity": 0.919414
+     },
+     {
+      "entry": "recoupment_state-004",
+      "similarity": 0.822447
+     },
+     {
+      "entry": "recoupment_state-005",
+      "similarity": 0.805447
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-008#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-008",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.787808
+     },
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.777684
+     },
+     {
+      "entry": "recoupment_state-011",
+      "similarity": 0.764767
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-009#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-009",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.792889
+     },
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.781005
+     },
+     {
+      "entry": "hand-royalty_math-02",
+      "similarity": 0.776162
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-010#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-010",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.812653
+     },
+     {
+      "entry": "recoupment_state-011",
+      "similarity": 0.80556
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.792889
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-011#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-011",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-012",
+      "similarity": 0.846963
+     },
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.80556
+     },
+     {
+      "entry": "recoupment_state-008",
+      "similarity": 0.764767
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-012#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-012",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-013",
+      "similarity": 0.889119
+     },
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.75075
+     },
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.736974
+     }
+    ]
+   },
+   {
+    "probe": "recoupment_state-013#novel",
+    "family": "novel_question",
+    "asked": "recoupment_state-013",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "recoupment_state-012",
+      "similarity": 0.889119
+     },
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.727116
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.726511
+     }
+    ]
+   },
+   {
+    "probe": "hand-recoupment_state-01#novel",
+    "family": "novel_question",
+    "asked": "hand-recoupment_state-01",
+    "category": "recoupment_state",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.82137
+     },
+     {
+      "entry": "abstention-005",
+      "similarity": 0.796913
+     },
+     {
+      "entry": "recoupment_state-009",
+      "similarity": 0.774613
+     }
+    ]
+   },
+   {
+    "probe": "hand-recoupment_state-02#novel",
+    "family": "novel_question",
+    "asked": "hand-recoupment_state-02",
+    "category": "recoupment_state",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-05",
+      "similarity": 0.845505
+     },
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.821391
+     },
+     {
+      "entry": "royalty_math-019",
+      "similarity": 0.774144
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-001#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-001",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-002",
+      "similarity": 0.874356
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.833438
+     },
+     {
+      "entry": "royalty_math-020",
+      "similarity": 0.831639
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-002#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-002",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.874356
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.849674
+     },
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.825166
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-003#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-003",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.82738
+     },
+     {
+      "entry": "cross_collateral-002",
+      "similarity": 0.825166
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.804878
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-004#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-004",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-005",
+      "similarity": 0.763543
+     },
+     {
+      "entry": "royalty_math-020",
+      "similarity": 0.696251
+     },
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.69434
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-005#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-005",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-004",
+      "similarity": 0.763543
+     },
+     {
+      "entry": "multi_step-008",
+      "similarity": 0.702455
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.693006
+     }
+    ]
+   },
+   {
+    "probe": "cross_collateral-006#novel",
+    "family": "novel_question",
+    "asked": "cross_collateral-006",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "royalty_math-017",
+      "similarity": 0.801545
+     },
+     {
+      "entry": "cross_collateral-003",
+      "similarity": 0.778433
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.770247
+     }
+    ]
+   },
+   {
+    "probe": "hand-cross_collateral-01#novel",
+    "family": "novel_question",
+    "asked": "hand-cross_collateral-01",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-cross_collateral-02",
+      "similarity": 0.869302
+     },
+     {
+      "entry": "cross_collateral-002",
+      "similarity": 0.849674
+     },
+     {
+      "entry": "cross_collateral-001",
+      "similarity": 0.833438
+     }
+    ]
+   },
+   {
+    "probe": "hand-cross_collateral-02#novel",
+    "family": "novel_question",
+    "asked": "hand-cross_collateral-02",
+    "category": "cross_collateral",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.869302
+     },
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.746831
+     },
+     {
+      "entry": "royalty_math-016",
+      "similarity": 0.742813
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-001#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-001",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-007",
+      "similarity": 0.837719
+     },
+     {
+      "entry": "hand-sql_analytics-02",
+      "similarity": 0.786512
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.770806
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-002#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-002",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-reconciliation-01",
+      "similarity": 0.747267
+     },
+     {
+      "entry": "hand-sql_analytics-02",
+      "similarity": 0.746835
+     },
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.746436
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-003#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-003",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.887221
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.755518
+     },
+     {
+      "entry": "sql_analytics-002",
+      "similarity": 0.713819
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-004#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-004",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.887221
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.730757
+     },
+     {
+      "entry": "sql_analytics-008",
+      "similarity": 0.706669
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-005#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-005",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-006",
+      "similarity": 0.74729
+     },
+     {
+      "entry": "royalty_math-001",
+      "similarity": 0.671335
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.664786
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-006#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-006",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-005",
+      "similarity": 0.74729
+     },
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.639678
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.625384
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-007#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-007",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.837719
+     },
+     {
+      "entry": "hand-sql_analytics-01",
+      "similarity": 0.745361
+     },
+     {
+      "entry": "royalty_math-005",
+      "similarity": 0.703991
+     }
+    ]
+   },
+   {
+    "probe": "sql_analytics-008#novel",
+    "family": "novel_question",
+    "asked": "sql_analytics-008",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-sql_analytics-02",
+      "similarity": 0.7987
+     },
+     {
+      "entry": "sql_analytics-004",
+      "similarity": 0.706669
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.690529
+     }
+    ]
+   },
+   {
+    "probe": "hand-sql_analytics-01#novel",
+    "family": "novel_question",
+    "asked": "hand-sql_analytics-01",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.770806
+     },
+     {
+      "entry": "sql_analytics-003",
+      "similarity": 0.755518
+     },
+     {
+      "entry": "sql_analytics-007",
+      "similarity": 0.745361
+     }
+    ]
+   },
+   {
+    "probe": "hand-sql_analytics-02#novel",
+    "family": "novel_question",
+    "asked": "hand-sql_analytics-02",
+    "category": "sql_analytics",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "sql_analytics-008",
+      "similarity": 0.7987
+     },
+     {
+      "entry": "sql_analytics-001",
+      "similarity": 0.786512
+     },
+     {
+      "entry": "sql_analytics-002",
+      "similarity": 0.746835
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-001#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-001",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.99613
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.995749
+     },
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.995251
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-002#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-002",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.997361
+     },
+     {
+      "entry": "reconciliation-006",
+      "similarity": 0.997046
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.996948
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-003#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-003",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.996354
+     },
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.996185
+     },
+     {
+      "entry": "reconciliation-004",
+      "similarity": 0.995997
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-004#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-004",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.997203
+     },
+     {
+      "entry": "reconciliation-006",
+      "similarity": 0.996812
+     },
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.996338
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-005#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-005",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-006",
+      "similarity": 0.998132
+     },
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.997361
+     },
+     {
+      "entry": "reconciliation-004",
+      "similarity": 0.997203
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-006#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-006",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-005",
+      "similarity": 0.998132
+     },
+     {
+      "entry": "reconciliation-002",
+      "similarity": 0.997046
+     },
+     {
+      "entry": "reconciliation-004",
+      "similarity": 0.996812
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-007#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-007",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.998554
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.998525
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.997495
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-008#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-008",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.998554
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.998336
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.99751
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-009#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-009",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.997418
+     },
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.996914
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.996654
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-010#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-010",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.998525
+     },
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.998336
+     },
+     {
+      "entry": "reconciliation-011",
+      "similarity": 0.997808
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-011#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-011",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.997808
+     },
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.99751
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.997495
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-012#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-012",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-010",
+      "similarity": 0.997121
+     },
+     {
+      "entry": "reconciliation-008",
+      "similarity": 0.996932
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.996856
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-013#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-013",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-014",
+      "similarity": 0.937891
+     },
+     {
+      "entry": "hand-reconciliation-01",
+      "similarity": 0.802169
+     },
+     {
+      "entry": "reconciliation-006",
+      "similarity": 0.796931
+     }
+    ]
+   },
+   {
+    "probe": "reconciliation-014#novel",
+    "family": "novel_question",
+    "asked": "reconciliation-014",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-013",
+      "similarity": 0.937891
+     },
+     {
+      "entry": "hand-reconciliation-01",
+      "similarity": 0.792043
+     },
+     {
+      "entry": "reconciliation-009",
+      "similarity": 0.788331
+     }
+    ]
+   },
+   {
+    "probe": "hand-reconciliation-01#novel",
+    "family": "novel_question",
+    "asked": "hand-reconciliation-01",
+    "category": "reconciliation",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "reconciliation-013",
+      "similarity": 0.802169
+     },
+     {
+      "entry": "reconciliation-014",
+      "similarity": 0.792043
+     },
+     {
+      "entry": "reconciliation-007",
+      "similarity": 0.775747
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-001#novel",
+    "family": "novel_question",
+    "asked": "multi_step-001",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.989489
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.978894
+     },
+     {
+      "entry": "multi_step-004",
+      "similarity": 0.978427
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-002#novel",
+    "family": "novel_question",
+    "asked": "multi_step-002",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.989489
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.982862
+     },
+     {
+      "entry": "multi_step-005",
+      "similarity": 0.982311
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-003#novel",
+    "family": "novel_question",
+    "asked": "multi_step-003",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.980943
+     },
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.977736
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.977148
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-004#novel",
+    "family": "novel_question",
+    "asked": "multi_step-004",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.978427
+     },
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.978391
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.977924
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-005#novel",
+    "family": "novel_question",
+    "asked": "multi_step-005",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.982311
+     },
+     {
+      "entry": "hand-multi_step-01",
+      "similarity": 0.981654
+     },
+     {
+      "entry": "multi_step-004",
+      "similarity": 0.977492
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-006#novel",
+    "family": "novel_question",
+    "asked": "multi_step-006",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.885887
+     },
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.821481
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.819825
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-007#novel",
+    "family": "novel_question",
+    "asked": "multi_step-007",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.83241
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.829215
+     },
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.821481
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-008#novel",
+    "family": "novel_question",
+    "asked": "multi_step-008",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "contract_terms-004",
+      "similarity": 0.860086
+     },
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.795997
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.792772
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-009#novel",
+    "family": "novel_question",
+    "asked": "multi_step-009",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-multi_step-02",
+      "similarity": 0.844795
+     },
+     {
+      "entry": "multi_step-010",
+      "similarity": 0.836751
+     },
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.829215
+     }
+    ]
+   },
+   {
+    "probe": "multi_step-010#novel",
+    "family": "novel_question",
+    "asked": "multi_step-010",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.836751
+     },
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.83241
+     },
+     {
+      "entry": "hand-royalty_math-02",
+      "similarity": 0.810118
+     }
+    ]
+   },
+   {
+    "probe": "hand-multi_step-01#novel",
+    "family": "novel_question",
+    "asked": "hand-multi_step-01",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-002",
+      "similarity": 0.982862
+     },
+     {
+      "entry": "multi_step-005",
+      "similarity": 0.981654
+     },
+     {
+      "entry": "multi_step-001",
+      "similarity": 0.978894
+     }
+    ]
+   },
+   {
+    "probe": "hand-multi_step-02#novel",
+    "family": "novel_question",
+    "asked": "hand-multi_step-02",
+    "category": "multi_step",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.844795
+     },
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.803088
+     },
+     {
+      "entry": "multi_step-007",
+      "similarity": 0.799092
+     }
+    ]
+   },
+   {
+    "probe": "abstention-001#novel",
+    "family": "novel_question",
+    "asked": "abstention-001",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-multi_step-02",
+      "similarity": 0.746058
+     },
+     {
+      "entry": "multi_step-009",
+      "similarity": 0.715933
+     },
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.710986
+     }
+    ]
+   },
+   {
+    "probe": "abstention-002#novel",
+    "family": "novel_question",
+    "asked": "abstention-002",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "cross_collateral-006",
+      "similarity": 0.755938
+     },
+     {
+      "entry": "royalty_math-004",
+      "similarity": 0.742349
+     },
+     {
+      "entry": "royalty_math-003",
+      "similarity": 0.72927
+     }
+    ]
+   },
+   {
+    "probe": "abstention-003#novel",
+    "family": "novel_question",
+    "asked": "abstention-003",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.672721
+     },
+     {
+      "entry": "hand-royalty_math-01",
+      "similarity": 0.672134
+     },
+     {
+      "entry": "hand-abstention-01",
+      "similarity": 0.644948
+     }
+    ]
+   },
+   {
+    "probe": "abstention-004#novel",
+    "family": "novel_question",
+    "asked": "abstention-004",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-contract_terms-04",
+      "similarity": 0.629499
+     },
+     {
+      "entry": "hand-cross_collateral-01",
+      "similarity": 0.586055
+     },
+     {
+      "entry": "hand-royalty_math-03",
+      "similarity": 0.542874
+     }
+    ]
+   },
+   {
+    "probe": "abstention-005#novel",
+    "family": "novel_question",
+    "asked": "abstention-005",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-recoupment_state-01",
+      "similarity": 0.796913
+     },
+     {
+      "entry": "recoupment_state-010",
+      "similarity": 0.782462
+     },
+     {
+      "entry": "recoupment_state-008",
+      "similarity": 0.757971
+     }
+    ]
+   },
+   {
+    "probe": "abstention-006#novel",
+    "family": "novel_question",
+    "asked": "abstention-006",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "catalog_lookup-006",
+      "similarity": 0.776301
+     },
+     {
+      "entry": "catalog_lookup-004",
+      "similarity": 0.733763
+     },
+     {
+      "entry": "catalog_lookup-005",
+      "similarity": 0.712838
+     }
+    ]
+   },
+   {
+    "probe": "abstention-007#novel",
+    "family": "novel_question",
+    "asked": "abstention-007",
+    "category": "abstention",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "abstention-006",
+      "similarity": 0.701974
+     },
+     {
+      "entry": "catalog_lookup-010",
+      "similarity": 0.684111
+     },
+     {
+      "entry": "catalog_lookup-009",
+      "similarity": 0.675521
+     }
+    ]
+   },
+   {
+    "probe": "abstention-008#novel",
+    "family": "novel_question",
+    "asked": "abstention-008",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "multi_step-006",
+      "similarity": 0.755896
+     },
+     {
+      "entry": "hand-contract_terms-03",
+      "similarity": 0.749455
+     },
+     {
+      "entry": "contract_terms-001",
+      "similarity": 0.74735
+     }
+    ]
+   },
+   {
+    "probe": "hand-abstention-01#novel",
+    "family": "novel_question",
+    "asked": "hand-abstention-01",
+    "category": "abstention",
+    "classification": "benign_collision",
+    "neighbours": [
+     {
+      "entry": "abstention-008",
+      "similarity": 0.669224
+     },
+     {
+      "entry": "abstention-003",
+      "similarity": 0.644948
+     },
+     {
+      "entry": "hand-reconciliation-01",
+      "similarity": 0.625163
+     }
+    ]
+   },
+   {
+    "probe": "hand-abstention-02#novel",
+    "family": "novel_question",
+    "asked": "hand-abstention-02",
+    "category": "abstention",
+    "classification": "silent_wrong_answer",
+    "neighbours": [
+     {
+      "entry": "hand-royalty_math-04",
+      "similarity": 0.732147
+     },
+     {
+      "entry": "hand-contract_terms-03",
+      "similarity": 0.699616
+     },
+     {
+      "entry": "abstention-008",
+      "similarity": 0.698862
+     }
+    ]
+   }
+  ]
+ }
+}
