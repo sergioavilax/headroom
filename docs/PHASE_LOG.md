@@ -5093,4 +5093,43 @@ command's expected cost stated before it.
 
 ### CI
 
-*(PR-8 pending — filled in from `gh run view` once the run completes.)*
+CI on PR-8 ([run 31430133857](https://github.com/sergioavilax/headroom/actions/runs/31430133857)),
+all **five** jobs green on the first run, no annotations:
+
+```
+$ gh run view 31430133857 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+ui lint + typecheck + unit tests + build: success
+ui browser smoke (chromium, stub gateway): success
+gateway and ui images build and serve: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 162 source files
+pytest (…service containers) | ===== 1148 passed, 2 deselected, 1 warning in 31.66s =====
+ui lint + typecheck + unit tests + build | ℹ tests 28  ℹ pass 28
+ui browser smoke (chromium, stub gateway) |   7 passed (4.8s)
+gateway and ui images build and serve | gateway healthy
+gateway and ui images build and serve | console healthy
+```
+
+**1148 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of all four contract suites executed against the service
+containers rather than skipping (H-012).
+
+**All 56 experiment tests ran on a runner with no `embed` extra** — no torch, no model, no
+network to HuggingFace, and no Backline checkout anywhere:
+
+```
+$ gh run view 31430133857 --log | grep -c "test_experiments_.*PASSED"
+56
+```
+
+That is the sentence the whole phase rests on. Every similarity number in H1 came out of the
+real `bge-small-en-v1.5`, once, on the operator's CPU, and is asserted in CI out of a
+committed artifact whose hash covers its texts and its equivalence matrix. Including
+`test_the_committed_curve_is_the_one_this_corpus_produces`, which recomputes the published
+curve from the published corpus — so **the numbers in `REPORT.md` are regenerated on every
+pull request rather than trusted**. Phase 11's doc-pinning discipline, arriving three phases
+early because a published finding is exactly the thing that must not drift from its input.
