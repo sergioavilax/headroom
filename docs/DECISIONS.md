@@ -3930,8 +3930,132 @@ budget stop leaves the question exactly as it was, and a redraw that then fails 
 
 ---
 
-## H-069 — A two-part ask is an entity: the compound-ask check, and  made a redo (Phase 8)
+## H-070 — The redraws thrashed, so the rubric asks too: `RUBRIC_VERSION` 2 (Phase 8)
 
 **Status**: accepted · **Date**: 2026-08-10
 
-**Context.** The operator ran the spot-check — the half of §P8.H1s
+**Context — H-069's own lever, invoked on H-069's own condition.** H-069 added the
+mechanical compound-ask check and deliberately did *not* strengthen the prompt, on the
+argument that 50 of 75 compound-ask candidates already passed: a 1-in-3 failure is a retry,
+not a regeneration. It named the condition that would overturn that: *"if redraws thrash —
+the same ids landing `unresolved` across repeated `--only` runs — the next lever is
+`RUBRIC_VERSION = 2` plus a full regeneration, and that is a costed decision for the
+operator, not a silent one."*
+
+They thrashed. The operator ran three `--only` rounds over the 17 audited ids:
+
+```
+17 → 8 → 5 → 5
+```
+
+**Five ids are stuck**: `contract_terms-008`, `-012`, `-013`, `-014` and
+`hand-contract_terms-04`, each having failed three to four independent rounds — nine to
+twelve independent draws apiece, since a round is up to `MAX_ROUNDS = 3` attempts. Every
+failure is the same shape, the compound-ask collapse on the *rate-plus-cite* body, verbatim
+in the committed `unresolved` block:
+
+```
+collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question
+and are folded into one here
+```
+
+`hand-contract_terms-04` additionally loses the name `Japanese` intermittently — a second,
+independent drift on the same body, which is what a model doing badly rather than unluckily
+looks like. Redraw spend so far ~**$0.11**.
+
+**The arithmetic says grinding is no longer information.** Reading the per-candidate
+collapse rate back out of the round-by-round attrition (9 of 17 cleared, then 3 of 8, then 0
+of 5) puts it near **one in two** on these bodies, not H-069's batch-wide one in three — and
+attrition selects for the hardest bodies, so it climbs as the set shrinks. All three
+candidates must pass in the same round, by design (the model is told the three must differ
+from each other, and accumulating passing candidates across calls would trade that diversity
+away), so a clean round is roughly `(1/2)³` ≈ **one in eight** for these questions. Another
+$0.11 of grinding buys the same distribution, and 0-of-5 in the last round is that
+distribution being honest.
+
+**Decision — bump `RUBRIC_VERSION` to 2 and regenerate all 130 under it.**
+
+The amendment is one new rule, stated positively, with a single faithful form shown, and the
+rest of the rubric byte-for-byte unchanged:
+
+```
+4. KEEP A TWO-PART ASK IN TWO PARTS. When the question asks for a value AND separately
+   instructs you to cite, name, report, quote or show something, the rewrite must ask for
+   both, as two distinct asks — joined by "and", left as a second sentence, or attached
+   as a "…, citing …" clause. Mentioning the second thing inside the first ("cite the
+   clause that sets the rate") names it; it does not ask for it.
+   Original: What was the closing balance for 2026-05? Cite the statement it comes from.
+   Faithful: What closing balance was recorded for 2026-05, and which statement reports it?
+```
+
+**The mechanical check stays exactly as it is.** This is belt and braces, not a swap: the
+rubric asks and the checker verifies, and a rule that lives only in a prompt is a rule that
+holds for whatever the model felt like doing that day. The example is invented rather than
+lifted from the suite — the model is being taught a *shape*, not handed a question it will
+be asked to rewrite — and `test_the_rubric_teaches_a_form_the_checker_accepts` runs it
+through `compound_ask()` and `check_paraphrase()`, so a prompt that taught a form the harness
+rejects fails the suite instead of the batch. Teaching an unpassable form is H-068's stuck
+generator reached from the other side, and it would burn the whole regeneration.
+
+**"Batches never mix versions" is now code, because otherwise the lever does not fire.**
+The rule was documented in `rubric.py` and enforced nowhere. Under it, the honest command
+for a full regeneration — a bare `python -m experiments.h1.generate` — would have read the
+complete v1 file, found every question complete, and printed `nothing to do`. So:
+
+* `load_batch()` reads the stamped version; a batch from another one (or from none) arrives
+  holding **no questions**, and a bare run therefore selects the whole suite. Nothing is
+  lost that git does not hold, and nothing is overwritten until a call has been paid for.
+* `--only` on a superseded batch is **refused**, nothing sent. Redrawing 5 of 130 under a
+  new rubric would write a file stamped v2 containing five questions and 125 absences, and
+  the operator would learn that from `build.py` a step later. Refusing beats destroying.
+* `build.py` refuses to assemble a corpus from a batch stamped at another version. The
+  corpus carries the rubric block as provenance; a corpus whose probes were drawn under a
+  rubric the operator never approved is provenance that says the wrong thing.
+
+**Cost, measured rather than guessed.** `--dry-run` (free, sends nothing) projects
+`130 to generate · worst case $0.376095` against the unchanged `$1.00` stop. The worst case
+prices every prompt at three bytes per token with a full `max_tokens` of output, so the
+expected actual is roughly a third of it per round; the first full run's evidence — 114
+questions, 163 calls including retries, **$0.19** — puts the realistic figure at the
+pre-committed **~$0.30**. A run stopped by the cap is resumable in the ordinary way: what it
+wrote is stamped v2, so a bare re-run resumes rather than restarting.
+
+**Alternatives rejected.**
+
+* *Keep grinding `--only`.* The information content of round four is zero, by the arithmetic
+  above; the last round returned 0 of 5. This is the condition H-069 pre-committed to.
+* *Hand-write the five paraphrases.* They would be human-drawn probes in a corpus whose
+  claim is "drawn by `claude-haiku-4-5` under a stated, hashed rubric". The rubric hash would
+  stop describing the artifact, and the spot-check would be the operator approving their own
+  text.
+* *Drop the five questions.* It removes exactly the hardest shape from a corpus that measures
+  semantic-cache safety, which is selection on difficulty — the one bias H1 cannot afford.
+* *Loosen the checker instead.* H-068's mistake, and the rule is validated against all 25
+  compound bodies and four faithful forms. The candidates are collapsing; the rule is right.
+* *Amend only the prompt and skip the version bump.* Then a corpus contains probes drawn
+  under two different rubrics, and `spot_check.approved_by` means nothing at all.
+
+**Consequences.**
+
+* **All 390 probes are new, so the operator's spot-check is a fresh 20, not a re-read of 2.**
+  The seeded sample names the same probe *ids* (the seed is unchanged, deliberately — the
+  sample cannot be re-drawn until it flatters), but every text behind them is redrawn. This
+  is the price H-069 costed, paid.
+* **`AWAITING_REDRAW` now empties all at once** rather than id by id, when the v2 batch is
+  built into a new corpus. It stays an upper bound, so it still cannot hide a new collapse.
+* **Pre-measurement, per risk register item 3.** No sweep has read the current corpus. The
+  curve test stays red until the regeneration, the rebuild, the spot-check and the sweep have
+  all run, in that order.
+* **The v1 batch is not deleted — it is in git**, at `71afa0e` plus the working-tree round
+  the operator has just run, and can be diffed against v2 to see what the rule bought.
+* **Stated limit — the two `$1` numbers are not the same number, and this lever fits once.**
+  The harness's stop is **per invocation**; §0.6's `$1` for H1 paraphrase generation is
+  **whole-project**. Landed so far: $0.19 (first run) + $0.02 (the H-068 redraw) + $0.001
+  (the forced redraw) + ~$0.11 (three compound rounds) ≈ **$0.32**, and the artifact's
+  `spend` block records only the *last* run, so it under-reports what the corpus cost — the
+  cumulative figure lives in `PHASE_LOG.md`. After a ~$0.30 regeneration the §0.6 line is
+  roughly two-thirds spent. There is room for one more full regeneration only by exceeding
+  it, so a `RUBRIC_VERSION = 3` would be a budget amendment, not a repeat of this decision.
+  Making the harness's stop read cumulative landed spend out of the artifact is the obvious
+  follow-up; it is deliberately **not** done here, mid-lever, where it could halt the very
+  run this entry authorises.

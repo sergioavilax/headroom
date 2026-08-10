@@ -2,8 +2,8 @@
  "schema": "h1_paraphrases/1",
  "provenance": {
   "produced_by": "experiments/h1/generate.py",
-  "generated_at": "2026-08-10T21:40:51+00:00",
-  "headroom_commit": "d57aa3377cb75d44197e179b697ef369bc914e75",
+  "generated_at": "2026-08-10T22:14:58+00:00",
+  "headroom_commit": "a01e23953d691962e1fba4ce49602b0f4e06d8e7",
   "inputs": {
    "suite_hash": "6eef41c6706f309a",
    "world_seed": 20260805,
@@ -20,11 +20,11 @@
   "per_question": 3
  },
  "spend": {
-  "usd": "0.001111000000",
+  "usd": "0.015973000000",
   "cap_usd": "1.00",
-  "calls": 1,
-  "input_tokens": 546,
-  "output_tokens": 113,
+  "calls": 15,
+  "input_tokens": 8148,
+  "output_tokens": 1565,
   "usd_per_mtok_in": "1.00",
   "usd_per_mtok_out": "5.00",
   "price_effective_from": "2026-08-08"
@@ -222,20 +222,20 @@
   "contract_terms-001": {
    "body": "As of 2026-06-30, what royalty rate applies to Yuki Takeda's digital streaming revenue? Cite the governing clause.",
    "paraphrases": [
-    "Identify the royalty rate that governs Yuki Takeda's digital streaming revenue as of 2026-06-30, and cite the clause that applies.",
-    "What clause establishes the royalty rate for Yuki Takeda's digital streaming revenue effective 2026-06-30?",
-    "By 2026-06-30, which governing clause sets Yuki Takeda's digital streaming royalty rate, and what is that rate?"
+    "Which royalty rate governs Yuki Takeda's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
+    "Cite the governing clause and state the royalty rate that applies to digital streaming revenue earned by Yuki Takeda as of 2026-06-30.",
+    "As of 2026-06-30, what clause governs the royalty rate on Yuki Takeda's digital streaming revenue, and what is that rate?"
    ],
-   "attempts": 1
+   "attempts": 3
   },
   "contract_terms-002": {
    "body": "As of 2026-06-30, what royalty rate applies to Anouk Reverie's permanent download sales? Cite the governing clause.",
    "paraphrases": [
-    "What royalty rate is applicable to Anouk Reverie's permanent download sales as of 2026-06-30, and what governing clause establishes it?",
-    "Cite the governing clause that sets the royalty rate for Anouk Reverie's permanent download sales effective 2026-06-30.",
-    "As of 2026-06-30, which governing clause specifies the royalty rate for permanent download sales by Anouk Reverie?"
+    "What royalty rate governs Anouk Reverie's permanent download sales as of 2026-06-30, and what clause establishes it?",
+    "Cite the governing clause and state the royalty rate that applies to permanent download sales by Anouk Reverie as of 2026-06-30.",
+    "As of 2026-06-30, the royalty rate for Anouk Reverie's permanent downloads is set by which clause, and what is that rate?"
    ],
-   "attempts": 1
+   "attempts": 2
   },
   "contract_terms-003": {
    "body": "As of 2026-06-30, what royalty rate applies to The Cinder Spectra's sync licensing placements? Cite the governing clause.",
@@ -249,56 +249,47 @@
   "contract_terms-004": {
    "body": "As of 2026-06-30, what royalty rate applies to Paloma & The Effigy's digital streaming revenue? Cite the governing clause.",
    "paraphrases": [
-    "What royalty rate, effective 2026-06-30, governs Paloma & The Effigy's digital streaming revenue, and which clause establishes it?",
-    "Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.",
-    "Which governing clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?"
+    "Which royalty rate governs Paloma & The Effigy's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
+    "Cite the governing clause and state the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30.",
+    "What clause governs the royalty rate for Paloma & The Effigy's digital streaming revenue as of 2026-06-30, and what is that rate?"
    ],
-   "attempts": 1
+   "attempts": 3
   },
   "contract_terms-005": {
    "body": "As of 2026-06-30, what royalty rate applies to Yuki Vance's permanent download sales? Cite the governing clause.",
    "paraphrases": [
-    "Under which clause does Yuki Vance's permanent download sales royalty rate as of 2026-06-30 apply?",
-    "What governing clause establishes Yuki Vance's royalty rate for permanent download sales effective 2026-06-30?",
-    "Identify the clause governing Yuki Vance's permanent download sales royalty rate as of 2026-06-30."
+    "According to the terms governing Yuki Vance's permanent download sales, what royalty rate was in effect as of 2026-06-30, and which clause establishes it?",
+    "Which clause governs the royalty rate applicable to Yuki Vance's permanent downloads as of 2026-06-30, and what rate does it specify?",
+    "What royalty rate did Yuki Vance receive on permanent download sales as of 2026-06-30, and cite the clause that mandates this rate."
    ],
-   "attempts": 1
+   "attempts": 3
   },
   "contract_terms-006": {
    "body": "As of 2026-06-30, what royalty rate applies to The Distant Hymnal's sync licensing placements? Cite the governing clause.",
    "paraphrases": [
-    "By 2026-06-30, which governing clause establishes the royalty rate for The Distant Hymnal's sync licensing placements?",
-    "What royalty rate, effective 2026-06-30, governs The Distant Hymnal's sync licensing placements, and which clause controls it?",
-    "Identify the governing clause that sets the royalty rate applicable to The Distant Hymnal's sync licensing placements as of 2026-06-30."
+    "What royalty rate governs The Distant Hymnal's sync licensing placements as of 2026-06-30? Please identify the clause that applies.",
+    "Which clause establishes the royalty rate for The Distant Hymnal's sync licensing placements effective 2026-06-30, and what is that rate?",
+    "For sync licensing placements by The Distant Hymnal, identify the applicable royalty rate and governing clause as of 2026-06-30."
    ],
    "attempts": 1
   },
   "contract_terms-007": {
    "body": "As of 2026-06-30, what royalty rate applies to Celeste Canyons's digital streaming revenue? Cite the governing clause.",
    "paraphrases": [
-    "Which royalty rate governs Celeste Canyons's digital streaming revenue as of 2026-06-30? Please cite the relevant clause.",
-    "Identify the royalty rate applicable to Celeste Canyons's digital streaming revenue on 2026-06-30, and provide the governing clause citation.",
-    "What clause governs the royalty rate that applies to Celeste Canyons's digital streaming revenue as of 2026-06-30?"
+    "Which royalty rate governs Celeste Canyons's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
+    "Cite the governing clause and state the royalty rate applicable to Celeste Canyons's digital streaming revenue on 2026-06-30.",
+    "What clause governs the royalty rate for Celeste Canyons's digital streaming revenue as of 2026-06-30, and what is that rate?"
    ],
-   "attempts": 1
-  },
-  "contract_terms-008": {
-   "body": "As of 2026-06-30, what royalty rate applies to The Slow Cathedral's digital streaming revenue? Cite the governing clause.",
-   "paraphrases": [
-    "Which royalty rate governs The Slow Cathedral's digital streaming revenue as of 2026-06-30, and what is the governing clause?",
-    "The Slow Cathedral's digital streaming revenue as of 2026-06-30 is subject to what royalty rate? Identify the governing clause.",
-    "Cite the governing clause that sets The Slow Cathedral's royalty rate for digital streaming revenue as of 2026-06-30."
-   ],
-   "attempts": 1
+   "attempts": 2
   },
   "contract_terms-009": {
    "body": "As of 2026-06-30, what royalty rate applies to Clara & The Sanctuary's permanent download sales? Cite the governing clause.",
    "paraphrases": [
-    "What royalty rate governs Clara & The Sanctuary's permanent download sales as of 2026-06-30, and which clause establishes it?",
-    "Cite the clause that sets Clara & The Sanctuary's royalty rate for permanent downloads effective 2026-06-30.",
-    "Which clause determines the royalty rate applicable to Clara & The Sanctuary's permanent download sales on 2026-06-30?"
+    "What royalty rate governs Clara & The Sanctuary's permanent download sales as of 2026-06-30, and what clause establishes it?",
+    "By 2026-06-30, which clause sets the royalty rate for Clara & The Sanctuary's permanent downloads, and what is that rate?",
+    "Identify the applicable royalty rate for Clara & The Sanctuary's permanent download sales on 2026-06-30 and cite its governing clause."
    ],
-   "attempts": 1
+   "attempts": 2
   },
   "contract_terms-010": {
    "body": "As of 2026-06-30, what royalty rate applies to Frost Paradox's sync licensing placements? Cite the governing clause.",
@@ -312,54 +303,27 @@
   "contract_terms-011": {
    "body": "As of 2026-06-30, what royalty rate applies to Sable Isles's digital streaming revenue? Cite the governing clause.",
    "paraphrases": [
-    "What royalty rate governs Sable Isles's digital streaming revenue as of 2026-06-30, and which clause establishes it?",
-    "Identify the royalty rate applicable to Sable Isles's digital streaming revenue on 2026-06-30 and cite the controlling clause.",
-    "Which clause sets the royalty rate for Sable Isles's digital streaming revenue effective 2026-06-30?"
+    "What royalty rate governs Sable Isles's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
+    "Cite the governing clause and identify the royalty rate applicable to Sable Isles's digital streaming revenue on 2026-06-30.",
+    "Which clause sets the royalty rate for Sable Isles's digital streaming revenue, and what is that rate as of 2026-06-30?"
    ],
-   "attempts": 1
-  },
-  "contract_terms-012": {
-   "body": "As of 2026-06-30, what royalty rate applies to Iron Parade's permanent download sales? Cite the governing clause.",
-   "paraphrases": [
-    "What royalty rate governs Iron Parade's permanent download sales as of 2026-06-30, and which clause establishes it?",
-    "Which clause sets Iron Parade's royalty rate for permanent downloads as of 2026-06-30?",
-    "As of 2026-06-30, identify the governing clause and the royalty rate applicable to Iron Parade's permanent download sales."
-   ],
-   "attempts": 1
-  },
-  "contract_terms-013": {
-   "body": "As of 2026-06-30, what royalty rate applies to Wren & The Isles's sync licensing placements? Cite the governing clause.",
-   "paraphrases": [
-    "For Wren & The Isles, which sync licensing royalty rate is in effect as of 2026-06-30, and what governing clause establishes it?",
-    "Cite the governing clause that sets Wren & The Isles's sync licensing royalty rate applicable on 2026-06-30.",
-    "What governing clause determines the sync licensing royalty rate for Wren & The Isles that applies as of 2026-06-30?"
-   ],
-   "attempts": 1
-  },
-  "contract_terms-014": {
-   "body": "As of 2026-06-30, what royalty rate applies to Beatriz & The Cathedral's digital streaming revenue? Cite the governing clause.",
-   "paraphrases": [
-    "Which royalty rate governs Beatriz & The Cathedral's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
-    "Beatriz & The Cathedral's digital streaming revenue is subject to what royalty rate as of 2026-06-30? Identify the applicable governing clause.",
-    "As of 2026-06-30, cite the governing clause that sets the royalty rate for Beatriz & The Cathedral's digital streaming revenue."
-   ],
-   "attempts": 1
+   "attempts": 2
   },
   "contract_terms-015": {
    "body": "As of 2026-06-30, what royalty rate applies to Sanne & The Karma's physical retail sales in the United Kingdom (GB)? Cite the governing clause.",
    "paraphrases": [
-    "What royalty rate governs Sanne & The Karma's physical retail sales in the United Kingdom (GB) as of 2026-06-30, and which clause establishes it?",
-    "Identify the royalty rate applicable to Sanne & The Karma's physical retail sales in the United Kingdom (GB) on 2026-06-30, citing the controlling clause.",
-    "Which clause sets the royalty rate for Sanne & The Karma's physical retail sales in the United Kingdom (GB) as of 2026-06-30?"
+    "Under which clause does Sanne & The Karma's physical retail sales royalty rate in the United Kingdom (GB) as of 2026-06-30 apply, and what is that rate?",
+    "Cite the governing clause and state the royalty rate applicable to Sanne & The Karma's physical retail sales in GB as of 2026-06-30.",
+    "What royalty rate governs Sanne & The Karma's physical retail sales in the United Kingdom (GB) as of 2026-06-30, and identify the clause that establishes it."
    ],
    "attempts": 1
   },
   "contract_terms-016": {
    "body": "As of 2026-06-30, what royalty rate applies to Thorned Riot's physical retail sales in Germany (DE)? Cite the governing clause.",
    "paraphrases": [
-    "What royalty rate governs Thorned Riot's physical retail sales in Germany (DE) as of 2026-06-30, and which clause establishes it?",
-    "Identify the governing clause and the applicable royalty rate for Thorned Riot's physical retail sales in Germany (DE) effective 2026-06-30.",
-    "As of 2026-06-30, which clause establishes the royalty rate for Thorned Riot's physical retail sales in the Germany (DE) territory?"
+    "What royalty rate governed Thorned Riot's physical retail sales in Germany (DE) as of 2026-06-30, and what clause established it?",
+    "Identify the royalty rate applicable to Thorned Riot's physical retail sales in Germany (DE) on 2026-06-30 and cite its governing clause.",
+    "Which clause governs the royalty rate for Thorned Riot's physical retail sales in Germany (DE) as of 2026-06-30, and what is that rate?"
    ],
    "attempts": 1
   },
@@ -456,18 +420,18 @@
   "hand-contract_terms-01": {
    "body": "What streaming royalty rate governed The Cinder Spectra's revenue on 2025-11-24? Please cite the clause that controls on that specific date.",
    "paraphrases": [
-    "On 2025-11-24, which streaming royalty rate applied to The Cinder Spectra's revenue, and what clause governed it on that date?",
-    "Cite the clause that controlled The Cinder Spectra's streaming royalty rate for revenue on 2025-11-24.",
-    "What clause dictated the streaming royalty rate for The Cinder Spectra's revenue on 2025-11-24?"
+    "On 2025-11-24, what clause governed The Cinder Spectra's streaming royalty rate, and what was that rate?",
+    "Cite the clause that controlled The Cinder Spectra's streaming royalty rate on 2025-11-24 and state what rate applied.",
+    "What rate did The Cinder Spectra receive in streaming royalties on 2025-11-24, and which clause established it?"
    ],
    "attempts": 1
   },
   "hand-contract_terms-02": {
    "body": "As of 2025-11-25, what streaming royalty rate applies to The Cinder Spectra? Cite the governing clause.",
    "paraphrases": [
-    "What streaming royalty rate governs The Cinder Spectra as of 2025-11-25, and which clause establishes it?",
-    "As of 2025-11-25, identify the streaming royalty rate for The Cinder Spectra and cite the applicable governing clause.",
-    "Which governing clause sets the streaming royalty rate that applies to The Cinder Spectra as of 2025-11-25?"
+    "Which streaming royalty rate governs The Cinder Spectra as of 2025-11-25, and what clause establishes it?",
+    "The Cinder Spectra is subject to what streaming royalty rate effective 2025-11-25? Identify the applicable governing clause.",
+    "Cite the governing clause and state the streaming royalty rate applicable to The Cinder Spectra on 2025-11-25."
    ],
    "attempts": 1
   },
@@ -479,15 +443,6 @@
     "What streaming royalty rate was specified in The Cinder Spectra's original agreement when it was initially signed, before any amendments were made to it?"
    ],
    "attempts": 1
-  },
-  "hand-contract_terms-04": {
-   "body": "We have a sync inquiry for the Japanese market. Under Astrid Dunes's current agreement, is Japan (JP) inside the licensed territory? Cite the clause.",
-   "paraphrases": [
-    "Does Astrid Dunes's current agreement cover Japan (JP) as part of the licensed territory, given a sync inquiry for the Japanese market? Provide the relevant clause.",
-    "Cite the clause in Astrid Dunes's current agreement that addresses whether Japan (JP) falls within the licensed territory for this sync inquiry in the Japanese market.",
-    "For the Japanese market sync inquiry: according to Astrid Dunes's current agreement, is Japan (JP) included in the licensed territory? Show the clause."
-   ],
-   "attempts": 2
   },
   "hand-cross_collateral-01": {
    "body": "Voltage has more than one agreement with us, and the deals pool a single recoupment account. Across all of their deals, what unrecouped balance remained after 2026-06?",
@@ -1201,5 +1156,40 @@
    "attempts": 1
   }
  },
- "unresolved": []
+ "unresolved": [
+  {
+   "id": "contract_terms-008",
+   "failures": [
+    "attempt 3, candidate 1: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here",
+    "attempt 3, candidate 2: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here"
+   ]
+  },
+  {
+   "id": "contract_terms-012",
+   "failures": [
+    "attempt 3, candidate 3: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here"
+   ]
+  },
+  {
+   "id": "contract_terms-013",
+   "failures": [
+    "attempt 3, candidate 1: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here",
+    "attempt 3, candidate 3: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here"
+   ]
+  },
+  {
+   "id": "contract_terms-014",
+   "failures": [
+    "attempt 3, candidate 2: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here",
+    "attempt 3, candidate 3: collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question and are folded into one here"
+   ]
+  },
+  {
+   "id": "hand-contract_terms-04",
+   "failures": [
+    "attempt 3, candidate 1: collapsed the compound ask: the question and 'clause' are asked for separately in the question and are folded into one here",
+    "attempt 3, candidate 2: lost name: Japanese"
+   ]
+  }
+ ]
 }

@@ -21,7 +21,13 @@ from typing import Final
 
 import pytest
 
-from experiments.h1.build import CORPUS_PATH, EMBEDDING_DIMENSIONS, VECTORS_PATH
+from experiments.h1 import generate, rubric
+from experiments.h1.build import (
+    CORPUS_PATH,
+    EMBEDDING_DIMENSIONS,
+    VECTORS_PATH,
+    _load_paraphrases,
+)
 from experiments.h1.checks import (
     CompoundAsk,
     check_batch,
@@ -37,7 +43,7 @@ from experiments.h1.corpus import (
     load_vectors,
     stored_hash_matches,
 )
-from experiments.h1.generate import Batch, select
+from experiments.h1.generate import Batch, load_batch, select
 from experiments.h1.suite import Suite, SuiteQuestion, render_answer
 from experiments.h1.sweep import (
     FAMILY_B,
@@ -49,7 +55,7 @@ from experiments.h1.sweep import (
     probe_outcomes,
     sweep,
 )
-from experiments.provenance import RESULTS_DIR, read_json
+from experiments.provenance import RESULTS_DIR, read_json, write_json
 from headroom.cache.keys import context_hash
 from headroom.core.cache import CacheEntry, CacheNamespace
 from headroom.db.memory import InMemoryResponseCacheStore
@@ -411,6 +417,12 @@ def test_a_paraphrase_may_open_with_the_name_it_has_to_keep(corpus: H1Corpus) ->
 #: `build.py` refuses the corpus that carries them. The set is an upper bound, so it goes
 #: green on its own as the redraws land and it cannot hide a *new* collapse appearing
 #: somewhere else.
+#:
+#: It is still 17 because the corpus this reads is still the one built from the v1 batch.
+#: The redraws thrashed — 17 → 8 → 5 → 5 over three rounds, five ids failing three to four
+#: independent draws on the identical shape — so H-070 took H-069's other lever and bumped
+#: `RUBRIC_VERSION` to 2. This set now empties **all at once**, when the v2 regeneration is
+#: built into a new corpus, rather than id by id; and it stays an upper bound either way.
 AWAITING_REDRAW: Final = frozenset(
     {
         "contract_terms-001",
@@ -607,6 +619,124 @@ def test_only_redoes_a_question_that_already_has_paraphrases() -> None:
     # `--only` redoes, complete or not.
     assert [question.id for question in select(suite, batch, {"done"})] == ["done"]
     assert [question.id for question in select(suite, batch, {"done", "todo"})] == ["done", "todo"]
+
+
+# --- a batch is never mixed across rubric versions (H-070) ---------------------------------
+
+
+def _two_question_suite() -> Suite:
+    return Suite(
+        name="core",
+        suite_hash="h",
+        world_seed=1,
+        questions=(_question("done"), _question("todo")),
+        excluded=(),
+    )
+
+
+def _batch_file(path: pathlib.Path, *, version: object) -> pathlib.Path:
+    """A paraphrase file in which `done` is complete, stamped with ``version``."""
+    payload: dict[str, object] = {
+        "schema": "h1_paraphrases/1",
+        "questions": {"done": {"body": "body", "paraphrases": ["a", "b", "c"], "attempts": 1}},
+        "unresolved": [],
+    }
+    if version is not None:
+        payload["rubric"] = {"version": version}
+    return write_json(path, payload)
+
+
+def test_the_rubric_teaches_a_form_the_checker_accepts() -> None:
+    """Rule 4's worked example, put through the rule it teaches.
+
+    "The rubric asks, the checker verifies" is belt and braces only while the two agree.
+    A prompt that taught a form :func:`check_paraphrase` rejects would spend a whole
+    regeneration drawing candidates the harness then throws away — H-068's stuck generator,
+    reached from the other side.
+    """
+    assert rubric.COMPOUND_EXAMPLE_SOURCE in rubric.SYSTEM_PROMPT
+    assert rubric.COMPOUND_EXAMPLE_FAITHFUL in rubric.SYSTEM_PROMPT
+    assert compound_ask(rubric.COMPOUND_EXAMPLE_SOURCE) is not None, "the example is compound"
+    result = check_paraphrase(
+        body=rubric.COMPOUND_EXAMPLE_SOURCE, candidate=rubric.COMPOUND_EXAMPLE_FAITHFUL
+    )
+    assert result.ok, result.failures
+
+
+def test_a_batch_from_the_current_rubric_still_resumes(tmp_path: pathlib.Path) -> None:
+    path = _batch_file(tmp_path / "h1_paraphrases.json", version=rubric.RUBRIC_VERSION)
+    batch = load_batch(path)
+    assert batch.superseded is None
+    assert [question.id for question in select(_two_question_suite(), batch, None)] == ["todo"]
+
+
+@pytest.mark.parametrize(
+    ("version", "superseded"),
+    [(rubric.RUBRIC_VERSION - 1, str(rubric.RUBRIC_VERSION - 1)), (None, "unstamped")],
+    ids=["previous-version", "unstamped"],
+)
+def test_a_batch_from_another_rubric_is_regenerated_whole(
+    tmp_path: pathlib.Path, version: object, superseded: str
+) -> None:
+    """The lever H-070 pulls: a bump makes every question incomplete, not just the bad ones.
+
+    Without this, a bare run after the bump reads a full v1 file, finds all 130 questions
+    complete and prints `nothing to do` — the regeneration the operator paid for in advance
+    would silently not happen.
+    """
+    path = _batch_file(tmp_path / "h1_paraphrases.json", version=version)
+    batch = load_batch(path)
+    assert batch.superseded == superseded
+    assert batch.questions == {}, "superseded text is not carried into the new version"
+    todo = [question.id for question in select(_two_question_suite(), batch, None)]
+    assert todo == ["done", "todo"]
+
+
+def test_a_dry_run_over_a_superseded_batch_says_so_and_writes_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = _batch_file(tmp_path / "h1_paraphrases.json", version=rubric.RUBRIC_VERSION - 1)
+    before = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(generate, "load_suite", _two_question_suite)
+
+    assert generate.main(["--dry-run", "--out", str(path)]) == 0
+
+    printed = capsys.readouterr().out
+    assert "SUPERSEDED" in printed
+    assert "2 to generate" in printed
+    assert path.read_text(encoding="utf-8") == before, "a dry run spends nothing and edits nothing"
+
+
+def test_only_is_refused_on_a_superseded_batch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refusing beats destroying.
+
+    A partial redraw under a new rubric would write a file stamped with the new version
+    carrying only the named ids — every other question gone — and the operator would learn
+    that from `build.py`, one step too late. There is no key in this environment either;
+    the refusal lands before the run would ask for one.
+    """
+    path = _batch_file(tmp_path / "h1_paraphrases.json", version=rubric.RUBRIC_VERSION - 1)
+    before = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(generate, "load_suite", _two_question_suite)
+
+    with pytest.raises(SystemExit) as stop:
+        generate.main(["--only", "done", "--out", str(path)])
+
+    assert "never mixed across versions" in str(stop.value)
+    assert "Nothing was sent" in str(stop.value)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_the_build_refuses_a_batch_from_another_rubric(tmp_path: pathlib.Path) -> None:
+    """Belt and braces at the other end: the corpus carries the rubric block as provenance,
+    and a corpus whose probes were drawn under a rubric nobody approved is provenance that
+    says the wrong thing."""
+    path = _batch_file(tmp_path / "h1_paraphrases.json", version=rubric.RUBRIC_VERSION - 1)
+    with pytest.raises(SystemExit) as stop:
+        _load_paraphrases(path, _two_question_suite())
+    assert "never mixed across" in str(stop.value)
 
 
 # --- rendering ground truth ---------------------------------------------------------------
