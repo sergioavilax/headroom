@@ -1,0 +1,9 @@
+# The pre-kill baseline: served by vllm_a, no failover fields. From /tmp/gateway.log:
+{
+  "request_id": "hr_d8860be354c744a39f161816c973fc11",
+  "provider": "vllm_a",
+  "failover_hops": 0,
+  "failover_from": null,
+  "outcome": "ok",
+  "status": 200
+}
