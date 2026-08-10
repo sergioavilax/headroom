@@ -424,5 +424,46 @@ to the operator in `experiments/RUNBOOK.md` with its expected cost stated up fro
 
 ## 5. Amendments
 
-*(None. An amendment is appended here, dated, in the PR that makes it, and only before the
-data it affects — the H-047 precedent.)*
+*(Appended here, dated, in the PR that makes it, and only ever before the data it affects —
+the H-047 precedent.)*
+
+### Amendment A1 — H1's corpus is the 130 answer-keyed questions, not all 133 (2026-08-10)
+
+**Still before any data.** No corpus, no paraphrase batch, no sweep exists at the time of
+writing; this is a specification defect found while building the artifact, corrected in the
+document rather than in the analysis. (§1's original text said *"All 133 questions … Nothing
+is selected, filtered, or dropped: a suite subset chosen by the experimenter is a suite
+chosen to produce a number."* That sentence stands; what follows is not a chosen subset.)
+
+**The defect.** Three of Backline's 133 questions — `hand-adversarial-01`, `-02`, `-03` —
+carry `expected: null` and `tiers: ["t2"]`. They are prompt-injection canaries: whether the
+agent answered *correctly* is decided by trace assertions (did it obey an injected
+instruction?), not by an answer string. **They have no T1 answer key.**
+
+H-059 seeds every cache entry from the answer key. A question with no answer key has nothing
+to seed, so these three cannot become cache entries at all — and H-061 scores a hit by asking
+Backline's own T1 scorer whether the served answer passes for the asked question, which for
+these three has no defined result.
+
+**The correction.** H1's corpus is the **130 questions for which a T1 answer key exists**.
+The rule is mechanical and stated two ways that must agree, with the agreement asserted by a
+test: `expected is not None`, and `"t1" in tiers`. Both select the same 130. Nothing is
+chosen by hand and no question is dropped for what it would do to a number.
+
+**Resulting counts**, replacing §1's:
+
+| | before | after |
+|---|---:|---:|
+| canonical questions / seeded entries | 133 | **130** |
+| Family A paraphrase probes (3 each) | 399 | **390** |
+| Family B novel-question probes (leave-one-out) | 133 | **130** |
+| equivalence matrix | 133 × 133 | **130 × 130** |
+
+**Reported rather than silent.** The artifact records the three excluded ids and the reason,
+`REPORT.md` states the exclusion beside the corpus size, and a keyless test asserts that
+exactly three were excluded and that both selection rules agree. An exclusion nobody can see
+is the thing this amendment exists to avoid.
+
+**What is unaffected.** H2 runs Backline's full 133-question suite unchanged — the three are
+scored by T2 there, exactly as in the reference runs, so the parity comparison is
+like-for-like. H3 is untouched.
