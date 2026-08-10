@@ -1,0 +1,74 @@
+{
+ "schema": "h2_analysis/1",
+ "provenance": {
+  "produced_by": "experiments/h2/analyze.py",
+  "generated_at": "2026-08-10T23:54:47+00:00",
+  "headroom_commit": "c94657c0aee5566df53a78e4af9d95cdee06b531"
+ },
+ "rows": 462,
+ "cache_disabled_proof": {
+  "statement": "every row carries cache_disposition = cache_disabled",
+  "dispositions": {
+   "cache_disabled": 462
+  },
+  "rows_not_cache_disabled": 0,
+  "verdict": "HOLDS"
+ },
+ "overhead": {
+  "primary": {
+   "metric": "passthrough_overhead_ms (first upstream byte -> first byte out)",
+   "source": "H-051, named in Phase 6 before this data existed",
+   "target_p50_ms": 50.0,
+   "n": 462,
+   "p50": 0.0612,
+   "p95": 0.1176,
+   "p99": 0.1644,
+   "max": 0.8231,
+   "caveat": "expected to be sub-millisecond (P1 measured 0.006 ms, P6 0.019 ms), so meeting a 50 ms target by four orders of magnitude is a weak test. It is reported first because it is the metric that was promised.",
+   "verdict": "HOLDS"
+  },
+  "secondary_admission_cost": "see experiments/results/h2_bench.json — upstream_latency_ms over MockProvider requests, where the provider costs ~0 and what remains is the gateway's own admission work (H-065)"
+ },
+ "errors": {
+  "outcomes": {
+   "ok": 462
+  },
+  "error_reasons": {},
+  "cost_status": {
+   "priced": 462
+  },
+  "budget_status": {},
+  "failover_hops": {
+   "0": 462
+  }
+ },
+ "headroom_meter": {
+  "input_tokens": 2863154,
+  "output_tokens": 181580,
+  "usd_cost": "7.541253000000",
+  "unpriced_rows": 0
+ },
+ "parity": {
+  "statement": "|overall - 93.3| <= 3.0 (H-064: the direct-local run)",
+  "overall": null,
+  "primary_reference": "direct_local",
+  "reference_overall": 93.3,
+  "delta": null,
+  "bound": 3.0,
+  "context": {},
+  "limitation": "no same-day paired control (H-064): between-day drift sits inside this residual and cannot be separated from the gateway's effect. The claim is about a bound, not an effect size.",
+  "verdict": "NO DATA"
+ },
+ "cross_check": {
+  "statement": "token totals agree exactly; cost agrees to within $0.01 (§H2.4)",
+  "headroom_usd": "7.541253000000",
+  "backline_usd": "7.540398",
+  "delta_usd": "0.000855000000",
+  "headroom_tokens": {
+   "input": 2863154,
+   "output": 181580
+  },
+  "note": "Backline meters from the SDK's usage block; Headroom meters from the same block observed in the stream. Backline uses no prompt caching, so H-026's `partial` caveat cannot arise.",
+  "verdict": "AGREE"
+ }
+}
