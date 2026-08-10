@@ -23,8 +23,10 @@ import pytest
 
 from experiments.h1.build import CORPUS_PATH, EMBEDDING_DIMENSIONS, VECTORS_PATH
 from experiments.h1.checks import (
+    CompoundAsk,
     check_batch,
     check_paraphrase,
+    compound_ask,
     required_tokens,
     salient_tokens,
 )
@@ -35,7 +37,8 @@ from experiments.h1.corpus import (
     load_vectors,
     stored_hash_matches,
 )
-from experiments.h1.suite import SuiteQuestion, render_answer
+from experiments.h1.generate import Batch, select
+from experiments.h1.suite import Suite, SuiteQuestion, render_answer
 from experiments.h1.sweep import (
     FAMILY_B,
     GRID,
@@ -398,6 +401,212 @@ def test_a_paraphrase_may_open_with_the_name_it_has_to_keep(corpus: H1Corpus) ->
         ),
     )
     assert result.ok, result.failures
+
+
+# --- the compound ask (H-069) --------------------------------------------------------------
+
+#: The 17 questions whose committed paraphrases collapse a two-part ask, found by auditing
+#: the accepted batch against the rule the moment the rule existed. They are **not** a
+#: tolerated exception: they are a redraw the operator has not run yet, and until they do,
+#: `build.py` refuses the corpus that carries them. The set is an upper bound, so it goes
+#: green on its own as the redraws land and it cannot hide a *new* collapse appearing
+#: somewhere else.
+AWAITING_REDRAW: Final = frozenset(
+    {
+        "contract_terms-001",
+        "contract_terms-002",
+        "contract_terms-004",
+        "contract_terms-005",
+        "contract_terms-006",
+        "contract_terms-007",
+        "contract_terms-008",
+        "contract_terms-009",
+        "contract_terms-011",
+        "contract_terms-012",
+        "contract_terms-013",
+        "contract_terms-014",
+        "contract_terms-015",
+        "contract_terms-016",
+        "hand-contract_terms-01",
+        "hand-contract_terms-02",
+        "hand-contract_terms-04",
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        # `contract_terms-004#p3` as first drawn — the one the operator's spot-check failed
+        # for scope drift, and the reason any of this exists.
+        "What clause specifies the royalty rate applicable to Paloma & The Effigy's "
+        "digital streaming revenue on 2026-06-30?",
+        # Its neighbour in the same batch, which the seeded sample of 20 never showed him.
+        # The collapse was already two-in-three before anybody went looking.
+        "Identify the clause that sets Paloma & The Effigy's digital streaming royalty "
+        "rate as of 2026-06-30.",
+        # …and the forced redraw's p2 and p3, reproducing the same collapse on independent
+        # draws. Five failures, one shape: the rate stops being asked for and survives only
+        # as a modifier of the clause.
+        "Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate "
+        "as of 2026-06-30.",
+        "Which governing clause specifies the royalty rate applicable to Paloma & The "
+        "Effigy's digital streaming revenue on 2026-06-30?",
+    ],
+    ids=["spot-check-reject", "its-unsampled-neighbour", "redraw-p2", "redraw-p3"],
+)
+def test_the_collapse_the_operator_caught_by_hand_is_now_caught_mechanically(
+    corpus: H1Corpus, candidate: str
+) -> None:
+    """Every token rule passes these. The question they ask is a different question.
+
+    This is the whole of H-069: entity, period and figure all survive a compression that
+    throws away half the ask, so the layer that reads tokens cannot see it.
+    """
+    body = corpus.question("contract_terms-004").body
+    assert check_paraphrase(body=body, candidate=candidate).ok is False
+    result = check_paraphrase(body=body, candidate=candidate)
+    assert any("compound ask" in failure for failure in result.failures), result.failures
+    # The token layer really does pass it — otherwise this test proves nothing.
+    assert not any("lost" in failure for failure in result.failures), result.failures
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "What royalty rate, effective 2026-06-30, governs Paloma & The Effigy's digital "
+        "streaming revenue, and which clause establishes it?",
+        "Identify the governing clause and the royalty rate that applies to Paloma & The "
+        "Effigy's digital streaming revenue as of 2026-06-30.",
+        "Which royalty rate governs Paloma & The Effigy's digital streaming revenue as of "
+        "2026-06-30? Please cite the relevant clause.",
+        "Identify the royalty rate applicable to Paloma & The Effigy's digital streaming "
+        "revenue on 2026-06-30, citing the controlling clause.",
+        "As of 2026-06-30, which clause governs the royalty rate for Paloma & The Effigy's "
+        "digital streaming revenue, and what is that rate?",
+    ],
+    ids=["coordinated-wh", "coordinated-object", "second-sentence", "participle", "reversed"],
+)
+def test_the_four_ways_english_keeps_two_demands_all_pass(corpus: H1Corpus, candidate: str) -> None:
+    """A rule no faithful paraphrase can satisfy is a stuck generator, which is H-068's
+    lesson and the reason these are pinned. Two demands may be coordinated interrogatives,
+    coordinated objects of one verb, two sentences, or a participial adjunct — and the
+    citation may come first, because order is surface."""
+    result = check_paraphrase(body=corpus.question("contract_terms-004").body, candidate=candidate)
+    assert result.ok, result.failures
+
+
+def test_the_compound_shape_is_read_off_the_body_and_not_listed(corpus: H1Corpus) -> None:
+    """`clause` and `rate` appear nowhere in `checks.py`. The demands are extracted.
+
+    The shape reaches 25 questions across three categories, which is what "do not overfit to
+    one id" has to mean: the rule found the exposure, it was not handed the exposure.
+    """
+    compound = {
+        question.id: ask
+        for question in corpus.questions
+        if (ask := compound_ask(question.body)) is not None
+    }
+    assert len(compound) == 25
+    assert {question_id.rsplit("-", 1)[0] for question_id in compound} == {
+        "contract_terms",
+        "hand-contract_terms",
+        "multi_step",
+        "hand-multi_step",
+    }
+    assert compound["contract_terms-004"] == CompoundAsk(instruction="clause", question="rate")
+    # `Cite the rate clause you applied.` — the head noun is the clause, not the rate.
+    assert compound["multi_step-006"] == CompoundAsk(instruction="clause", question="royalty")
+    # A polar question demands a yes or a no, so there is no second noun to require.
+    assert compound["hand-contract_terms-04"] == CompoundAsk(instruction="clause", question=None)
+
+
+def test_every_compound_body_satisfies_its_own_rule(corpus: H1Corpus) -> None:
+    """The original is the one text that is certainly faithful. A rule it fails is broken,
+    not strict — the H-068 diagnostic, applied to the amendment that answers H-068."""
+    for question in corpus.questions:
+        ask = compound_ask(question.body)
+        if ask is not None:
+            assert ask.satisfied_by(question.body), question.id
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        (
+            "Scan every statement for period 2026-06 for reporting anomalies. Report only "
+            "genuine, out-of-tolerance findings. Do not submit a batch.",
+            "no interrogative: an all-instruction body is out of scope, deliberately",
+        ),
+        (
+            "How many tracks does Halcyon Drift have in our catalog as primary artist?",
+            "no instruction beside the question",
+        ),
+        (
+            "Which territories are excluded from Juniper Vale's deal? Do not submit a batch.",
+            "a prohibition adds no second demand",
+        ),
+    ],
+    ids=["all-instruction", "bare-question", "prohibition"],
+)
+def test_a_body_that_asks_for_one_thing_is_not_compound(body: str, why: str) -> None:
+    assert compound_ask(body) is None, why
+
+
+def test_the_committed_batch_is_clean_apart_from_the_audited_redraws(corpus: H1Corpus) -> None:
+    """Every probe in the corpus, re-checked against the rules as they stand *now*.
+
+    `build.py` does this at build time; doing it here too is what makes the audit a
+    committed fact rather than a paragraph in a decision log. Anything failing outside
+    :data:`AWAITING_REDRAW` — a new collapse, or a token loss — turns the suite red.
+    """
+    failed = {
+        probe.source
+        for probe in corpus.probes
+        if not check_paraphrase(body=corpus.question(probe.source).body, candidate=probe.body).ok
+    }
+    assert failed <= AWAITING_REDRAW, sorted(failed - AWAITING_REDRAW)
+
+
+# --- `--only` is a redo, not a resume (H-069) ----------------------------------------------
+
+
+def _question(question_id: str) -> SuiteQuestion:
+    return SuiteQuestion(
+        id=question_id,
+        category="c",
+        agent="counsel",
+        answer_kind="money",
+        tiers=("t1",),
+        body="body",
+        tail="tail",
+        expected="1.00",
+        tolerance=None,
+    )
+
+
+def test_only_redoes_a_question_that_already_has_paraphrases() -> None:
+    """The documented contract — "question ids to redo" — is now the implemented one.
+
+    Before this, a paraphrase the operator's spot-check rejected could only be redrawn by
+    hand-deleting its entry out of the artifact JSON. The spot-check rejecting a
+    mechanically valid candidate is a designed-for outcome; it must not require surgery on
+    the evidence.
+    """
+    suite = Suite(
+        name="core",
+        suite_hash="h",
+        world_seed=1,
+        questions=(_question("done"), _question("todo")),
+        excluded=(),
+    )
+    batch = Batch(questions={"done": {"body": "body", "paraphrases": ["a", "b", "c"]}})
+
+    # A bare run resumes: what is already bought is not bought twice.
+    assert [question.id for question in select(suite, batch, None)] == ["todo"]
+    # `--only` redoes, complete or not.
+    assert [question.id for question in select(suite, batch, {"done"})] == ["done"]
+    assert [question.id for question in select(suite, batch, {"done", "todo"})] == ["done", "todo"]
 
 
 # --- rendering ground truth ---------------------------------------------------------------

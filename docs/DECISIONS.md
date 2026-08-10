@@ -3813,3 +3813,125 @@ that reweights itself toward whatever the model found easy, which `build.py` alr
   is a common word *and* which opens the question. Its second word stays required, so the entity
   is never wholly unprotected. No such name is in this suite; recorded so the next reader need
   not rediscover it.
+
+---
+
+## H-069 — A two-part ask is an entity: the compound-ask check, and `--only` made a redo (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the spot-check — the half of §P8.H1's QA chain no checker can do
+— and failed `contract_terms-004#p3` for scope drift. The body asks two things:
+
+```
+As of 2026-06-30, what royalty rate applies to Paloma & The Effigy's digital streaming
+revenue? Cite the governing clause.
+```
+
+The candidate asked one:
+
+```
+p3  What clause specifies the royalty rate applicable to Paloma & The Effigy's digital
+    streaming revenue on 2026-06-30?
+```
+
+Answer the rewrite correctly and you have named a clause. Answer the original correctly and you
+have named a **rate** *and* a clause. The rate survives in the rewrite only as a modifier inside
+the thing being asked for, which is not the same as being asked for. Every mechanical rule
+passed it — entity, period, figure, length, no blank line, no protocol token. There was nothing
+for the checker to see, because nothing was lost: the ask was *compressed*.
+
+The operator forced a redraw (~$0.001). **The fresh batch reproduced the identical drift in 2 of
+3 candidates**, verbatim:
+
+```
+p2  Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate as of
+    2026-06-30.
+p3  Which governing clause specifies the royalty rate applicable to Paloma & The Effigy's
+    digital streaming revenue on 2026-06-30?
+```
+
+Independent draws at temperature 1.0, the same collapse. That is the diagnostic: not a bad
+sample, but `claude-haiku-4-5` systematically compressing *answer-plus-citation* into
+*citation*. And the batch's own history shows it was never one probe — the draw the operator
+rejected sat beside `Identify the clause that sets …`, which collapses the same way and which
+the seeded sample of 20 simply never showed him.
+
+**Decision — make the compound ask survive mechanically, on the same footing as an entity.**
+
+`compound_ask()` reads the shape off the body: an interrogative sentence **plus** a separate
+sentence opening with a request verb (`REQUEST_VERBS`). It extracts what each part demands —
+the head noun of the instruction's object (`clause`), the head noun of the interrogative's
+wh-phrase (`rate`). Nothing is listed: `clause` and `rate` appear nowhere in `checks.py`, and
+the rule finds **25 questions across three categories**, not one id.
+
+A candidate satisfies it when the two demands land in **two different asks**. English joins two
+demands with a coordinator, a sentence break, or a participial adjunct, so `ask_segments()`
+splits on exactly those three and the demands must fall on opposite sides of one. Both inside
+one segment is the collapse — *"Cite the clause that sets X's royalty rate"* mentions the rate
+without asking for it. All four faithful forms pass and are pinned as tests: coordinated
+interrogatives (`…, and which clause establishes it?`), coordinated objects of one verb
+(`Identify the governing clause and the royalty rate`), two sentences (`…? Please cite the
+relevant clause.`), and the adjunct (`…, citing the controlling clause`). Order is surface, so
+the citation may come first.
+
+**Every one of the 25 compound bodies satisfies its own rule**, and that is a test. It is
+H-068's diagnostic turned on the amendment that answers H-068: a rule the original text fails
+is broken, not strict.
+
+**The rubric was deliberately *not* strengthened.** The obvious second lever is a prompt rule
+against compressing a two-part ask. Rejected: `RUBRIC_VERSION` is stamped into the corpus and a
+batch generated under one version is never mixed with another (`rubric.py`), so changing the
+system prompt forces a redraw of all 130 — 113 of which are fine — and a fresh spot-check of all
+390 probes. The evidence says that price buys little: 50 of 75 compound-ask candidates already
+pass, so this is a 1-in-3 failure to be retried, not H-068's 0-in-3 rule that admitted no
+correct answer. The mechanical check is the durable fix because it holds for every future draw
+whatever the model does. **If redraws thrash** — the same ids landing `unresolved` across
+repeated `--only` runs — the next lever is `RUBRIC_VERSION = 2` plus a full regeneration, and
+that is a costed decision for the operator, not a silent one.
+
+**Alternatives rejected.** *Require the demand nouns to be present* — the collapsed candidates
+all keep both words, so presence is exactly what fails to discriminate. *Count ask sites
+(wh-heads and request verbs)* — fails `Identify the governing clause and the royalty rate`, one
+verb with a coordinated object, which is faithful; a rule that rejects a correct answer is the
+H-068 mistake repeated. *Leave it to the spot-check* — it samples 20 of 390 and had already
+missed the collapsed neighbour of the probe it caught.
+
+**Consequences.**
+
+* **The accepted batch was audited against the rule: 25 of 75 compound-ask candidates fail,
+  across 17 of the 25 questions.** They are recorded in `AWAITING_REDRAW` in
+  `tests/test_experiments_h1.py` as a redraw that has not happened yet, never as a tolerated
+  exception. `build.py` re-checks every committed paraphrase and will refuse to assemble a
+  corpus until they are redrawn — which is the correct state, loudly.
+* **The audit set is an upper bound, so it clears itself.** The test asserts *failures ⊆
+  `AWAITING_REDRAW`*: green as redraws land, red the moment a collapse — or any other check
+  failure — appears anywhere else.
+* **Pre-measurement, per risk register item 3.** No sweep has read the current corpus, and the
+  checker is corrected against *failures*, never against a curve.
+* **Stated limit.** This catches a two-part ask collapsing to one, not every drift. A candidate
+  keeping two separate demands but swapping one for something the body never asked would pass
+  here; and a body whose parts are all instructions (the reconciliation runs) is out of scope
+  deliberately — no collapse has been observed there, and widening a rule to a shape without
+  evidence is how H-068's stuck generator happened. The spot-check remains the chain's second
+  clause, now with a smaller job.
+
+**And the second finding, which is why the first one cost hand-editing.** `--help` documented
+`--only` as "question ids to (re)do"; the implementation skipped any question that already had
+paraphrases, so the flag could only *resume*. Forcing the redraw above required deleting the
+question's entry out of `h1_paraphrases.json` by hand. **The operator's spot-check rejecting a
+mechanically valid paraphrase is a designed-for outcome — it is the whole point of a human
+clause in the QA chain — and it must not require surgery on the evidence.** `--only` now redoes:
+`select()` is one function shared by the projection and the run, a bare run resumes, `--only`
+regenerates the named ids complete or not, and an id not in the suite is an error rather than a
+silent no-op. The entry being replaced is dropped only once a call has been paid for, so a
+budget stop leaves the question exactly as it was, and a redraw that then fails leaves the id
+**absent** and `unresolved` rather than carrying text the operator rejected.
+
+---
+
+## H-069 — A two-part ask is an entity: the compound-ask check, and  made a redo (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the spot-check — the half of §P8.H1s

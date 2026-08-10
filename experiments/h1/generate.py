@@ -15,8 +15,16 @@ landed, which is §0.2 rule 5 applied to the experiment's own money by the repo 
 product is that rule.
 
 **It is resumable, because a paid step that cannot resume is a paid step you pay twice.**
-Questions already complete in the output file are skipped; ``--only`` re-runs a named few.
-A crash, a laptop lid, or a stop at the cap costs nothing already bought.
+A bare run skips questions already complete in the output file, so a crash, a laptop lid, or
+a stop at the cap costs nothing already bought.
+
+**``--only`` is the other mode: a redo, not a resume** (H-069). The named ids are regenerated
+whether or not they already carry paraphrases, which is what the flag has always documented
+and what the QA chain needs. The operator's spot-check rejecting a mechanically valid
+paraphrase is a *designed-for* outcome — it is the half of the chain no checker can do — and
+before this it had no way back into the generator: the only route was hand-deleting the
+question's entry out of the artifact JSON. Editing evidence by hand to make a tool re-run is
+not a workflow, and an id that is silently skipped is worse than one that errors.
 
 **A candidate that fails the mechanical checks is regenerated here, before the artifact
 exists** (risk register item 3). Up to :data:`MAX_ROUNDS` attempts per question; what is
@@ -46,7 +54,7 @@ from experiments.provenance import ARTIFACTS_DIR, git_sha, provenance, read_json
 from headroom.metering.cost import quantize_usd, usd_for_tokens
 from headroom.metering.prices import load_price_book
 
-__all__ = ["CAP_USD", "MODEL", "OUTPUT_PATH", "BudgetStop", "Spend", "main"]
+__all__ = ["CAP_USD", "MODEL", "OUTPUT_PATH", "BudgetStop", "Spend", "main", "select"]
 
 #: BUILD_PLAN §0.6's H1 line, enforced here rather than remembered (H-066).
 CAP_USD: Final = Decimal("1.00")
@@ -204,6 +212,19 @@ def call_model(
     return text, int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
 
 
+def select(suite: Suite, batch: Batch, only: set[str] | None) -> list[SuiteQuestion]:
+    """The questions this run will call the model for — two rules, deliberately different.
+
+    Without ``--only`` this is a **resume**: anything already complete is skipped. With
+    ``--only`` it is a **redo**: the named ids are regenerated whether or not they already
+    have paraphrases (H-069). One function so the projection printed by :func:`main` and the
+    work done by :func:`generate` can never disagree about what a run is about to buy.
+    """
+    if only is not None:
+        return [question for question in suite.questions if question.id in only]
+    return [question for question in suite.questions if not batch.complete(question.id)]
+
+
 def generate(
     suite: Suite,
     *,
@@ -214,13 +235,9 @@ def generate(
     rates: Rates,
     only: set[str] | None,
 ) -> Batch:
-    todo = [
-        question
-        for question in suite.questions
-        if not batch.complete(question.id) and (only is None or question.id in only)
-    ]
+    todo = select(suite, batch, only)
     if not todo:
-        print("nothing to do: every requested question already has its paraphrases")
+        print("nothing to do: every question already has its paraphrases")
         return batch
 
     prompt_overhead = len(rubric.SYSTEM_PROMPT) + len(rubric.user_message(""))
@@ -235,6 +252,12 @@ def generate(
                 text, tokens_in, tokens_out = call_model(
                     client, base_url=base_url, api_key=api_key, question=question
                 )
+                # The redraw is committed the moment a call goes out, so the text being
+                # replaced goes now. A redo that then fails must leave the id *absent* and
+                # `unresolved` — keeping paraphrases the operator rejected would be the
+                # artifact quietly disagreeing with its own gate. Dropping it here rather
+                # than before the guard means a budget stop leaves the question untouched.
+                batch.questions.pop(question.id, None)
                 spend.land(
                     cost=rates.cost(input_tokens=tokens_in, output_tokens=tokens_out),
                     input_tokens=tokens_in,
@@ -328,7 +351,12 @@ def main(argv: list[str] | None = None) -> int:
         description="Generate H1's paraphrase probes. PAID — operator-run, hard stop at $1.00.",
     )
     parser.add_argument("--dry-run", action="store_true", help="project the cost and send nothing")
-    parser.add_argument("--only", default=None, help="comma-separated question ids to (re)do")
+    parser.add_argument(
+        "--only",
+        default=None,
+        help="comma-separated question ids to redo — regenerated even if they already have "
+        "paraphrases, and their current text is discarded once the redraw is paid for",
+    )
     parser.add_argument("--cap", default=str(CAP_USD), help=f"hard USD stop (default {CAP_USD})")
     parser.add_argument("--base-url", default=os.environ.get("H1_BASE_URL", DEFAULT_BASE_URL))
     parser.add_argument("--out", default=str(OUTPUT_PATH))
@@ -338,26 +366,37 @@ def main(argv: list[str] | None = None) -> int:
     rates = Rates.resolve(MODEL, datetime.now(UTC).date())
     out = Path(args.out)
     batch = load_batch(out)
-    only = set(args.only.split(",")) if args.only else None
+    only = {part.strip() for part in args.only.split(",") if part.strip()} if args.only else None
+    if only is not None:
+        # A typo in a 17-id list is otherwise a silent no-op that reads as success.
+        unknown = sorted(only - {question.id for question in suite.questions})
+        if unknown:
+            raise SystemExit(
+                f"--only names {len(unknown)} id(s) that are not in the suite: "
+                f"{', '.join(unknown)}. Nothing was sent."
+            )
 
-    todo = [
-        question
-        for question in suite.questions
-        if not batch.complete(question.id) and (only is None or question.id in only)
-    ]
+    todo = select(suite, batch, only)
+    redrawn = [question.id for question in todo if batch.complete(question.id)]
     overhead = len(rubric.SYSTEM_PROMPT) + len(rubric.user_message(""))
     projection = sum(
         (rates.worst_case(prompt_bytes=overhead + len(question.body)) for question in todo),
         Decimal("0"),
     )
+    mode = "redo (--only)" if only is not None else "resume"
     print(
         f"suite {suite.suite_hash} · {len(suite.questions)} keyed questions "
-        f"({len(suite.excluded)} excluded) · {len(todo)} to generate\n"
+        f"({len(suite.excluded)} excluded) · {len(todo)} to generate · {mode}\n"
         f"model {MODEL} at ${rates.usd_per_mtok_in}/${rates.usd_per_mtok_out} per MTok "
         f"(effective {rates.effective_from})\n"
         f"worst case ${projection} · cap ${args.cap} · "
         f"expected actual ~1/3 of the worst case (the estimate is deliberately high)"
     )
+    if redrawn:
+        print(
+            f"{len(redrawn)} of these already have paraphrases and will be REDRAWN; the "
+            f"text they carry now is discarded: {', '.join(redrawn)}"
+        )
     if args.dry_run:
         print("\n--dry-run: nothing sent, $0.00 spent")
         return 0

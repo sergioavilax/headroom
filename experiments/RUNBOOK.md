@@ -73,7 +73,17 @@ ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate
   uv run python -m experiments.h1.generate --only royalty_math-004,contract_terms-011
   ```
   The ids to pass are printed by `build.py` when it refuses, and are in the artifact's
-  `unresolved` list. `--only` re-runs **just those** — the 114 already bought are untouched.
+  `unresolved` list. `--only` runs **just those** — nothing else is touched or re-bought.
+- **`--only` is a redo, not a resume** (H-069). A bare run skips completed questions; `--only`
+  regenerates the ids you name *whether or not they already have paraphrases*, which is what
+  step 1c needs — your spot-check rejecting a mechanically valid paraphrase is a designed-for
+  outcome, and it must not require hand-editing the artifact. The run prints which ids are
+  being **REDRAWN** before it sends anything. The text being replaced is discarded once the
+  first call for that id is paid for, so:
+  - a budget stop leaves the question exactly as it was, and
+  - a redraw that fails all three rounds leaves the id **absent** and in `unresolved`, not
+    carrying the text you rejected. `build.py` then refuses, by design.
+  - an id that is not in the suite is an error, not a silent no-op.
 
 #### The 2026-08-10 run: 114/130, and the 16 that need re-running
 
@@ -104,6 +114,42 @@ ceiling for this command is ~$0.13; the harness stops at `$1.00` either way.
 question can still legitimately fail; two of its three original candidates kept the token, so
 a re-draw is expected to clear it. Anything still `unresolved` after this run is a real
 finding, not a checker artefact — re-read the failure lines before re-running.
+
+#### The compound-ask redraw: 17 questions, ~$0.05
+
+Your spot-check failed `contract_terms-004#p3` for scope drift — the body asks for a rate
+**and** a citation, the paraphrase asked only for the citation — and the forced redraw
+reproduced it in 2 of 3 fresh candidates. That is a systematic compression, not a bad draw, so
+it is now a mechanical check rather than something the sample has to happen to catch
+(**H-069**). Auditing the accepted batch against it found **25 collapsed candidates across 17
+questions**; `build.py` will refuse the corpus until they are redrawn.
+
+```bash
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate --only \
+contract_terms-001,contract_terms-002,contract_terms-004,contract_terms-005,\
+contract_terms-006,contract_terms-007,contract_terms-008,contract_terms-009,\
+contract_terms-011,contract_terms-012,contract_terms-013,contract_terms-014,\
+contract_terms-015,contract_terms-016,hand-contract_terms-01,hand-contract_terms-02,\
+hand-contract_terms-04
+```
+
+`--dry-run` first (free) prints `17 to generate · redo (--only)` and `worst case $0.045754`
+for a single round each; a question needing all three attempts costs up to three times its
+share, so the true ceiling is **~$0.14** against the unchanged `$1.00` stop.
+
+Expect some to need more than one invocation. Roughly one candidate in three collapses, all
+three must pass in the same round, and the batch is drawn as one completion on purpose — the
+model is told the three must differ from each other, and accumulating passing candidates across
+separate calls would trade that diversity away. Re-run the command with whatever ids remain in
+`unresolved`; it is resumable and costs a fraction of a cent per round. If the *same* ids keep
+landing unresolved across several runs, stop and read the failure lines: that is the signal to
+take the other lever in H-069 — `RUBRIC_VERSION = 2` with a strengthened prompt and a full
+130-question regeneration (~$0.30, and a fresh spot-check of all 390 probes).
+
+Then rebuild (step 1d) and spot-check again (step 1c). The seeded sample names the same 20
+probe **ids** as before, so only the ones belonging to these 17 have new text to read — in the
+current sample that is **`contract_terms-002#p1` and `contract_terms-004#p3`**, the second
+being the probe you failed in the first place. Re-read those two; the other 18 are unchanged.
 
 ### 1c. The spot-check — **your gate, not the harness's**
 
