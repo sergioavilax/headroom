@@ -75,18 +75,55 @@ swaps one for something the body never asked would pass here. And the rule fires
 *question + instruction*; a body whose parts are all instructions (the reconciliation runs)
 is out of its scope, deliberately — no collapse has been observed there, and widening a rule
 to a shape without evidence is how H-068's stuck generator happened.
+
+**Amended a third time, still before any measurement (H-071): a prohibition must survive as a
+prohibition.** The operator's spot-check rejected ``reconciliation-006#p1`` for reading *"…
+submitting them individually rather than as a batch"* where the body says *"Do not submit a
+batch."* The forced redraw's sampled probe came back clean and its **p3 reproduced the
+identical inversion** on an independent draw; auditing the whole batch found the same shape
+on five further bodies. `claude-haiku-4-5` systematically softens a bare prohibition into a
+positive order about what to do *instead*. Every entity, period and figure survives that —
+the prohibited object is usually still sitting in the sentence — which is why the token rules
+cannot see it, and the compound-ask rule cannot either: an all-instruction body is out of its
+scope by design, so nothing in this module was looking at the reconciliation family's last
+sentence at all.
+
+:func:`prohibitions` finds the shape, and :class:`Prohibition` asks two things of a candidate,
+on the same footing as an entity:
+
+* **The prohibition survives.** Some negation must still scope the prohibited verb or its
+  object — verbatim (``do not submit a batch``), through another negator (``without
+  submitting a batch``, ``avoiding batch submission``), or over the object alone (``not a
+  batch submission``, ``not batched``). A rewrite that drops it fails, and so does one that
+  keeps a prohibition about something else (``Do not group submissions.``).
+* **It has not become an order.** No un-negated use of the prohibited verb may appear.
+  *"submitting them individually rather than as a batch"* keeps the exclusion and adds an
+  instruction the body never gave: a bare prohibition names no alternative, and one that
+  acquires one is telling the agent to do something nobody asked for.
+
+**Scope, and it is narrow on purpose.** The rule fires only where a negator *opens* an ask —
+the bare prohibition standing as its own instruction, which is what every observed failure is
+about. A negation modifying an otherwise affirmative instruction (``say so in prose without
+flagging it``, once in this suite) is left alone: there the sentence's own verb is positive, a
+faithful rewrite may legitimately restructure it into a restriction (``flag only what is out
+of tolerance``), and no inversion has been observed on that shape. Widening a rule to a shape
+without evidence is how H-068's stuck generator happened.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Final
 
 __all__ = [
     "COMMON_WORDS",
     "MAX_LENGTH_RATIO",
     "MIN_LENGTH_RATIO",
+    "NEGATION_CUES",
+    "NEGATIVE_OBJECTS",
+    "PROHIBITION_MARKERS",
     "REQUEST_PARTICIPLES",
     "REQUEST_VERBS",
     "STOPWORDS",
@@ -94,11 +131,13 @@ __all__ = [
     "AliasGroup",
     "CheckResult",
     "CompoundAsk",
+    "Prohibition",
     "Requirements",
     "ask_segments",
     "check_batch",
     "check_paraphrase",
     "compound_ask",
+    "prohibitions",
     "required_tokens",
     "salient_tokens",
 ]
@@ -667,11 +706,17 @@ _SENTENCE_BREAK: Final = re.compile(r"(?<=[.?!])(?<![A-Z]\.)\s+")
 #: Where a second demand may legitimately begin: a sentence break, a coordinator, or a comma
 #: introducing a participial request. Splitting here is the whole test — two demands on
 #: opposite sides of one of these are two asks; two demands with none between them are one.
+#:
+#: **The case-insensitivity is scoped to the word alternatives, and that is load-bearing**
+#: (H-071). It used to be a flag on the whole pattern, which quietly turned the initials guard
+#: ``(?<![A-Z]\.)`` into "any letter followed by a full stop" — so this never split a sentence
+#: ending in ``.`` at all, only one ending in ``?``. `_SENTENCE_BREAK` above is unaffected and
+#: always was, so every *body* parsed correctly; what suffered were candidates that put their
+#: second demand in a second declarative sentence.
 _ASK_BREAK: Final = re.compile(
     r"(?<=[.?!;:])(?<![A-Z]\.)\s+"
-    r"|\s*,?\s+(?:and|or|plus|as\s+well\s+as)\s+"
-    r"|\s*,\s+(?=(?:" + "|".join(sorted(REQUEST_PARTICIPLES)) + r")\b)",
-    re.IGNORECASE,
+    r"|(?i:\s*,?\s+(?:and|or|plus|as\s+well\s+as)\s+)"
+    r"|(?i:\s*,\s+(?=(?:" + "|".join(sorted(REQUEST_PARTICIPLES)) + r")\b))"
 )
 
 
@@ -804,6 +849,202 @@ def compound_ask(body: str) -> CompoundAsk | None:
     return CompoundAsk(instruction=instruction, question=None if focus == instruction else focus)
 
 
+# --- the prohibition (H-071) ---------------------------------------------------------------
+
+#: Negators that take a *verb phrase* after them, and so can open a prohibition: ``Do not
+#: submit …``, ``Never flag …``, ``Without submitting …``. ``no`` is deliberately absent — it
+#: governs a noun (``no batch``), which is a negation but not an instruction, and reading it as
+#: one would make ``No findings were staged`` a rule about a verb called *findings*.
+PROHIBITION_MARKERS: Final = frozenset(
+    {
+        "cannot",
+        "can't",
+        "doesn't",
+        "don't",
+        "mustn't",
+        "never",
+        "not",
+        "shouldn't",
+        "without",
+        "won't",
+    }
+)
+
+#: Auxiliaries a prohibition may open with before its negator: ``**Do** not submit …``.
+_PROHIBITION_AUXILIARIES: Final = frozenset(
+    {"can", "could", "do", "does", "may", "might", "must", "shall", "should", "will", "would"}
+)
+
+#: What counts as the prohibition still being there, on the candidate side. Wider than
+#: :data:`PROHIBITION_MARKERS` because this decides *survival*, and the direction of error on
+#: survival is leniency: a rewrite that says ``avoiding batch submission`` or ``excluding batch
+#: entries`` has kept the prohibition in words the marker list would never contain. The
+#: contrastives are here for the same reason — ``rather than as a batch`` really does forbid the
+#: batch. What that phrasing usually fails is the *other* clause, and failing it there produces
+#: the accurate diagnosis rather than two vague ones.
+NEGATION_CUES: Final = PROHIBITION_MARKERS | frozenset(
+    {
+        "avoid",
+        "avoiding",
+        "avoids",
+        "exclude",
+        "excludes",
+        "excluding",
+        "forgo",
+        "forgoing",
+        "instead",
+        "neither",
+        "no",
+        "none",
+        "nor",
+        "nothing",
+        "omit",
+        "omits",
+        "omitting",
+        "rather",
+        "refrain",
+        "refraining",
+        "skip",
+        "skipping",
+    }
+)
+
+#: A prohibition may also survive as a negative *object*: ``submit nothing`` is ``do not submit
+#: anything``. Scanned a short way *forward* from the verb, and restricted to quantifiers, so
+#: that the ``not`` in ``Submit findings individually, not as a batch`` cannot excuse the
+#: ``Submit`` in front of it — which is precisely the inversion this check exists for.
+NEGATIVE_OBJECTS: Final = frozenset({"neither", "nobody", "none", "no", "nothing"})
+
+#: How far back a negation may sit and still govern the word it negates. The widest faithful
+#: form observed in eight draws across these bodies is ``not as a batch`` — three — so four
+#: leaves exactly one word of margin. Wider makes the second clause blind: every inversion in
+#: the batch puts its contrastive *after* the verb it wrongly instructs.
+_NEGATION_WINDOW: Final = 4
+
+#: How far forward to look for a negative object. ``submit nothing``, ``submit no batch``.
+_NEGATIVE_OBJECT_WINDOW: Final = 2
+
+
+def _inflections(word: str) -> tuple[str, ...]:
+    """The forms one word may legitimately be reworded into.
+
+    Derived rather than listed, unlike :data:`REQUEST_PARTICIPLES`, because here the word is
+    read off the body at runtime and there is no list to write. The doubling rule is the one
+    piece of English morphology that has to be right for the observed case — ``submit`` →
+    ``submitted``/``submitting`` — and everything else is a spare suffix that costs nothing.
+    """
+    forms = {word, word + "s", word + "es", word + "d", word + "ed", word + "ing"}
+    vowels = "aeiou"
+    if len(word) > 2 and word[-1] not in vowels and word[-2] in vowels and word[-3] not in vowels:
+        forms |= {word + word[-1] + "ed", word + word[-1] + "ing"}
+    return tuple(sorted(forms))
+
+
+@lru_cache(maxsize=256)
+def _word_pattern(word: str) -> re.Pattern[str]:
+    """``word`` in any of its forms, matched inside a token as well as around it.
+
+    Inside, because `_WORD` keeps a hyphenated compound whole and ``do not batch-submit`` is a
+    faithful rewrite whose verb lives in the middle of one.
+    """
+    return re.compile(
+        r"\b(?:" + "|".join(re.escape(form) for form in _inflections(word)) + r")\b",
+        re.IGNORECASE,
+    )
+
+
+def _negated_at(words: list[str], position: int) -> bool:
+    """Is the word at ``position`` inside a negation's scope, within this segment?"""
+    start = max(0, position - _NEGATION_WINDOW)
+    if any(word in NEGATION_CUES for word in words[start:position]):
+        return True
+    ahead = words[position + 1 : position + 1 + _NEGATIVE_OBJECT_WINDOW]
+    return any(word in NEGATIVE_OBJECTS for word in ahead)
+
+
+@dataclass(frozen=True, slots=True)
+class Prohibition:
+    """One thing the body forbids: ``Do not submit a batch.``
+
+    ``verb`` is what is forbidden (``submit``) and ``obj`` the head of what it is forbidden on
+    (``batch``), or ``None`` where the prohibition names no object. ``text`` is the ask it was
+    read out of, so a failure can quote the body rather than describe it.
+    """
+
+    verb: str
+    obj: str | None
+    text: str
+
+    def _sites(self, candidate: str) -> list[tuple[list[str], int, bool]]:
+        """Every mention of the verb or the object: its segment, position, and negation."""
+        verb = _word_pattern(self.verb)
+        obj = _word_pattern(self.obj) if self.obj else None
+        sites: list[tuple[list[str], int, bool]] = []
+        for segment in ask_segments(candidate):
+            words = _words(segment)
+            for position, word in enumerate(words):
+                if verb.search(word) or (obj is not None and obj.search(word)):
+                    sites.append((words, position, _negated_at(words, position)))
+        return sites
+
+    def survives_in(self, candidate: str) -> bool:
+        """Does *some* negation still scope the forbidden verb or its object?
+
+        Either one will do: ``not a batch submission`` never uses the verb at all — the
+        nominalisation is a different word — and has kept the prohibition on the object;
+        ``do not submit`` carries it on the verb with the object left implicit. Losing both is
+        a rewrite that no longer forbids anything.
+        """
+        return any(negated for _, _, negated in self._sites(candidate))
+
+    def instructed_in(self, candidate: str) -> bool:
+        """Is the forbidden verb used as an instruction, with nothing negating it?
+
+        Every mention has to be clean, not just one: *"report the findings, submitting them
+        individually rather than as a batch"* forbids the batch at the end and orders the
+        submission in the middle, and the order is the drift.
+        """
+        verb = _word_pattern(self.verb)
+        return any(
+            verb.search(words[position]) and not negated
+            for words, position, negated in self._sites(candidate)
+        )
+
+    def describe(self) -> str:
+        return f"{self.verb} {self.obj}" if self.obj else self.verb
+
+
+def prohibitions(body: str) -> tuple[Prohibition, ...]:
+    """Everything ``body`` forbids outright, in the order it forbids it.
+
+    An ask whose *own* verb is negated — ``Do not submit a batch.``, ``Never flag a
+    measurement …`` — and nothing else. A negation inside an otherwise affirmative instruction
+    is left to the spot-check, for the reason the module docstring gives.
+    """
+    found: list[Prohibition] = []
+    for segment in ask_segments(body):
+        words = _words(segment)
+        index = 0
+        while index < len(words) and words[index] in _DIRECTIVE_LEAD:
+            index += 1
+        if index < len(words) and words[index] in _PROHIBITION_AUXILIARIES:
+            index += 1
+        if index >= len(words) or words[index] not in PROHIBITION_MARKERS:
+            continue
+        verb_index = index + 1
+        if verb_index >= len(words):
+            continue
+        verb = words[verb_index]
+        # `not what applies today` is a clarification, not an order: the word after the negator
+        # has to be able to be a verb before any of this means anything.
+        if verb in _PHRASE_STOP or verb in WH_WORDS or verb in PROHIBITION_MARKERS:
+            continue
+        found.append(
+            Prohibition(verb=verb, obj=_demand_phrase(words, verb_index + 1), text=segment)
+        )
+    return tuple(found)
+
+
 @dataclass(frozen=True, slots=True)
 class CheckResult:
     """Whether a candidate may enter the corpus, and if not, precisely why."""
@@ -855,6 +1096,22 @@ def check_paraphrase(*, body: str, candidate: str) -> CheckResult:
             f"collapsed the compound ask: {ask.describe()} are asked for separately in the "
             f"question and are folded into one here"
         )
+
+    for forbidden in prohibitions(body):
+        # The inversion first, where both would fire: it is the more specific finding, and a
+        # rewrite that orders the forbidden action has already lost the argument about whether
+        # it also still forbids it somewhere.
+        if forbidden.instructed_in(stripped):
+            failures.append(
+                f"inverted the prohibition {forbidden.text!r}: this instructs "
+                f"{forbidden.verb!r} with nothing negating it, and a bare prohibition names "
+                f"no alternative to do instead"
+            )
+        elif not forbidden.survives_in(stripped):
+            failures.append(
+                f"dropped the prohibition {forbidden.text!r}: nothing here forbids "
+                f"{forbidden.describe()!r}"
+            )
 
     return CheckResult(not failures, tuple(failures))
 

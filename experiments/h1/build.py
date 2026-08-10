@@ -27,6 +27,11 @@ committed candidate is re-checked here rather than trusted from the generation r
 refuses a batch drawn under a different `RUBRIC_VERSION` (H-070): the corpus carries the
 rubric block as provenance, and a corpus whose probes were drawn under a rubric nobody
 approved is provenance that says the wrong thing.
+
+**A refusal names every failing id at once, with the command that fixes them** (H-071). When
+a new check lands, the whole committed batch is audited against it in one go; refusing on the
+first id would have made that audit cost one rebuild per finding, and a seven-id redraw reads
+as a one-id redraw right up until the sixth rebuild.
 """
 
 from __future__ import annotations
@@ -131,6 +136,7 @@ def _load_paraphrases(
         )
 
     rows: dict[str, list[str]] = {}
+    rejected: dict[str, str] = {}
     for question in suite.questions:
         entry = payload["questions"].get(question.id)
         if entry is None:
@@ -149,12 +155,28 @@ def _load_paraphrases(
             if not result.ok
         }
         if bad:
-            detail = "; ".join(
+            rejected[question.id] = "; ".join(
                 f"#{position + 1}: {', '.join(result.failures)}"
                 for position, result in sorted(bad.items())
             )
-            raise SystemExit(f"{question.id}: committed paraphrase fails the checks — {detail}")
+            continue
         rows[question.id] = candidates
+
+    if rejected:
+        # Every id at once, with the command that fixes them — the shape the `unresolved`
+        # branch above already has (H-069). Failing on the first id made an audit of the whole
+        # batch cost one build per finding, which is how a seven-id redraw reads as a one-id
+        # redraw until the sixth rebuild (H-071).
+        detail = "\n".join(
+            f"  {question_id}: {why}" for question_id, why in sorted(rejected.items())
+        )
+        raise SystemExit(
+            f"{path}: {len(rejected)} of {len(suite.questions)} questions carry a committed "
+            f"paraphrase that fails the checks as they stand now. A corpus is never assembled "
+            f"from probes a check rejects, and a check is never relaxed to fit a batch "
+            f"(H-068). Redraw them:\n{detail}\n\n"
+            f"  uv run python -m experiments.h1.generate --only {','.join(sorted(rejected))}"
+        )
     return rows, payload.get("rubric")
 
 
