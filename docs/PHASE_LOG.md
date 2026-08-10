@@ -4672,3 +4672,51 @@ property H-021's lazy pool gives the gateway, one language over.
 
 **Spend** — $0.00. Every request in this phase went to the MockProvider; the console talks
 to nothing but the gateway, and the browser smoke talks to nothing but a Node stub.
+
+### CI
+
+CI on PR-7 ([run 31356382482](https://github.com/sergioavilax/headroom/actions/runs/31356382482)),
+all **five** jobs green on the first run, no annotations:
+
+```
+$ gh run view 31356382482 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+ui lint + typecheck + unit tests + build: success
+ui browser smoke (chromium, stub gateway): success
+gateway and ui images build and serve: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | 142 files already formatted
+lint + typecheck | Success: no issues found in 141 source files
+pytest (…service containers) | ===== 1092 passed, 2 deselected, 1 warning in 30.23s =====
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+ui lint + typecheck + unit tests + build | ℹ tests 28
+ui lint + typecheck + unit tests + build | ℹ pass 28
+ui lint + typecheck + unit tests + build | ℹ fail 0
+ui lint + typecheck + unit tests + build | ✓ Compiled successfully in 5.7s
+ui browser smoke (chromium, stub gateway) | ✓ Compiled successfully in 5.8s
+ui browser smoke (chromium, stub gateway) |   7 passed (4.4s)
+gateway and ui images build and serve | gateway healthy
+gateway and ui images build and serve | console healthy
+```
+
+**1092 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of all four contract suites executed against the service
+containers rather than skipping (H-012). The `series` contract and the new disposition
+counters therefore ran against **real SQL** as well as against the dict, which is the whole
+point of testing them there: a `count(*) FILTER` and a Python `sum(1 for …)` are two
+sentences about one rule.
+
+**Two of the five jobs are new and neither reads a secret.** `ui` runs eslint, `tsc
+--noEmit`, the 28 unit tests, and `next build`; `ui-e2e` runs the browser smoke against a
+Node stub. That `next build` succeeds at all in a job with **no gateway, no database, and
+no network** is the property that makes them cheap — a console that had quietly grown a
+build-time dependency on a running backend would fail here rather than on somebody else's
+machine.
+
+The `image` job now builds and smokes **both** runtime images. `console healthy` is the
+console answering `/api/healthz` with no gateway anywhere in the job — which is what makes
+it safe for compose to gate on, and the same liveness-only rule the gateway's own
+`/healthz` has followed since H-000.
