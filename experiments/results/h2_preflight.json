@@ -1,0 +1,57 @@
+{
+ "schema": "h2_preflight/1",
+ "provenance": {
+  "produced_by": "experiments/h2/preflight.py",
+  "generated_at": "2026-08-10T23:36:54+00:00",
+  "headroom_commit": "c94657c0aee5566df53a78e4af9d95cdee06b531"
+ },
+ "gateway": "http://localhost:8080",
+ "tenant": "h2-gateway-overhead",
+ "tenant_id": "2a52c465-1472-4b26-81b2-e6c959744e06",
+ "smoke": true,
+ "checks": [
+  {
+   "check": "tenant is active",
+   "ok": true,
+   "detail": "h2-gateway-overhead = 2a52c465-1472-4b26-81b2-e6c959744e06",
+   "fix": ""
+  },
+  {
+   "check": "caching is disabled (H-047)",
+   "ok": true,
+   "detail": "mode=disabled, entries=0",
+   "fix": "curl -X DELETE http://localhost:8080/admin/cache/2a52c465-1472-4b26-81b2-e6c959744e06 -H 'Authorization: Bearer …'"
+  },
+  {
+   "check": "no rate limits on the H2 tenant",
+   "ok": true,
+   "detail": "requests_per_min=None, tokens_per_min=None",
+   "fix": "curl -X DELETE http://localhost:8080/admin/limits/tenant/2a52c465-1472-4b26-81b2-e6c959744e06 …"
+  },
+  {
+   "check": "budget backstop >= $15.0",
+   "ok": true,
+   "detail": "cap=$15.00, committed=$0.00",
+   "fix": "a backstop below Backline's own $12 stop would fire during a healthy run and corrupt it (H-066)"
+  },
+  {
+   "check": "the anthropic provider is closed (healthy)",
+   "ok": true,
+   "detail": "state=closed",
+   "fix": "curl -X DELETE http://localhost:8080/admin/providers/anthropic/health …"
+  },
+  {
+   "check": "the claude- route has no failover chain",
+   "ok": true,
+   "detail": "chains=[]",
+   "fix": "H2 measures one hop. A chain would put failover duration in the numbers."
+  },
+  {
+   "check": "tool round-trip through the gateway (paid)",
+   "ok": true,
+   "detail": "request_id=hr_e171f6024fc64772a66840fda6aab05a, blocks=['tool_use']",
+   "fix": "a reply with no tool_use block means the tool definition did not survive the hop"
+  }
+ ],
+ "verdict": "READY"
+}
