@@ -2886,3 +2886,335 @@ write on the latency path, for a number the ledger already carries per row.
 counters rather than on the code's shape, because "structurally impossible" is a claim about
 today's pipeline. The one place a hop *is* invisible to money is the estimate's blind spot,
 unchanged from H-034: an unpriced model is invisible to the cap whether it hops or not.
+
+---
+
+## H-054 — The console is a client of `/admin/*`, and has no other way in (Phase 7)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** A dashboard that reads a database is the easiest thing in this repo to build
+and the worst thing in it to own. The gateway and the console share a machine, a compose
+network, and — in Phase 9 — a VPC; nothing physical stops the UI opening its own asyncpg
+pool and writing the four `GROUP BY`s it needs. The session brief rules that out in one
+line (*"READ THROUGH THE REAL ADMIN API ONLY"*), and this entry records why the rule is
+worth more than the convenience it costs.
+
+Three reasons, in ascending order of how much they matter.
+
+1. **A second reader is a second set of bugs.** `usage_ledger` has thirty-nine columns and
+   five `cost_status` values whose distinctions are the whole point of Phase 3 — NULL is
+   not zero, a `partial` row is a bound, a hit's token counts are absent rather than
+   copied. A hand-written dashboard query re-decides all of that, silently, in a language
+   with no tests pointed at it.
+2. **The admin API is the product surface.** Every figure this console needs is a figure
+   an operator with `curl` should be able to get, and a dashboard that reached past the
+   API would have removed the pressure to make that true.
+3. **Phase 9 splits them.** ECS runs the gateway and the ui as separate tasks; a console
+   holding database credentials would need RDS reachability, a second secret, and a second
+   thing to rotate — for data it can already ask for over HTTP.
+
+**Decision.** The console talks to `/admin/*` and to nothing else. It has no
+`DATABASE_URL`, no `DYNAMODB_ENDPOINT_URL`, and no client for either; `docker-compose.yml`
+gives the `ui` service exactly one variable, and it is a URL. **A view that needs a number
+the API does not publish causes the API to publish it** — properly, with tests, in the
+same PR — rather than causing a query.
+
+That happened three times in this phase, and all three are reads of columns that already
+existed:
+
+- **`/admin/usage/series`** (new) — the ledger aggregated into `minute`/`hour`/`day`
+  buckets, for the cost-over-time and requests-per-minute charts. Implemented on both
+  `LedgerStore`s and asserted by the same contract suite (H-021's shape), because a
+  `count(*) FILTER` and a Python `sum(1 for …)` are two sentences about one rule and the
+  ways they drift are exactly the ways a chart becomes quietly wrong.
+- **Seven counters on `/admin/usage/totals`** — the five cache dispositions, the avoided
+  cost, and the failover count. They live on the existing aggregate rather than in a new
+  endpoint because the Overview asks one question — *what has this tenant been doing* —
+  and answering it with four round trips would let the four answers disagree under live
+  traffic.
+- **Three cache columns on a ledger row view** — `cache_avoided_usd`, `cache_similarity`,
+  `cache_source_request_id`. The last is the important one: it turns "this was a semantic
+  hit" into "…and here is the request whose answer you were served", which is the only way
+  a human can audit a similarity score after the fact, and the same provenance §P8.H1
+  measures silent wrong answers with.
+
+**The seed script holds itself to the same rule.** `scripts/seed_demo.py` configures
+through `/admin/*` and generates traffic through `/v1/*`; it writes no SQL. So every
+number the demo shows is a number the gateway really computed, and a metering bug shows up
+in the demo rather than being papered over by a fixture that wrote what it wanted to see.
+
+**Alternatives considered.** *A read-only database user for the console* — the
+conventional answer, and it makes reason 1 worse rather than better: read-only protects
+the data and does nothing for the semantics. *A GraphQL or BFF aggregation layer over the
+admin API* — a third place for the ledger's rules to be re-decided. *Server components
+importing `headroom`'s Python* — not a thing, and the fact that it is not a thing is part
+of why the boundary is easy to keep. *Publishing the extra figures as a separate
+`/admin/dashboard` endpoint shaped for this UI* — tempting, and it would make the API a
+function of one client; `/admin/usage/totals` answers "what has this tenant been doing"
+for anybody who asks.
+
+**Consequences.** The console's own tests can therefore be hermetic against a stub of the
+admin API rather than against a database, which is what makes the browser smoke run in CI
+at all. `MAX_BUCKETS = 1440` and `MAX_LIMIT = 1000` are now published ceilings on what one
+request may ask the ledger to aggregate. And the API grew a surface that has exactly one
+consumer today — a real cost, accepted, because the alternative is a consumer with no
+surface.
+
+---
+
+## H-055 — The admin token is typed in, never deployed; the session is an httpOnly cookie (Phase 7)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The console authenticates with `HEADROOM_ADMIN_TOKEN` — the root credential
+that creates tenants and mints keys (H-019). The session brief names the choice and
+constrains it: *entered at runtime, or env-provided to the ui service — never baked into a
+bundle, never committed*. Both spellings satisfy the letter of invariant 3; they fail
+differently, and the difference is what this entry is about.
+
+**Env-provided** means the token is in the ui service's environment. It is then in
+`docker compose config` output, in `docker inspect`, in an ECS task definition's
+environment or its secrets reference, and in whatever shell exported it — and, most
+importantly, **anyone who can reach the console is already the operator**, because the
+server will attach that token to any request the page makes. On a laptop behind a firewall
+that is fine. On the Phase 9 ALB it is a published, unauthenticated tenant-and-key CRUD
+that happens to be behind an IP allow-list.
+
+**Decision — the operator types the token into a sign-in screen, and the console's server
+exchanges it for an `httpOnly`, `SameSite=Strict` session cookie.**
+
+- **The `ui` service is handed no secret at all**, not even by reference. Its compose
+  environment is one variable and it is a URL. That is a stronger property than "no secret
+  in the repo": there is no secret in the *deployment* either, so there is nothing to
+  rotate, nothing to leak from an inspect, and nothing for a Phase 9 task definition to
+  get wrong.
+- **The token never crosses into client code.** `lib/session.ts` and `lib/admin.ts` import
+  `server-only`, which makes importing them from a client component a *build* error — the
+  same trick `config/routing.yaml` plays with `extra="forbid"` (H-014), enforced by the
+  compiler rather than by a reviewer. There is no `NEXT_PUBLIC_*` anything.
+- **`httpOnly` means the page's own JavaScript cannot read the token back**, so an
+  injected script cannot exfiltrate the credential even while riding a live session.
+  `SameSite=Strict` closes the CSRF: nothing should ever navigate into an operator console
+  from somewhere else.
+- **The token is probed before it is accepted.** `POST /api/session` calls
+  `GET /admin/tenants` with it and distinguishes all three answers that matter: 200, 401
+  ("the gateway rejected that token"), and 503 ("the gateway's own `HEADROOM_ADMIN_TOKEN`
+  is unset, so no token can be right"). A console that stored whatever was typed would
+  blame the operator's next action for their previous typo, and would send somebody
+  hunting for a better token when the fix is on the other side.
+- **Eight hours**, so a demo or an evening never signs itself out mid-thought, and a
+  walked-away laptop is not a permanent grant.
+
+**The trade, stated rather than buried.** The token sits in the browser's cookie jar for
+the session, and anyone who can reach this console *and* has the token can act as the
+operator. That is the same trust boundary the gateway's admin API already has — one root
+token, no roles — so the console neither invents a weaker one nor pretends to a stronger
+one. What it removes is the class of failure where reaching the console is *sufficient*.
+
+**Alternatives considered.** *Env-provided to the ui service* — the brief's other option;
+see above. *The token in `sessionStorage`, sent as a header on each call* — readable by any
+script on the page, which is the one property `httpOnly` exists to provide. *A server-side
+session store keyed by a random id* — strictly better at hiding the token, and it needs
+shared state across the several tasks Phase 9 runs, for a credential that is already the
+thing being protected. *Encrypting the cookie under a server key* — a second secret to
+provision in order to protect the first, on a single-operator console. *OAuth or a real
+identity layer* — the correct answer for a product and scope-lust here; the entry that
+adds accounts supersedes this one, and it should supersede H-019 first.
+
+**Consequences.** There is one more step between `make up` and a working dashboard, and
+the README says so. The console is useless without the gateway's admin API switched on,
+which is correct and is the 503 path above. And `tests/e2e/console.spec.ts` asserts the
+properties rather than trusting them: an unauthenticated visitor sees the sign-in screen
+and no data, a wrong token is refused, the cookie really is `httpOnly` and `Strict`, and
+`document.cookie` cannot see the token.
+
+---
+
+## H-056 — The console polls; it does not stream (Phase 7)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P7 asks for *"SSE-fed live tiles where it's cheap"*, and this
+gateway is very good at SSE — it is the thing Phase 1 was built around. The temptation to
+use it here is therefore real and worth answering rather than ignoring.
+
+**Decision — every view polls a `GET`, at one of three intervals: 2 s for the live view
+and provider health, 5 s for the overview and the meters, 15 s for the control-plane
+tables.**
+
+The reasoning is about what a push channel would actually cost against what it would
+actually buy.
+
+- **Every number here is already a `GET` on a tested admin API.** A stream would need a
+  second transport on the gateway, a fan-out story for the several Fargate tasks Phase 9
+  runs (a tenant's spend changes on whichever task served the request, and a browser is
+  connected to one of them), a reconnect-and-backfill dance, and a way to test all of it
+  keylessly. That is a phase, not a feature.
+- **What it would buy is under two seconds, on a figure a human is watching.** The kill
+  demo is legible at a 2 s poll: a request appears, the colour of the stack changes, a
+  breaker flips to `open`. Nobody watching that can tell it from a push.
+- **A poll degrades correctly.** A gateway restart mid-demo costs one failed request and
+  the next tick recovers; a dropped stream costs a reconnect path that is only exercised
+  when something is already going wrong.
+
+Three properties make the poll a real design rather than a `setInterval`:
+
+- **A hidden tab does not poll.** A console left open behind an editor for a day would
+  otherwise be a slow permanent load against the same ledger §P8 reads.
+- **Refetch never flashes a skeleton.** The previous render is held at reduced opacity —
+  including across a filter change, where blanking to a skeleton would be a layout jump for
+  data about to look almost the same.
+- **`fetchedAt` is the clock.** Every window a view draws ends at the moment the data was
+  *read*, never at `Date.now()` during render. That keeps rendering a pure function of the
+  fetched result, and it is also the honest reading: a chart whose last bucket is "now"
+  against four-second-old rows draws a gap that looks like an outage and is not one.
+
+**Alternatives considered.** *SSE for the live tiles only* — the plan's own suggestion, and
+the smallest version of the trade; it still needs the transport, the fan-out, and the
+reconnect, for the one view where 2 s is already indistinguishable. *Websockets* — the same
+costs plus a protocol. *A single adaptive interval that speeds up under traffic* — a clever
+thing that makes "how stale is this" unanswerable. *`revalidate` and server components* —
+would move the polling to the server and give up the pause-when-hidden property, which is
+the one that matters for a console left open.
+
+**Consequences.** The three intervals are published constants (`LIVE_INTERVAL_MS`,
+`PAGE_INTERVAL_MS`, `SLOW_INTERVAL_MS`) and appear on screen in each view's badge, so
+"how old is this number" is never a guess. The load is bounded and predictable: the live
+view is two indexed queries every two seconds. If a later phase does want a stream, it
+replaces `usePoll` and nothing else — every view consumes the same `{data, error,
+fetchedAt, refreshing}` shape.
+
+---
+
+## H-057 — No charting library; the charts are inline SVG, to the mark spec (Phase 7)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** The console needs five chart forms: bars over time stacked by provider, a
+sparkline in a stat tile, ranked horizontal bars, a one-row part-to-whole, and the budget
+meter §P7 explicitly licenses (*"a tenant's budget as a channel strip with headroom is the
+one flourish this UI is allowed"*). Recharts, visx, or Observable Plot would each draw
+four of the five.
+
+**Decision.** Hand-rolled inline SVG, in one file, roughly three hundred lines
+(`ui/components/charts.tsx`).
+
+- **A library's defaults are the wrong design language, and overriding them is the work.**
+  This console is true black, cool zinc, mono numerals, hairline chrome. A charting library
+  arrives with its own type scale, its own palette, rounded-both-ends bars, dashed
+  gridlines, and a tooltip that looks like somebody else's product — and every one of those
+  is an override, which is the same amount of code as drawing the mark, plus a dependency.
+- **The mark specs are exact and worth hitting exactly**: bars capped at 24 px with a 4 px
+  rounded *data* end and a square baseline, a 2 px surface **gap** between touching fills
+  rather than a stroke around them, solid hairline gridlines one step off the surface, no
+  number on every point, and text in ink tokens rather than in the series colour. Those are
+  a handful of lines each when you own the path and a fight when you do not.
+- **The channel strip is bespoke anyway.** It is the flourish the plan allows and the
+  metaphor is load-bearing rather than decorative: settled spend and live reservations
+  stack from the bottom like signal, the space above them is *headroom*, and the hairline
+  across the top is the cap you must not clip. That is BUILD_PLAN §0.2 rule 5 drawn —
+  the gate compares **committed** spend against the cap, never landed alone, and a
+  dashboard rendering only the landed bar would be D-019 with a nicer font.
+
+**The palette is computed, not chosen.** The five series colours are the validated dark
+categorical steps, checked against *this* console's surface (`#131417`) rather than
+assumed: five adjacent slots, worst-pair CVD ΔE 8.4, worst-pair normal-vision ΔE 19.3, all
+≥ 3:1 against the surface. A colour follows the **entity** — a provider's slot comes from
+its index in the gateway's own provider list, so a provider going silent during a kill
+demo never repaints the one that took over — and a sixth provider folds into a neutral
+rather than being handed a generated hue nobody checked. The four status colours are the
+fixed status palette and are never used as a series; each ships with a word beside it, so
+no state is ever carried by hue alone.
+
+**One bug this decision caught, recorded because it is the kind that ships.** The plots
+stretch to their container with `preserveAspectRatio="none"`, which scales x and y
+independently — and any `<text>` inside them is squashed by the same factor. In a
+half-width card the axis ticks came out as unreadable glyphs. The fix is that axis labels
+are HTML beside the SVG, not SVG text inside it; a library would have had this right, and
+a library would also have had to be talked out of dashed gridlines.
+
+**Alternatives considered.** *Recharts* — the default choice, ~500 KB, and its bar/stack
+geometry cannot express the surface-gap rule without custom shapes, at which point the
+library is drawing rectangles. *visx* — low level enough to comply, and it is a dozen
+packages to arrive at the scales three of these charts do not need. *Observable Plot* —
+lovely, and it wants a grammar where this needs five shapes. *A canvas renderer* — nothing
+here is dense enough to need one, and it would forfeit the accessible-name and `<title>`
+hover layer SVG gives for free.
+
+**Consequences.** Five chart forms is the vocabulary; a sixth is a deliberate addition to
+one file rather than a config object. There is no zoom, brush, or animated transition, and
+none is missed. `ui/tests/unit/series.test.ts` pins the two properties that are correctness
+rather than taste — a bar is rounded at the data end and square at the baseline, and a
+colour follows its entity across a filter change — because those are the ones a later edit
+would break without noticing.
+
+---
+
+## H-058 — The console's tests: Node's own runner, and a stub gateway for the browser (Phase 7)
+
+**Status**: accepted · **Date**: 2026-08-09
+
+**Context.** BUILD_PLAN §P7's gate names a *"Playwright smoke"*, and the session brief adds
+the constraint that makes it interesting: browser tests must be *hermetic against the
+compose stack or mocked APIs — no live providers*, and CI time must stay sane. Meanwhile
+invariant 4 says CI is fully keyless, and H-004's CI is three jobs that a fourth and fifth
+should not double.
+
+**Decision — two layers, and neither one needs a database.**
+
+**Unit tests run on `node --test` with native TypeScript stripping (Node 24), so the
+console's test layer costs zero dependencies.** No vitest, no jest, no transform step, no
+config file. What is tested is what is worth testing without a browser: the proxy's path
+allow-list and header construction, the money arithmetic, and the chart layer's geometry
+and colour assignment. Twenty-seven tests, a tenth of a second.
+
+The money tests earn their place. The gateway serialises `NUMERIC` as a string precisely so
+a double never touches it (H-024), and a console that did `parseFloat` on arrival would
+undo six phases of exactness in its first line — invisibly, because a float sum of small
+numbers looks entirely reasonable until somebody compares it against `psql`. So every total
+is summed in integer picodollars, the same 1e-12 quantum the budget store uses (H-030), and
+the display is rounded half-up on the integer rather than through a float. That last part is
+not theoretical: `Number(34_500_000n) / 1e12` is a double a hair below 0.0000345, so
+`.toFixed(6)` renders `$0.000034` — the same class of last-mile error, arriving in the last
+file. `ui/tests/unit/format.test.ts` asserts both the right answer and the wrong one.
+
+**The browser smoke runs against a Node stub of `/admin/*`** (`ui/tests/stub/gateway.mjs`),
+not against compose. Seven tests, Chromium only, ~2.5 s of test time on top of a browser
+download. Hermetic by construction: no Postgres, no DynamoDB, no provider, no key — which
+is exactly what lets it run on every pull request rather than on the operator's desk.
+
+Three things about the stub are deliberate:
+
+- **Its fixtures are interesting.** A tenant at 83% of its cap, a failover with its
+  `failover_from` and `failover_error`, a semantic hit with a similarity and a source
+  request id, a breaker `open` with a cooldown counting down. A smoke against an empty
+  database proves the pages render and nothing about whether they render the things they
+  exist for.
+- **It checks the credential.** An unauthenticated `/admin/*` call gets a 401, so the smoke
+  exercises the console's token path rather than routing around it — which is what makes
+  the httpOnly-cookie assertions mean something.
+- **Its clock is real.** Timestamps are relative to when the stub started, because every
+  window in the console ends at "now"; fixed dates would put the whole fixture outside the
+  last ten minutes and the smoke would be asserting against empty charts it believed were
+  full. (It was, briefly. That is how this line came to be here.)
+
+**And the smoke runs the server that ships** — `node .next/standalone/server.js`, the
+runtime image's own entrypoint, not `next start`. A smoke against a different server than
+the one that deploys is a smoke that can pass while the artifact is broken.
+
+**Alternatives considered.** *vitest* — one dependency, a config file, and a watcher nobody
+would run; the built-in runner does what is needed. *Playwright against the compose stack* —
+the most faithful, and it makes the browser job depend on Postgres, DynamoDB, a migration,
+and a seed, any of which failing reads as a UI failure. *Component tests with Testing
+Library* — a third layer between the two that exist, testing render output that the browser
+smoke already renders for real. *Three browser engines* — triples a job that exists to prove
+the console works at all. *Visual regression snapshots* — a genuinely useful thing for a
+design this specific, and a stream of false failures from font rendering across machines;
+the operator's screenshots in `docs/evidence/p7-dashboard/` are the visual record instead.
+
+**Consequences.** CI gains two jobs (`ui` and `ui-e2e`) and the image job gains a second
+build-and-smoke. Neither reads a secret. The stub is now a thing that has to stay in step
+with the admin API's response shapes — a real maintenance cost, and the reason it is
+written as literal fixtures rather than generated: when a shape changes, the diff is the
+list of what the console will now see.

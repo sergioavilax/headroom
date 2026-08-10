@@ -14,7 +14,13 @@ import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from headroom.core.ledger import LedgerEntry, LedgerQuery, LedgerStore, UsageTotals
+from headroom.core.ledger import (
+    LedgerEntry,
+    LedgerQuery,
+    LedgerStore,
+    UsageBucket,
+    UsageTotals,
+)
 from headroom.db.memory import InMemoryLedgerStore
 from headroom.metering.writer import LedgerWriter
 
@@ -47,6 +53,9 @@ class BrokenStore(LedgerStore):
         return []
 
     async def totals(self, query: LedgerQuery, *, by_model: bool = False) -> list[UsageTotals]:
+        return []
+
+    async def series(self, query: LedgerQuery, *, bucket: str = "hour") -> list[UsageBucket]:
         return []
 
     async def get(self, request_id: str) -> LedgerEntry | None:

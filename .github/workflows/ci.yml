@@ -94,8 +94,63 @@ jobs:
           uv run python -m headroom.db.migrate | tee /tmp/second.txt
           grep -q "up to date" /tmp/second.txt
 
+  # Phase 7. Three checks in one job because they share an `npm ci`: eslint, `tsc
+  # --noEmit`, and the console's unit tests — which run on Node's own test runner with
+  # native TypeScript stripping, so the dashboard's test layer costs zero dependencies.
+  # `next build` is proved here too, and it is the interesting half: the console reaches
+  # no gateway, no database, and no network at build time, so this job needs no services
+  # and no secrets. A build that had quietly grown a dependency on a running backend would
+  # fail here rather than on somebody else's machine.
+  ui:
+    name: ui lint + typecheck + unit tests + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # The browser smoke BUILD_PLAN §P7's gate asks for, kept hermetic: a Node stub of the
+  # gateway's `/admin/*` surface and the console's own standalone server, and nothing
+  # else — no compose stack, no Postgres, no DynamoDB, no provider, no key (invariant 4).
+  # Chromium only, and its own job so the suite above is not held up by a browser
+  # download.
+  ui-e2e:
+    name: ui browser smoke (chromium, stub gateway)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: ui/playwright-report/
+          retention-days: 7
+
   image:
-    name: gateway image builds and serves
+    name: gateway and ui images build and serve
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -116,3 +171,25 @@ jobs:
       - name: Remove the smoke container
         if: always()
         run: docker rm -f headroom-ci || true
+
+      # The console's runtime image, built and smoked the same way. It carries no
+      # secret and needs no gateway to answer `/api/healthz` — which is what makes it
+      # safe for compose to gate on (the console's health is its own, never its
+      # upstream's).
+      - run: docker build -t headroom-ui:ci ./ui
+      - name: Smoke /api/healthz in the built console image
+        run: |
+          docker run -d --name headroom-ui-ci -p 3001:3000 headroom-ui:ci
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:3001/api/healthz | grep -q '"status":"ok"'; then
+              echo "console healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "console never became healthy"
+          docker logs headroom-ui-ci
+          exit 1
+      - name: Remove the console smoke container
+        if: always()
+        run: docker rm -f headroom-ui-ci || true

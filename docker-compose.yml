@@ -137,5 +137,50 @@ services:
       retries: 6
       start_period: 10s
 
+  # The operator console (Phase 7) — the service §0.5 has said "later the ui" about since
+  # Phase 0. It is a client of `/admin/*` and nothing else: it has no database URL, no
+  # DynamoDB endpoint, and no way to read either.
+  #
+  # ── It is handed no secret at all ──────────────────────────────────────────────
+  # Not even by reference. The root admin token is typed into the console at runtime and
+  # exchanged for an httpOnly session cookie held by *its* server process
+  # (docs/DECISIONS.md H-055), so there is no `HEADROOM_ADMIN_TOKEN` line here to leak,
+  # to forget, or to bake into a bundle — one fewer place invariant 3 can be violated.
+  #
+  # Port 3001, not 3000: Backline's UI holds 3000 on this machine, and P8.H2 needs both
+  # stacks up at once (H-006's argument, one service along).
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    environment:
+      # Inside the compose network the gateway is a service name. An operator running the
+      # gateway on the *host* — which the two-GPU kill demo does, so that localhost:8010
+      # and :8011 mean the vLLM instances — sets this to
+      # http://host.docker.internal:8090 in `.env` instead.
+      HEADROOM_GATEWAY_URL: ${HEADROOM_GATEWAY_URL:-http://gateway:8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${UI_PORT:-3001}:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      # Liveness only, and deliberately not a probe of the gateway: compose already waits
+      # for the gateway to be healthy, and a console that reported its upstream's health as
+      # its own would take a working container down during a gateway restart.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
 volumes:
   dbdata:

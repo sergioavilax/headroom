@@ -1,11 +1,12 @@
 """``/admin/usage`` — the ledger, read-only and deliberately boring.
 
-Two shapes, because the Phase 7 dashboard needs exactly two: **totals** for the
-Overview tiles ("what is this tenant spending, on which model") and a filtered
-**list** for the Requests explorer ("show me that request"). Both are ``GET``, both sit
-behind the same root admin token as the rest of ``/admin`` (H-019), and neither can
-change a byte of the ledger. A cost ledger with a write endpoint is a cost ledger
-somebody eventually writes to.
+Three shapes, because the Phase 7 dashboard needs exactly three: **totals** for the
+Overview tiles ("what is this tenant spending, on which model"), a **series** for the
+charts ("what has it been doing for the last hour"), and a filtered **list** for the
+Requests explorer ("show me that request"). All are ``GET``, all sit behind the same
+root admin token as the rest of ``/admin`` (H-019), and none can change a byte of the
+ledger. A cost ledger with a write endpoint is a cost ledger somebody eventually writes
+to.
 
 **Money leaves as a string.** ``usd_cost`` is ``"0.000011500000"``, never
 ``0.0000115``. JSON has one number type and it is a double, so serializing a
@@ -32,7 +33,14 @@ from pydantic import BaseModel, ConfigDict
 
 from headroom.api.admin import AdminAuth, AdminError
 from headroom.api.deps import GatewayDep
-from headroom.core.ledger import LedgerEntry, LedgerQuery, UsageTotals, format_usd
+from headroom.core.ledger import (
+    SERIES_BUCKETS,
+    LedgerEntry,
+    LedgerQuery,
+    UsageBucket,
+    UsageTotals,
+    format_usd,
+)
 
 __all__ = ["router"]
 
@@ -41,6 +49,11 @@ router = APIRouter(prefix="/admin/usage", tags=["admin", "usage"])
 #: Rows one request may return. The explorer pages; nothing here streams a whole
 #: ledger into memory because somebody omitted a filter.
 MAX_LIMIT = 1000
+
+#: Buckets one series may return. 1440 is a day at minute grain — enough for the widest
+#: chart anybody draws here, and a bound so a `?bucket=minute` over a year cannot ask
+#: Postgres to aggregate half a million groups into one JSON array.
+MAX_BUCKETS = 1440
 
 
 class LedgerRowView(BaseModel):
@@ -91,6 +104,14 @@ class LedgerRowView(BaseModel):
     total_ms: float | None
 
     cache_disposition: str | None
+    #: What a hit saved, and where it came from (Phase 5). ``cache_avoided_usd`` is the
+    #: *entry's own recorded cost* rather than a re-pricing at today's rates, so it is a
+    #: fact about an invoice line that really happened; ``cache_source_request_id`` is
+    #: the provenance that makes a semantic hit auditable, and the reason the Requests
+    #: explorer can offer "show me the request this answer actually came from".
+    cache_avoided_usd: str | None
+    cache_similarity: str | None
+    cache_source_request_id: str | None
     #: What failover did (Phase 6). ``provider`` above says who served; these say what it
     #: took — how many candidates were passed over, which one first, and why. NULL and
     #: zero on the overwhelming majority of rows, which is the point.
@@ -138,6 +159,14 @@ class LedgerRowView(BaseModel):
             passthrough_overhead_ms=entry.passthrough_overhead_ms,
             total_ms=entry.total_ms,
             cache_disposition=entry.cache_disposition,
+            cache_avoided_usd=format_usd(entry.cache_avoided_usd),
+            # Not money, but the same argument: a cosine that arrived as NUMERIC(5,4)
+            # would become a double on the way through JSON, and the threshold sweep
+            # §P8.H1 runs reads this column.
+            cache_similarity=None
+            if entry.cache_similarity is None
+            else str(entry.cache_similarity),
+            cache_source_request_id=entry.cache_source_request_id,
             failover_hops=entry.failover_hops,
             failover_from=entry.failover_from,
             failover_error=entry.failover_error,
@@ -162,6 +191,24 @@ class TotalsView(BaseModel):
     unpriced_requests: int
     errored_requests: int
 
+    #: The cache's five dispositions, counted, and what the hits saved. Five values and
+    #: not three: "I switched it off" and "it is on and never applies to my traffic"
+    #: have completely different fixes, and a dashboard that collapsed them would hide
+    #: the more common one (Phase 5's deviation 1).
+    cache_hits_exact: int
+    cache_hits_semantic: int
+    cache_misses: int
+    cache_bypasses: int
+    cache_disabled: int
+    cache_avoided_usd: str
+    #: Hits the sum above could not include, because their entry's own cost was never
+    #: known. ``unpriced_requests`` for the savings column: skipping a NULL and adding it
+    #: as zero give the same sum, so only a count can say a saving was left out.
+    cache_avoided_unknown: int
+    #: Requests whose primary provider did not serve them (Phase 6). The number the kill
+    #: demo makes go up.
+    failover_requests: int
+
     @classmethod
     def of(cls, totals: UsageTotals) -> TotalsView:
         return cls(
@@ -174,6 +221,51 @@ class TotalsView(BaseModel):
             usd_cost=format_usd(totals.usd_cost) or "0",
             unpriced_requests=totals.unpriced_requests,
             errored_requests=totals.errored_requests,
+            cache_hits_exact=totals.cache_hits_exact,
+            cache_hits_semantic=totals.cache_hits_semantic,
+            cache_misses=totals.cache_misses,
+            cache_bypasses=totals.cache_bypasses,
+            cache_disabled=totals.cache_disabled,
+            cache_avoided_usd=format_usd(totals.cache_avoided_usd) or "0",
+            cache_avoided_unknown=totals.cache_avoided_unknown,
+            failover_requests=totals.failover_requests,
+        )
+
+
+class SeriesPointView(BaseModel):
+    """One time bucket — a point on the dashboard's cost-over-time chart.
+
+    Buckets with no requests are **absent**, not zero: gap-filling belongs to whoever
+    knows the x-domain being drawn (:class:`headroom.core.ledger.UsageBucket`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The bucket's own start, in UTC, truncated to the requested grain.
+    bucket_start: datetime
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    usd_cost: str
+    cache_avoided_usd: str
+    cache_hits: int
+    errored_requests: int
+    unpriced_requests: int
+    failover_requests: int
+
+    @classmethod
+    def of(cls, point: UsageBucket) -> SeriesPointView:
+        return cls(
+            bucket_start=point.bucket_start,
+            requests=point.requests,
+            input_tokens=point.input_tokens,
+            output_tokens=point.output_tokens,
+            usd_cost=format_usd(point.usd_cost) or "0",
+            cache_avoided_usd=format_usd(point.cache_avoided_usd) or "0",
+            cache_hits=point.cache_hits,
+            errored_requests=point.errored_requests,
+            unpriced_requests=point.unpriced_requests,
+            failover_requests=point.failover_requests,
         )
 
 
@@ -239,6 +331,39 @@ async def usage_totals(
         by_model=by_model,
     )
     return [TotalsView.of(total) for total in totals]
+
+
+@router.get("/series", response_model=list[SeriesPointView], dependencies=[AdminAuth])
+async def usage_series(
+    gateway: GatewayDep,
+    tenant_id: Annotated[str | None, Query(description="narrow to one tenant")] = None,
+    key_id: Annotated[str | None, Query(description="narrow to one virtual key")] = None,
+    model: Annotated[str | None, Query(description="exact model id")] = None,
+    provider: Annotated[str | None, Query(description="exact provider name")] = None,
+    outcome: Annotated[str | None, Query(description="e.g. ok, upstream_error")] = None,
+    since: Annotated[datetime | None, Query(description="inclusive lower bound")] = None,
+    until: Annotated[datetime | None, Query(description="exclusive upper bound")] = None,
+    bucket: Annotated[str, Query(description="minute | hour | day")] = "hour",
+    limit: Annotated[int, Query(ge=1, le=MAX_BUCKETS)] = 120,
+) -> list[SeriesPointView]:
+    """Spend and traffic over time, oldest bucket first.
+
+    Declared **above** ``/{request_id}``: FastAPI matches in declaration order, and a
+    literal path that arrives after a parameterised one is a route that never runs.
+    """
+    if bucket not in SERIES_BUCKETS:
+        # The literal 422, not `status.HTTP_422_*` — the convention `budgets.py` set,
+        # for the Starlette-deprecation reason recorded there.
+        raise AdminError(
+            422,
+            "unknown_bucket",
+            f"bucket must be one of {', '.join(SERIES_BUCKETS)}, got {bucket!r}",
+        )
+    points = await gateway.ledger.series(
+        _query(tenant_id, key_id, model, provider, outcome, since, until, limit),
+        bucket=bucket,
+    )
+    return [SeriesPointView.of(point) for point in points]
 
 
 @router.get("/{request_id}", response_model=LedgerRowView, dependencies=[AdminAuth])
