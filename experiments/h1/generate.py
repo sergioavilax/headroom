@@ -39,10 +39,10 @@ from typing import Any, Final
 
 import httpx
 
-from experiments.artifacts import ARTIFACTS_DIR, git_sha, provenance, read_json, write_json
 from experiments.h1 import rubric
 from experiments.h1.checks import check_batch
 from experiments.h1.suite import Suite, SuiteQuestion, backline_repo, load_suite
+from experiments.provenance import ARTIFACTS_DIR, git_sha, provenance, read_json, write_json
 from headroom.metering.cost import quantize_usd, usd_for_tokens
 from headroom.metering.prices import load_price_book
 

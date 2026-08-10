@@ -34,7 +34,10 @@ import sys
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import (
+from experiments.h1 import rubric
+from experiments.h1.checks import check_batch
+from experiments.h1.suite import Suite, backline_repo, load_suite, render_answer
+from experiments.provenance import (
     ARTIFACTS_DIR,
     content_hash,
     git_sha,
@@ -42,9 +45,6 @@ from experiments.artifacts import (
     read_json,
     write_json,
 )
-from experiments.h1 import rubric
-from experiments.h1.checks import check_batch
-from experiments.h1.suite import Suite, backline_repo, load_suite, render_answer
 
 __all__ = [
     "CORPUS_PATH",

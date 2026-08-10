@@ -33,7 +33,7 @@ import argparse
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import RESULTS_DIR, read_json
+from experiments.provenance import RESULTS_DIR, read_json
 
 __all__ = ["FIGURE_PATH", "main", "render"]
 

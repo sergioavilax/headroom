@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import content_hash, read_json
 from experiments.h1.build import CORPUS_PATH, VECTORS_PATH, corpus_material
+from experiments.provenance import content_hash, read_json
 
 __all__ = [
     "SPACES",

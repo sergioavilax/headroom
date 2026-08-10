@@ -2,8 +2,8 @@
  "schema": "h1_curve/1",
  "provenance": {
   "produced_by": "experiments/h1/sweep.py",
-  "generated_at": "2026-08-10T20:04:54+00:00",
-  "headroom_commit": "aa134f4a6cfb8ef4f5712dfdcd0f9c798bee2a03",
+  "generated_at": "2026-08-10T20:38:35+00:00",
+  "headroom_commit": "276b650a9a1b3c22580dd84185c7ec7fddf2fb3e",
   "inputs": {
    "corpus_hash": "772eb2bce496b28b6e610e1165ab3220ab20a94242c9a87ee1aaffee4d5887fc",
    "suite_hash": "6eef41c6706f309a"

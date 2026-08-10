@@ -29,7 +29,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import RESULTS_DIR, provenance, read_json, write_json
+from experiments.provenance import RESULTS_DIR, provenance, read_json, write_json
 
 __all__ = ["REFERENCE_OVERALL", "analyse", "main", "percentile"]
 

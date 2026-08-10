@@ -26,7 +26,7 @@ Phase 5, scaled up.
 
 Layout::
 
-    artifacts.py   stable JSON, content hashing, provenance stamping
+    provenance.py  stable JSON, content hashing, provenance stamping
     h1/            the semantic-cache safety curve — the headline
     h2/            Backline's suite through the gateway — overhead and parity
     h3/            failover under load — the chaos suite and the live kill

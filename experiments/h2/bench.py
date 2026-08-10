@@ -28,8 +28,8 @@ import asyncio
 from pathlib import Path
 from typing import Any, Final
 
-from experiments.artifacts import RESULTS_DIR, provenance, write_json
 from experiments.h2.analyze import percentile
+from experiments.provenance import RESULTS_DIR, provenance, write_json
 from headroom.providers.mock import MockScript
 
 __all__ = ["DEFAULT_REQUESTS", "RESULT_PATH", "main", "run"]
