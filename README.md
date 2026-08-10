@@ -83,6 +83,42 @@ inactive tenant). `403` means it knows exactly who you are and the key is not sc
 that model or provider. The reasoning for all of it is in
 [docs/DECISIONS.md](docs/DECISIONS.md) H-017 … H-022.
 
+## The console
+
+`make up` also brings up the operator dashboard on **http://localhost:3001**. To see it
+with something in it:
+
+```bash
+make seed              # four tenants and ~74 requests, through the public API only
+```
+
+Sign in with the same `HEADROOM_ADMIN_TOKEN` the gateway was started with. Seven views —
+Overview, **Live traffic**, Requests, Tenants & keys, Limits & budgets, Cache, Providers —
+and every number in them is one the gateway's own `/admin/*` API published. The console
+has no database URL and no way to get one: a figure it needs and the API does not publish
+gets published on the API, with tests, rather than queried behind its back
+([H-054](docs/DECISIONS.md)).
+
+Three things are worth knowing before it is running:
+
+- **It is handed no secret at all**, not even by reference. The root token is typed into
+  the sign-in screen and exchanged for an `httpOnly`, `SameSite=Strict` session cookie held
+  by the console's own server; it never crosses into client code, so there is nothing in a
+  bundle, a task definition, or a `docker inspect` to leak ([H-055](docs/DECISIONS.md)).
+- **It polls** — 2 s on the live view, 5 s on the overview, 15 s on the control-plane
+  tables — and a hidden tab does not poll at all ([H-056](docs/DECISIONS.md)).
+- **`make seed` writes no SQL.** It configures through `/admin/*` and generates traffic
+  through `/v1/*` against the MockProvider, so every figure on screen is one the gateway
+  really computed, and it costs $0.00.
+
+The one flourish: a tenant's budget is a **channel strip**. Settled spend and live
+reservations stack from the bottom like signal, the hairline across the top is the cap, and
+the space between them is headroom. That is BUILD_PLAN §0.2 rule 5 drawn — the gate
+compares *committed* spend, landed **plus** reserved, and a dashboard rendering only the
+landed bar would be D-019 with a nicer font.
+
+More in [`ui/README.md`](ui/README.md).
+
 ## The cost ledger
 
 Every request that authenticated and named a model becomes one row in `usage_ledger`,

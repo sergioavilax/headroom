@@ -1,0 +1,636 @@
+/*
+ * Headroom's console — true black, cool zinc, mono numerals.
+ *
+ * Dark only, on purpose. This is an operator console, not a marketing site: it is looked
+ * at in a dim room beside a terminal, and a light mode would be a second palette to keep
+ * honest for a case nobody here has. `color-scheme: dark` tells the browser so, which is
+ * what makes scrollbars, form controls, and focus rings arrive already right.
+ *
+ * The series colours are the validated dark categorical steps, checked against *this*
+ * surface (#131417) rather than assumed: five adjacent slots, worst CVD ΔE 8.4, worst
+ * normal-vision ΔE 19.3, all ≥ 3:1 against the surface. The status four are the fixed
+ * status palette and are never used as a series — they always ship with an icon and a
+ * word beside them, so no meaning is ever carried by hue alone.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- ground and surfaces ------------------------------------------------- */
+  --ground: #000000;
+  --surface-1: #131417;
+  --surface-2: #191a1f;
+  --surface-3: #1f2127;
+  --line: #26282f;
+  --line-soft: #1c1e23;
+
+  /* --- ink ------------------------------------------------------------------ */
+  --ink-1: #f4f4f5;
+  --ink-2: #a8a9b4;
+  --ink-3: #7c7e8a;
+  --ink-4: #55575f;
+
+  /* --- categorical series (validated, in fixed slot order) ------------------ */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  /* Not a series: the absence of one. A request no upstream served (a cache hit, a
+     refusal) is not an identity, so it gets ink rather than a hue. */
+  --series-none: #4d505a;
+
+  /* --- status (fixed, never themed, never a series) ------------------------- */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+
+  --accent: var(--series-1);
+
+  /* --- type ----------------------------------------------------------------- */
+  /* No web font: an operator console must render identically with no network, and a
+     remote font would put a request to somebody else's CDN on the critical path of a
+     page whose whole job is being trustworthy during an outage. */
+  --sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo,
+    Consolas, monospace;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink-1);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* --- the numeral rule ------------------------------------------------------
+ * Numbers wear mono, prose wears sans. It is the operator's design language and it
+ * earns its place here: every column in this console is a figure meant to be compared
+ * down the page — costs to the picodollar, token counts, latencies — and proportional
+ * digits make a column of them ripple. */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+}
+
+/* --- shell ------------------------------------------------------------------ */
+
+.shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 22px 14px 16px;
+  border-right: 1px solid var(--line-soft);
+  background: var(--ground);
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 20px;
+}
+
+.wordmark-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.wordmark-sub {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  font-size: 13px;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.nav-link:hover {
+  background: var(--surface-1);
+  color: var(--ink-1);
+}
+
+.nav-link[aria-current="page"] {
+  background: var(--surface-2);
+  color: var(--ink-1);
+}
+
+.nav-link[aria-current="page"] .nav-mark {
+  background: var(--accent);
+}
+
+.nav-mark {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.rail-foot {
+  margin-top: auto;
+  padding: 12px 10px 0;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.main {
+  min-width: 0;
+  padding: 26px 30px 64px;
+  max-width: 1480px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.page-sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  max-width: 78ch;
+}
+
+/* --- cards ------------------------------------------------------------------ */
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  min-width: 0;
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.card-note {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.grid {
+  display: grid;
+  gap: 14px;
+}
+
+.cols-2 {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+.cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.cols-4 {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.cols-5 {
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* --- stat tiles ------------------------------------------------------------- */
+
+.tile-label {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.tile-value {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+
+.tile-value.small {
+  font-size: 19px;
+}
+
+.tile-foot {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+/* --- tables ----------------------------------------------------------------- */
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 -18px -16px;
+  padding: 0 18px 16px;
+}
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+table.data th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  padding: 0 12px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+table.data td {
+  padding: 7px 12px 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-2);
+  vertical-align: middle;
+}
+
+table.data tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table.data tbody tr.clickable {
+  cursor: pointer;
+}
+
+table.data tbody tr.clickable:hover td {
+  background: var(--surface-2);
+}
+
+table.data tbody tr.selected td {
+  background: var(--surface-3);
+}
+
+td.right,
+th.right {
+  text-align: right;
+  padding-right: 0;
+}
+
+.strong {
+  color: var(--ink-1);
+}
+
+/* --- badges and status ------------------------------------------------------ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.badge.good .dot {
+  background: var(--good);
+}
+.badge.warning .dot {
+  background: var(--warning);
+}
+.badge.serious .dot {
+  background: var(--serious);
+}
+.badge.critical .dot {
+  background: var(--critical);
+}
+.badge.neutral .dot {
+  background: var(--ink-4);
+}
+.badge.accent .dot {
+  background: var(--accent);
+}
+
+.badge.critical {
+  border-color: color-mix(in srgb, var(--critical) 45%, var(--line));
+  color: var(--ink-1);
+}
+
+/* --- forms ------------------------------------------------------------------ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field label {
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.control {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  font-size: 12.5px;
+  color: var(--ink-1);
+  min-width: 0;
+}
+
+.control::placeholder {
+  color: var(--ink-4);
+}
+
+.control:hover {
+  border-color: var(--ink-4);
+}
+
+select.control {
+  cursor: pointer;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  color: var(--ink-1);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--ink-4);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04121f;
+  font-weight: 600;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, white);
+  border-color: color-mix(in srgb, var(--accent) 86%, white);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--critical);
+  color: var(--critical);
+}
+
+.btn.small {
+  padding: 3px 8px;
+  font-size: 11.5px;
+}
+
+/* --- misc ------------------------------------------------------------------- */
+
+.muted {
+  color: var(--ink-4);
+}
+
+.empty {
+  padding: 26px 4px;
+  color: var(--ink-4);
+  font-size: 12.5px;
+}
+
+.notice {
+  border: 1px solid color-mix(in srgb, var(--critical) 40%, var(--line));
+  background: color-mix(in srgb, var(--critical) 8%, var(--surface-1));
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  color: var(--ink-1);
+}
+
+/* Refetch never flashes a skeleton: the previous render is held at reduced opacity so
+   nothing jumps and no number disappears while a poll is in flight. */
+.refreshing {
+  opacity: 0.55;
+  transition: opacity 160ms ease;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.tick {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  fill: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(560px, 100vw);
+  background: var(--surface-1);
+  border-left: 1px solid var(--line);
+  padding: 22px 24px 60px;
+  overflow-y: auto;
+  z-index: 40;
+  box-shadow: -24px 0 60px rgb(0 0 0 / 60%);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 55%);
+  z-index: 30;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 5px 14px;
+  font-size: 12.5px;
+}
+
+.kv dt {
+  color: var(--ink-4);
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
+
+/* --- sign-in ---------------------------------------------------------------- */
+
+.signin {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.signin-card {
+  width: min(430px, 100%);
+  background: var(--surface-1);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 30px;
+}
