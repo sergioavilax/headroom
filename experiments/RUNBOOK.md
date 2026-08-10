@@ -84,6 +84,11 @@ ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate
   - a redraw that fails all three rounds leaves the id **absent** and in `unresolved`, not
     carrying the text you rejected. `build.py` then refuses, by design.
   - an id that is not in the suite is an error, not a silent no-op.
+- **A rubric bump makes every question incomplete** (H-070). If the file on disk was drawn
+  under a different `RUBRIC_VERSION`, the run prints a `SUPERSEDED:` line and regenerates all
+  130 — a batch is never mixed across versions, and `build.py` refuses a corpus built from
+  one that is. In that state `--only` is refused outright: a partial redraw would leave a file
+  that is neither version. Both happen before anything is sent, and the dry run shows it.
 
 #### The 2026-08-10 run: 114/130, and the 16 that need re-running
 
@@ -115,41 +120,70 @@ question can still legitimately fail; two of its three original candidates kept 
 a re-draw is expected to clear it. Anything still `unresolved` after this run is a real
 finding, not a checker artefact — re-read the failure lines before re-running.
 
-#### The compound-ask redraw: 17 questions, ~$0.05
+#### The compound-ask redraw — run, thrashed, superseded (history, do not re-run)
 
 Your spot-check failed `contract_terms-004#p3` for scope drift — the body asks for a rate
 **and** a citation, the paraphrase asked only for the citation — and the forced redraw
-reproduced it in 2 of 3 fresh candidates. That is a systematic compression, not a bad draw, so
-it is now a mechanical check rather than something the sample has to happen to catch
-(**H-069**). Auditing the accepted batch against it found **25 collapsed candidates across 17
-questions**; `build.py` will refuse the corpus until they are redrawn.
+reproduced it in 2 of 3 fresh candidates. That became a mechanical check (**H-069**), and the
+audit found **25 collapsed candidates across 17 questions**.
+
+You redrew those 17 three times: **17 → 8 → 5 → 5**, ~**$0.11**. Five ids —
+`contract_terms-008`, `-012`, `-013`, `-014`, `hand-contract_terms-04` — failed three to four
+independent rounds on the identical shape. That is H-069's stated thrash condition, so its
+pre-costed lever was taken: **`RUBRIC_VERSION` is now 2** (**H-070**), and the `--only` command
+that used to live here would now be refused, because a batch is never mixed across rubric
+versions. The regeneration below replaces it.
+
+#### The version-2 regeneration — **the command to run now**: all 130, ~$0.30
+
+Rule 4 of the rubric now asks for what the checker checks: a body that asks for a value and
+*separately* instructs a citation must stay two asks in the rewrite, with one faithful form
+shown. Everything else in the rubric is byte-for-byte what you approved before. Because the
+rubric version is stamped into the artifact and batches are never mixed, this is one command
+over the whole suite — no `--only`, no id list:
 
 ```bash
-ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate --only \
-contract_terms-001,contract_terms-002,contract_terms-004,contract_terms-005,\
-contract_terms-006,contract_terms-007,contract_terms-008,contract_terms-009,\
-contract_terms-011,contract_terms-012,contract_terms-013,contract_terms-014,\
-contract_terms-015,contract_terms-016,hand-contract_terms-01,hand-contract_terms-02,\
-hand-contract_terms-04
+uv run python -m experiments.h1.generate --dry-run            # free, sends nothing
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate  # ~$0.30, hard stop at $1.00
 ```
 
-`--dry-run` first (free) prints `17 to generate · redo (--only)` and `worst case $0.045754`
-for a single round each; a question needing all three attempts costs up to three times its
-share, so the true ceiling is **~$0.14** against the unchanged `$1.00` stop.
+The dry run prints this, verbatim from the run of 2026-08-10 (the first line is one long line;
+it is wrapped here). Read it before you drop `--dry-run` — it *is* the decision:
 
-Expect some to need more than one invocation. Roughly one candidate in three collapses, all
-three must pass in the same round, and the batch is drawn as one completion on purpose — the
-model is told the three must differ from each other, and accumulating passing candidates across
-separate calls would trade that diversity away. Re-run the command with whatever ids remain in
-`unresolved`; it is resumable and costs a fraction of a cent per round. If the *same* ids keep
-landing unresolved across several runs, stop and read the failure lines: that is the signal to
-take the other lever in H-069 — `RUBRIC_VERSION = 2` with a strengthened prompt and a full
-130-question regeneration (~$0.30, and a fresh spot-check of all 390 probes).
+```
+SUPERSEDED: /home/somx/code/headroom/experiments/artifacts/h1_paraphrases.json was generated
+under rubric version 1; the rubric is now version 2 (hash f7a48a69c3aab1b6eeb43d83e51a1cbaa370
+69df01a5476a72ed4518a2282e2c). Batches are never mixed across versions (H-070), so every
+question below is regenerated and the text now in that file is discarded. It stays in git, and
+nothing is overwritten until a call has been paid for.
+suite 6eef41c6706f309a · 130 keyed questions (3 excluded) · 130 to generate · resume
+model claude-haiku-4-5 at $1.00/$5.00 per MTok (effective 2026-08-08)
+worst case $0.376095 · cap $1.00 · expected actual ~1/3 of the worst case (the estimate is
+deliberately high)
 
-Then rebuild (step 1d) and spot-check again (step 1c). The seeded sample names the same 20
-probe **ids** as before, so only the ones belonging to these 17 have new text to read — in the
-current sample that is **`contract_terms-002#p1` and `contract_terms-004#p3`**, the second
-being the probe you failed in the first place. Re-read those two; the other 18 are unchanged.
+--dry-run: nothing sent, $0.00 spent
+```
+
+`worst case $0.376095` is one round per question priced pessimistically (three bytes per token,
+a full `max_tokens` of output). The realistic figure is the pre-committed **~$0.30**: the first
+full run drew 114 questions in 163 calls, retries included, for **$0.19**. If the `$1.00` stop
+does fire, the run is resumable in the ordinary way — what it wrote is already stamped v2, so a
+bare re-run picks up the rest.
+
+**Two things to know before you type it.**
+
+* The current file — 125 questions plus the five stuck ids — is **discarded**, not merged. It
+  stays in git; nothing is overwritten until the first call is paid for, so `--dry-run` and a
+  `Ctrl-C` before the first response both leave it exactly as it is.
+* The `$1.00` here is the stop **per invocation**. §0.6's `$1` for H1 paraphrase generation is
+  **whole-project**, and about **$0.32** of it is already landed ($0.19 + $0.02 + $0.001 +
+  ~$0.11). After this run, roughly two-thirds of that line is spent. A third full regeneration
+  would need a budget amendment, so this is the run to let finish.
+
+Then rebuild (step 1d) and spot-check (step 1c). **Every one of the 390 probes is new text, so
+the spot-check is a fresh read of all 20** — the seeded sample names the same probe ids as
+before (the seed does not move; a sample you can re-draw is not a sample), but nothing behind
+them is what you read last time.
 
 ### 1c. The spot-check — **your gate, not the harness's**
 

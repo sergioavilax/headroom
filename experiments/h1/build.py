@@ -23,7 +23,10 @@ the pre-registered sensitivity check.
 
 **The build refuses an incomplete paraphrase batch.** A question with two paraphrases where
 the rest have three quietly reweights the corpus, so `unresolved` must be empty and every
-committed candidate is re-checked here rather than trusted from the generation run.
+committed candidate is re-checked here rather than trusted from the generation run. It also
+refuses a batch drawn under a different `RUBRIC_VERSION` (H-070): the corpus carries the
+rubric block as provenance, and a corpus whose probes were drawn under a rubric nobody
+approved is provenance that says the wrong thing.
 """
 
 from __future__ import annotations
@@ -106,6 +109,18 @@ def _load_paraphrases(
     if not path.exists():
         return {}, None
     payload = read_json(path)
+    version = (payload.get("rubric") or {}).get("version")
+    if version != rubric.RUBRIC_VERSION:
+        # The generator drops a superseded batch on load, so reaching here means the file
+        # predates a rubric bump that has not been run yet. Belt and braces: the corpus
+        # carries the rubric block as provenance, and a corpus whose probes were drawn under
+        # a rubric the operator did not approve is provenance that says the wrong thing.
+        raise SystemExit(
+            f"{path} was generated under rubric version {version}; the rubric is now "
+            f"version {rubric.RUBRIC_VERSION} (H-070). A batch is never mixed across "
+            f"versions and a corpus is never built from a superseded one. Regenerate:\n"
+            f"  uv run python -m experiments.h1.generate --dry-run"
+        )
     if payload.get("unresolved"):
         ids = ", ".join(row["id"] for row in payload["unresolved"])
         raise SystemExit(

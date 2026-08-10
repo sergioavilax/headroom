@@ -5274,3 +5274,82 @@ uv run pytest                1 failed, 1190 passed, 2 deselected, 1 warning in 1
                              (the failure is the pre-existing stale-curve pin above;
                               1174 passed / 1 failed on this branch before this session)
 ```
+
+---
+
+## Phase 8 — the redraws thrashed: `RUBRIC_VERSION` 2, and versions stop mixing by hand
+
+**Date**: 2026-08-10 · **Branch**: `claude/p8-experiments` · **Decision**: H-070
+
+H-069 shipped the compound-ask check and deliberately left the prompt alone, recording the
+lever to pull *if redraws thrash*. They thrashed; the operator invoked it. Still
+pre-measurement under risk register item 3 — no sweep has read the corpus, and no H1 number
+exists to be flattered by any of this.
+
+**The evidence that triggered it** (the operator's three `--only` rounds)
+
+- **17 → 8 → 5 → 5**, ~**$0.11**. `contract_terms-008`, `-012`, `-013`, `-014` and
+  `hand-contract_terms-04` each failed three to four independent rounds — nine to twelve
+  draws apiece at `MAX_ROUNDS = 3` — every failure the same compound-ask collapse on the
+  rate-plus-cite body. `hand-contract_terms-04` also loses the name `Japanese`
+  intermittently. The failure lines are committed verbatim in the artifact's `unresolved`.
+- Reading the collapse rate back out of the attrition (9 of 17, then 3 of 8, then 0 of 5)
+  puts it near **one in two** on these bodies rather than H-069's batch-wide one in three,
+  and all three candidates must pass in the same round — so a clean round is about **one in
+  eight**. Round four buys the same distribution, not more information.
+
+**Shipped**
+
+- **`RUBRIC_VERSION = 2`** with one new rule (`experiments/h1/rubric.py`): a two-part ask
+  stays two parts, stated positively, one faithful form shown, the rest of the rubric
+  byte-for-byte unchanged. The worked example is invented rather than lifted from the suite.
+- **The mechanical check is untouched** — belt and braces, as asked. The rubric asks, the
+  checker verifies, and `test_the_rubric_teaches_a_form_the_checker_accepts` runs the
+  prompt's own example through `compound_ask()` and `check_paraphrase()`, so a rubric that
+  taught a form the harness rejects turns the suite red instead of burning a regeneration.
+- **"Batches never mix versions" is now code, not a sentence in a docstring.** It had to be:
+  without it, the honest full-regeneration command would have read the complete v1 file,
+  found every question complete and printed `nothing to do`. `load_batch()` returns a batch
+  from another version holding **no questions** (so a bare run selects all 130), `--only` on
+  a superseded batch is **refused with nothing sent**, and `build.py` refuses to assemble a
+  corpus from a batch stamped at another version.
+- **7 tests**, including the refusal, the "dry run writes nothing" property, and both
+  directions of the resume/regenerate split.
+- **Housekeeping**: `a01e239` had appended a truncated duplicate of H-069's header to the
+  end of `docs/DECISIONS.md`. Removed.
+
+**Deferred to the operator (invariant: Claude Code never runs spend)**
+
+The regeneration itself. `experiments/RUNBOOK.md` §1b carries the command and the dry run's
+verbatim output, produced here (free, nothing sent): `130 to generate`,
+`worst case $0.376095`, cap `$1.00` unchanged. Expected actual **~$0.30** — the first full
+run drew 114 questions in 163 calls, retries included, for $0.19. Then rebuild, then a
+**fresh spot-check of all 20** sampled probes: every one of the 390 is new text, which is the
+price H-069 costed and the operator has now accepted.
+
+**Spend against §0.6, since the artifact under-reports it**
+
+The `spend` block records only the *last* run, so the file says `$0.015973`. Cumulative
+landed H1 paraphrase spend is **~$0.32**: $0.19 (first full run) + $0.02 (the H-068 redraw)
++ $0.001 (the forced redraw) + ~$0.11 (the three compound rounds). §0.6's line is **$1
+whole-project** while the harness's stop is **$1 per invocation** — not the same number.
+After the ~$0.30 regeneration, roughly two-thirds of the line is spent and a third full
+regeneration would need a budget amendment. Making the stop read cumulative landed spend out
+of the artifact is the obvious follow-up and is deliberately not done mid-lever (H-070).
+
+**Still red, still on purpose**
+
+`test_the_committed_curve_is_the_one_this_corpus_produces` — unchanged from the previous
+entry, and now one step further from clearing: the corpus it pins will be rebuilt from the
+v2 batch. Order is unchanged: regenerate → rebuild → spot-check → sweep → figure.
+
+**Gate**
+
+```
+uv run ruff check .          All checks passed!
+uv run ruff format --check . 163 files already formatted
+uv run mypy                  Success: no issues found in 162 source files
+uv run pytest                1 failed, 1197 passed, 2 deselected, 1 warning in 18.94s
+                             (the failure is the same pre-existing stale-curve pin;
+                              1190 passed / 1 failed before this session)
+```

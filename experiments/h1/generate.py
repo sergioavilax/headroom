@@ -26,6 +26,15 @@ before this it had no way back into the generator: the only route was hand-delet
 question's entry out of the artifact JSON. Editing evidence by hand to make a tool re-run is
 not a workflow, and an id that is silently skipped is worse than one that errors.
 
+**A batch is never mixed across rubric versions, and that is now the code's rule rather
+than the operator's memory** (H-070). `rubric.RUBRIC_VERSION` is stamped into the output;
+if the file on disk carries a different one, every question in it is superseded — the run
+regenerates all of them and the old text is dropped rather than half-kept beside the new.
+That is what makes the version bump a *lever* the operator can pull: without it a bare run
+would read a full v1 file, find every question "complete", and print `nothing to do`. With
+``--only`` the run is refused outright, because redrawing 5 of 130 under a new rubric
+produces a file that is neither version and would have to be repaired by hand.
+
 **A candidate that fails the mechanical checks is regenerated here, before the artifact
 exists** (risk register item 3). Up to :data:`MAX_ROUNDS` attempts per question; what is
 still failing after that is written to ``unresolved`` and `build.py` refuses to assemble a
@@ -158,6 +167,12 @@ class Batch:
 
     questions: dict[str, dict[str, Any]] = field(default_factory=dict)
     unresolved: list[dict[str, Any]] = field(default_factory=list)
+    #: The rubric version of the file this run *replaces*, as text, when that file was
+    #: written under a different one — ``"unstamped"`` for a file carrying no rubric block
+    #: at all (H-070). ``None`` is the ordinary case: no file, or a file that belongs to the
+    #: current rubric. Set means :attr:`questions` was deliberately loaded empty, because
+    #: text drawn under the old rubric is not carried into a batch stamped with the new one.
+    superseded: str | None = None
 
     def complete(self, question_id: str) -> bool:
         row = self.questions.get(question_id)
@@ -219,6 +234,10 @@ def select(suite: Suite, batch: Batch, only: set[str] | None) -> list[SuiteQuest
     ``--only`` it is a **redo**: the named ids are regenerated whether or not they already
     have paraphrases (H-069). One function so the projection printed by :func:`main` and the
     work done by :func:`generate` can never disagree about what a run is about to buy.
+
+    A batch superseded by a rubric bump reaches here holding no questions at all (H-070), so
+    a bare run selects the whole suite. The full regeneration needs no third mode; it is the
+    resume rule applied to a batch in which nothing is complete.
     """
     if only is not None:
         return [question for question in suite.questions if question.id in only]
@@ -298,9 +317,20 @@ def generate(
 
 
 def load_batch(path: Path) -> Batch:
+    """The batch on disk, or an empty one when it belongs to another rubric (H-070).
+
+    Dropping the questions here rather than at save time is what keeps the artifact honest
+    under a version bump: whatever this run writes is stamped with the current
+    :data:`rubric.RUBRIC_VERSION`, so anything drawn under the old one must not still be
+    sitting in it. Nothing is lost that git does not hold — the superseded batch is a
+    committed file, and this run only overwrites it once a call has been paid for.
+    """
     if not path.exists():
         return Batch()
     payload = read_json(path)
+    version = (payload.get("rubric") or {}).get("version")
+    if version != rubric.RUBRIC_VERSION:
+        return Batch(superseded=str(version) if version is not None else "unstamped")
     return Batch(questions=dict(payload.get("questions", {})), unresolved=[])
 
 
@@ -375,6 +405,25 @@ def main(argv: list[str] | None = None) -> int:
                 f"--only names {len(unknown)} id(s) that are not in the suite: "
                 f"{', '.join(unknown)}. Nothing was sent."
             )
+        if batch.superseded is not None:
+            # Refusing beats destroying: a partial redraw here would write a file stamped
+            # with the new version holding only the named ids, the other 100-odd questions
+            # gone, and the operator would learn that from build.py rather than from here.
+            raise SystemExit(
+                f"--only cannot redraw part of a superseded batch. {out} was generated under "
+                f"rubric version {batch.superseded}; the rubric is now version "
+                f"{rubric.RUBRIC_VERSION}, and a batch is never mixed across versions "
+                f"(H-070). Drop --only to regenerate the whole suite. Nothing was sent."
+            )
+
+    if batch.superseded is not None:
+        print(
+            f"SUPERSEDED: {out} was generated under rubric version {batch.superseded}; the "
+            f"rubric is now version {rubric.RUBRIC_VERSION} (hash {rubric.rubric_hash()}). "
+            f"Batches are never mixed across versions (H-070), so every question below is "
+            f"regenerated and the text now in that file is discarded. It stays in git, and "
+            f"nothing is overwritten until a call has been paid for."
+        )
 
     todo = select(suite, batch, only)
     redrawn = [question.id for question in todo if batch.complete(question.id)]
