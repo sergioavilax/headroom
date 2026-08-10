@@ -54,7 +54,14 @@ from headroom.core.cache import (
     ResponseCacheStore,
     SemanticMatch,
 )
-from headroom.core.ledger import LedgerEntry, LedgerQuery, LedgerStore, UsageTotals
+from headroom.core.ledger import (
+    SERIES_BUCKETS,
+    LedgerEntry,
+    LedgerQuery,
+    LedgerStore,
+    UsageBucket,
+    UsageTotals,
+)
 from headroom.core.limits import (
     NANOS_PER_S,
     REFUSED_EXCEEDS_CAPACITY,
@@ -330,12 +337,54 @@ class InMemoryLedgerStore(LedgerStore):
                 ),
                 unpriced_requests=sum(1 for row in rows if row.usd_cost is None),
                 errored_requests=sum(1 for row in rows if row.outcome != "ok"),
+                cache_hits_exact=_disposed(rows, "cache_hit_exact"),
+                cache_hits_semantic=_disposed(rows, "cache_hit_semantic"),
+                cache_misses=_disposed(rows, "cache_miss"),
+                cache_bypasses=_disposed(rows, "cache_bypass"),
+                cache_disabled=_disposed(rows, "cache_disabled"),
+                cache_avoided_usd=_avoided(rows),
+                cache_avoided_unknown=sum(
+                    1
+                    for row in rows
+                    if row.cache_disposition in _HIT_DISPOSITIONS and row.cache_avoided_usd is None
+                ),
+                failover_requests=sum(1 for row in rows if row.failover_hops > 0),
             )
             for (tenant_id, model), rows in groups.items()
         ]
         return sorted(
             totals, key=lambda total: (-total.usd_cost, total.tenant_id, total.model or "")
         )
+
+    async def series(self, query: LedgerQuery, *, bucket: str = "hour") -> list[UsageBucket]:
+        if bucket not in SERIES_BUCKETS:
+            raise ValueError(f"bucket must be one of {', '.join(SERIES_BUCKETS)}, got {bucket!r}")
+        groups: dict[datetime, list[LedgerEntry]] = {}
+        for entry in self._matching(query):
+            groups.setdefault(_bucket_start(entry.started_at, bucket), []).append(entry)
+        buckets = [
+            UsageBucket(
+                bucket_start=start,
+                requests=len(rows),
+                input_tokens=sum(row.input_tokens or 0 for row in rows),
+                output_tokens=sum(row.output_tokens or 0 for row in rows),
+                usd_cost=sum(
+                    (row.usd_cost for row in rows if row.usd_cost is not None), Decimal(0)
+                ),
+                cache_avoided_usd=_avoided(rows),
+                cache_hits=_disposed(rows, "cache_hit_exact")
+                + _disposed(rows, "cache_hit_semantic"),
+                errored_requests=sum(1 for row in rows if row.outcome != "ok"),
+                unpriced_requests=sum(1 for row in rows if row.usd_cost is None),
+                failover_requests=sum(1 for row in rows if row.failover_hops > 0),
+            )
+            for start, rows in groups.items()
+        ]
+        # Newest `limit` buckets, then back into reading order — the SQL's inner DESC
+        # + outer ASC, in Python. Keeping the oldest would drop the point a live chart
+        # exists to show.
+        buckets.sort(key=lambda point: point.bucket_start)
+        return buckets[-query.limit :] if query.limit else []
 
     def _matching(self, query: LedgerQuery) -> list[LedgerEntry]:
         return [entry for entry in self._entries.values() if _matches(entry, query)]
@@ -746,6 +795,38 @@ def _expired(entry: CacheEntry, when: datetime) -> bool:
 
 def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
     return sum(a * b for a, b in zip(left, right, strict=True))
+
+
+#: The two dispositions that saved something. A miss has a NULL avoided cost too, and
+#: counting those would make "savings we could not price" mean "was not a hit".
+_HIT_DISPOSITIONS = ("cache_hit_exact", "cache_hit_semantic")
+
+
+def _disposed(rows: Sequence[LedgerEntry], disposition: str) -> int:
+    """``count(*) FILTER (WHERE cache_disposition = …)``, in Python."""
+    return sum(1 for row in rows if row.cache_disposition == disposition)
+
+
+def _avoided(rows: Sequence[LedgerEntry]) -> Decimal:
+    """``coalesce(sum(cache_avoided_usd), 0)`` — NULL rows skipped, never read as zero."""
+    return sum(
+        (row.cache_avoided_usd for row in rows if row.cache_avoided_usd is not None), Decimal(0)
+    )
+
+
+def _bucket_start(when: datetime, bucket: str) -> datetime:
+    """``date_trunc(bucket, started_at AT TIME ZONE 'UTC')``, in Python.
+
+    Converted to UTC *first*, so a row stored with a non-UTC offset lands in the same
+    bucket here as it does in Postgres. That is not hypothetical: `started_at` is a
+    `timestamptz` and asyncpg hands it back in whatever offset the session has.
+    """
+    moment = when.astimezone(UTC)
+    if bucket == "minute":
+        return moment.replace(second=0, microsecond=0)
+    if bucket == "hour":
+        return moment.replace(minute=0, second=0, microsecond=0)
+    return moment.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _matches(entry: LedgerEntry, query: LedgerQuery) -> bool:

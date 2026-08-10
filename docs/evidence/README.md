@@ -12,6 +12,7 @@ provenance is a picture.
 | Directory | Phase | What it holds |
 |---|---|---|
 | [`p6-failover/`](p6-failover/) | 6 | The two-GPU kill demo: one vLLM per 4090, one killed mid-flight, the ledger rows that recorded it |
+| [`p7-dashboard/`](p7-dashboard/) | 7 | The same kill, **watched** — the console rendering the shift from one GPU to the other, and a screenshot of every view against a seeded stack |
 
 Keyless evidence — anything reproducible from `make up` and the test suite — belongs in
 `docs/PHASE_LOG.md` as verbatim output instead. This directory is for the things that

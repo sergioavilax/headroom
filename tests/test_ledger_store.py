@@ -62,6 +62,12 @@ def entry(
     reasoning_tokens: int | None = None,
     usd_cost: Decimal | None = Decimal("0.0000115"),
     cost_status: str = "priced",
+    seconds: int = 0,
+    hours: int = 0,
+    days: int = 0,
+    cache_disposition: str | None = None,
+    cache_avoided_usd: Decimal | None = None,
+    failover_hops: int = 0,
 ) -> LedgerEntry:
     return LedgerEntry(
         request_id=request_id,
@@ -82,7 +88,11 @@ def entry(
         usd_per_mtok_out=Decimal("1.25"),
         usd_cost=usd_cost,
         cost_status=cost_status,
-        started_at=T0 + timedelta(minutes=minutes),
+        cache_disposition=cache_disposition,
+        cache_avoided_usd=cache_avoided_usd,
+        failover_hops=failover_hops,
+        failover_from="mock" if failover_hops else None,
+        started_at=T0 + timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds),
     )
 
 
@@ -342,6 +352,190 @@ async def test_totals_of_nothing_is_an_empty_list_not_a_zero_row(
     ledger: LedgerStore,
 ) -> None:
     assert await ledger.totals(LedgerQuery(tenant_id=TENANT_B)) == []
+
+
+# --- what the dashboard added (Phase 7) -----------------------------------------------------
+#
+# Counters over columns Phases 5 and 6 already wrote. Asserted against both stores for
+# H-021's reason and one more: a `count(*) FILTER` and a Python `sum(1 for …)` are two
+# different sentences about the same rule, and the ways they drift — a NULL treated as a
+# zero, a disposition spelled differently — are exactly the ways a savings figure becomes
+# quietly wrong rather than obviously broken.
+
+
+async def test_a_total_counts_each_cache_disposition_separately(ledger: LedgerStore) -> None:
+    """Five values, not three. "Off" and "on but never applicable" have different fixes."""
+    for index, disposition in enumerate(
+        ("cache_hit_exact", "cache_hit_semantic", "cache_miss", "cache_bypass", "cache_disabled")
+    ):
+        await ledger.record(entry(f"hr_{index}", minutes=index, cache_disposition=disposition))
+
+    (total,) = await ledger.totals(LedgerQuery())
+    assert total.cache_hits_exact == 1
+    assert total.cache_hits_semantic == 1
+    assert total.cache_misses == 1
+    assert total.cache_bypasses == 1
+    assert total.cache_disabled == 1
+
+
+async def test_a_total_sums_what_the_hits_avoided(ledger: LedgerStore) -> None:
+    await ledger.record(
+        entry(
+            "hr_1",
+            cache_disposition="cache_hit_exact",
+            usd_cost=Decimal(0),
+            cost_status="not_billable",
+            cache_avoided_usd=Decimal("0.0000115"),
+        )
+    )
+    await ledger.record(
+        entry(
+            "hr_2",
+            minutes=1,
+            cache_disposition="cache_hit_semantic",
+            usd_cost=Decimal(0),
+            cost_status="not_billable",
+            cache_avoided_usd=Decimal("0.0000230"),
+        )
+    )
+    await ledger.record(entry("hr_3", minutes=2, cache_disposition="cache_miss"))
+
+    (total,) = await ledger.totals(LedgerQuery())
+    assert total.cache_avoided_usd == Decimal("0.0000345")
+    assert isinstance(total.cache_avoided_usd, Decimal)
+
+
+async def test_a_total_counts_the_savings_it_could_not_add_up(ledger: LedgerStore) -> None:
+    """H-025's rule, on the savings column: **a total says how much it is missing.**
+
+    A hit on an entry whose own cost was never known — an unpriced model, a stream nobody
+    could meter — carries NULL here. Note what the sum *cannot* tell anybody: skipping a
+    NULL and adding it as zero produce the identical figure, always, because zero is the
+    additive identity. So the honest sum is not enough on its own, and the counter beside
+    it is the whole mechanism: without it the console's "avoided" tile is a confident
+    understatement the moment one unpriced model enters a tenant's traffic.
+    """
+    await ledger.record(
+        entry("hr_1", cache_disposition="cache_hit_exact", cache_avoided_usd=Decimal("0.5"))
+    )
+    await ledger.record(
+        entry("hr_2", minutes=1, cache_disposition="cache_hit_exact", cache_avoided_usd=None)
+    )
+    # A *miss* also has a NULL avoided cost, and must not be counted here — otherwise the
+    # figure would mean "requests that were not hits", which nobody asked for.
+    await ledger.record(entry("hr_3", minutes=2, cache_disposition="cache_miss"))
+
+    (total,) = await ledger.totals(LedgerQuery())
+    assert total.cache_hits_exact == 2
+    assert total.cache_avoided_usd == Decimal("0.5")
+    assert total.cache_avoided_unknown == 1
+
+
+async def test_a_total_counts_the_requests_that_failed_over(ledger: LedgerStore) -> None:
+    await ledger.record(entry("hr_1"))
+    await ledger.record(entry("hr_2", minutes=1, failover_hops=1))
+    await ledger.record(entry("hr_3", minutes=2, failover_hops=2))
+
+    (total,) = await ledger.totals(LedgerQuery())
+    assert total.requests == 3
+    assert total.failover_requests == 2
+
+
+# --- the series --------------------------------------------------------------------------
+
+
+async def test_a_series_groups_rows_into_buckets_oldest_first(ledger: LedgerStore) -> None:
+    await ledger.record(entry("hr_1", seconds=10))
+    await ledger.record(entry("hr_2", seconds=50))
+    await ledger.record(entry("hr_3", minutes=1))
+
+    points = await ledger.series(LedgerQuery(), bucket="minute")
+
+    assert [point.requests for point in points] == [2, 1]
+    assert points[0].bucket_start == T0
+    assert points[1].bucket_start == T0 + timedelta(minutes=1)
+    assert points[0].usd_cost == Decimal("0.0000230")
+
+
+async def test_every_grain_truncates_the_way_postgres_does(ledger: LedgerStore) -> None:
+    """One row per hour for three hours: 3 minute-buckets, 3 hour-buckets, 1 day-bucket."""
+    for index in range(3):
+        await ledger.record(entry(f"hr_{index}", hours=index))
+
+    assert len(await ledger.series(LedgerQuery(), bucket="minute")) == 3
+    assert len(await ledger.series(LedgerQuery(), bucket="hour")) == 3
+    day = await ledger.series(LedgerQuery(), bucket="day")
+    assert len(day) == 1
+    assert day[0].bucket_start == datetime(2026, 6, 1, tzinfo=UTC)
+    assert day[0].requests == 3
+
+
+async def test_a_series_keeps_the_newest_buckets_when_it_has_to_choose(
+    ledger: LedgerStore,
+) -> None:
+    """A chart that dropped its newest point would be worse than one missing its oldest."""
+    for index in range(5):
+        await ledger.record(entry(f"hr_{index}", minutes=index))
+
+    points = await ledger.series(LedgerQuery(limit=2), bucket="minute")
+
+    assert len(points) == 2
+    assert points[0].bucket_start == T0 + timedelta(minutes=3)
+    assert points[1].bucket_start == T0 + timedelta(minutes=4)
+
+
+async def test_a_series_carries_the_counters_the_live_view_reads(ledger: LedgerStore) -> None:
+    await ledger.record(entry("hr_1", cache_disposition="cache_miss"))
+    await ledger.record(
+        entry(
+            "hr_2",
+            seconds=1,
+            cache_disposition="cache_hit_semantic",
+            usd_cost=Decimal(0),
+            cache_avoided_usd=Decimal("0.0000115"),
+        )
+    )
+    await ledger.record(entry("hr_3", seconds=2, failover_hops=1))
+    await ledger.record(
+        entry("hr_4", seconds=3, outcome="upstream_error", usd_cost=None, cost_status="unpriced")
+    )
+
+    (point,) = await ledger.series(LedgerQuery(), bucket="minute")
+    assert point.requests == 4
+    assert point.cache_hits == 1
+    assert point.cache_avoided_usd == Decimal("0.0000115")
+    assert point.failover_requests == 1
+    assert point.errored_requests == 1
+    assert point.unpriced_requests == 1
+
+
+async def test_a_series_honours_the_same_filters_as_the_list(ledger: LedgerStore) -> None:
+    await ledger.record(entry("hr_1", tenant_id=TENANT_A, key_id=KEY_A))
+    await ledger.record(entry("hr_2", tenant_id=TENANT_B, key_id=KEY_B, seconds=1))
+
+    points = await ledger.series(LedgerQuery(tenant_id=TENANT_B), bucket="minute")
+
+    assert len(points) == 1 and points[0].requests == 1
+
+
+async def test_a_bucket_with_no_requests_is_absent_not_zero(ledger: LedgerStore) -> None:
+    """Gap-filling belongs to whoever knows the x-domain, not to the store."""
+    await ledger.record(entry("hr_1"))
+    await ledger.record(entry("hr_2", minutes=5))
+
+    points = await ledger.series(LedgerQuery(), bucket="minute")
+
+    assert [point.bucket_start for point in points] == [T0, T0 + timedelta(minutes=5)]
+
+
+async def test_a_series_of_nothing_is_an_empty_list(ledger: LedgerStore) -> None:
+    assert await ledger.series(LedgerQuery(), bucket="hour") == []
+
+
+async def test_an_unknown_grain_is_refused_by_both_stores(ledger: LedgerStore) -> None:
+    """Refused at the store, not only at the route: `date_trunc` would take 'week'."""
+    with pytest.raises(ValueError, match="bucket must be one of"):
+        await ledger.series(LedgerQuery(), bucket="week")
 
 
 # --- Postgres-only proofs ------------------------------------------------------------------
