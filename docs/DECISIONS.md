@@ -3218,3 +3218,473 @@ build-and-smoke. Neither reads a secret. The stub is now a thing that has to sta
 with the admin API's response shapes — a real maintenance cost, and the reason it is
 written as literal fixtures rather than generated: when a shape changes, the diff is the
 list of what the console will now see.
+
+---
+
+## H-059 — H1 seeds the cache from the answer key, not from a model run (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** BUILD_PLAN §P8.H1 leaves this open in a parenthesis — *"seed the cache with the
+133 canonical entries (reference answers derived from the answer key / **a prior scored
+Backline run**)"* — and the slash is doing a great deal of work. The two readings produce
+different experiments.
+
+Seeding from a prior scored run is the more *realistic* cache: it holds what a model
+actually said, including the ~7% of answers that were wrong. Seeding from the answer key
+holds only true answers.
+
+**Decision.** **The answer key.** Every seeded entry is correct for its own question by
+construction.
+
+The argument is about what the headline number *means*. H1 reports a **silent-wrong-answer
+rate**, and with a model-run seed that rate is a sum of two independent quantities: *the
+model was wrong about the question the cache answered*, and *the cache answered the wrong
+question*. Only the second is a fact about semantic caching; the first is a fact about
+Sonnet on 2026-08-08. They cannot be separated after the fact, because a probe that hits a
+wrong entry whose answer happens to be wrong for *both* questions is indistinguishable from
+a probe that hit a right entry the model fluffed. So a model-run seed makes the metric a
+blend, published under the name of one of its terms.
+
+With a key seed the attribution is exact: **a hit is wrong if and only if the cache resolved
+it to the wrong source question.** That is the quantity the experiment is named after, and
+it is the quantity nobody currently measures.
+
+Two consequences are accepted rather than hidden. The measured hit rate is *unchanged* by
+this choice — hit rate is a function of the embedding space and the threshold, and entry
+bodies are never embedded — so nothing about the savings side of the curve depends on it.
+And the seeded corpus is a *best-case* cache in one specific respect: a real cache holding a
+wrong answer serves that wrong answer even on a correct hit. That is a real effect, it is
+the *model's* error rate rather than the cache's, Backline has already published it (93.3),
+and the two compose by inspection.
+
+**Alternatives considered.** *A prior scored run* — see above; it also makes the artifact
+depend on one dated run of a paid suite, so regenerating the corpus would cost $8 rather
+than $0. *Both, as two arms* — doubles every table to separate a term the reader can compose
+themselves from a number Backline already publishes. *Synthetic answers from a cheaper
+model* — invents a third error source and measures none of them.
+
+**Consequences.** A seeded entry's body is synthesised from the key by code with no model in
+it, in Backline's own `ANSWER:` protocol, so the gateway's store and replay path handle a
+real Anthropic-dialect body unchanged. The artifact is therefore reproducible offline and
+for free, which is what makes a regenerated corpus a reviewable diff rather than a purchase.
+H1 measures the cache; it does not measure the model, and REPORT.md says so in the sentence
+that states the result.
+
+---
+
+## H-060 — The probe is the prompt as sent, and the answer protocol is never paraphrased (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** Backline's prompts are two things joined by a blank line: a question (*"What is
+Mariko Chorus's net payable for 2026-02, after recoupment?"*) and a machine-readable
+protocol (*"End your reply with a line exactly `ANSWER: $<amount>` (USD)."*). All 133 split
+that way, into 133 bodies and **8 distinct tails**. Two decisions fall out and neither is
+obvious.
+
+**Decision — the paraphrase rewrites the body and re-attaches the tail byte-for-byte.**
+
+A paraphrase of the tail is not a paraphrase. `ANSWER: $<amount>` is a wire format
+Backline's scorer parses; rewording it changes *what was asked* rather than *how*, and a
+corpus whose probes ask for a different output shape would measure a scorer, not a cache.
+Enforced mechanically: the generator re-attaches the original tail and a check asserts byte
+equality, so a model that helpfully rephrased it cannot reach the artifact.
+
+**Decision — the embedded text is the whole prompt, tail included; the body alone is a
+secondary sensitivity curve.**
+
+This is the load-bearing half. The shipped gateway embeds the user turn
+(`Dialect.cache_probe`), and the user turn is the whole prompt. So the *only* similarity
+numbers that describe a cache anyone could deploy in front of this suite are the ones
+computed over the full prompt — boilerplate and all.
+
+And the boilerplate is not noise to be cleaned away: eight tails shared across 133 questions
+raise the floor under every pairwise similarity, and they raise it *most* between questions
+that share an answer type — which is to say, between the near-misses. That is a real
+property of this workload and plausibly of every workload where an application templates its
+prompts, which is most of them. Removing it would produce a prettier curve about a system
+nobody runs.
+
+The question-body-only curve is reported beside it because it costs one more embedding pass
+over the same texts and it answers the one objection this design invites. Naming which is
+primary **before** either exists is the whole point: after the fact, "the boilerplate
+inflated it" and "stripping it was cherry-picking" are both available.
+
+**Alternatives considered.** *Embed the body only* — cleaner numbers about a gateway that
+does not exist. *Strip the tail in the gateway before embedding* — a real design, and
+plausibly a future feature, but inventing it here would mean measuring an unshipped feature
+in the phase whose job is to measure the shipped one. *Paraphrase the tail too* — measures
+Backline's answer extractor. *Drop the tails from the corpus entirely* — the prompts would no
+longer be Backline's prompts, and the answer key would no longer apply.
+
+**Consequences.** Every probe carries both texts and both vectors, so the artifact is roughly
+twice the size it would otherwise be and every table in REPORT.md has two columns. If the
+primary curve turns out to be dominated by boilerplate similarity, that is a finding about
+prompt templating and it is reported as one — with the secondary curve standing next to it as
+the counterfactual.
+
+---
+
+## H-061 — A wrong hit is wrong by Backline's own arithmetic, and a lucky one is not correct (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H1's metric is *"hit resolved to a different source question — with the
+returned answer provably wrong for the asked question, courtesy of the answer key"*. The word
+carrying the weight is **provably**, and it rules out the easy implementation.
+
+The easy implementation is `source != probe.source`. It is wrong in a specific and
+embarrassing direction: the suite has 10 `abstention` questions whose expected answer is the
+same `ABSTAIN` token, so a probe for one abstention question hitting another's entry receives
+an answer that **is correct**. Counting that as poison would inflate the headline number with
+the corpus's own structure. There are quieter cases too — two `count` questions that both
+answer 9.
+
+**Decision — three outcomes, not two, and the middle one is Backline's arithmetic.**
+
+A hit to a different source is a **silent wrong answer** only when the served entry's answer
+is *not equivalent* to the probe question's expected answer. When it is equivalent, it is a
+**benign collision**: recorded, reported, and never counted as a correct hit.
+
+*Equivalence is not re-implemented.* It is computed over all 133 × 133 ordered pairs at
+artifact-build time using `evals.answers` and `evals.scoring` — the code that scores the
+suite, with its per-kind parsing, its `money` tolerances, its `set` semantics and its
+abstention protocol — and the resulting matrix is committed inside the golden artifact. CI
+then replays it with no Backline on the path, no Postgres, and no network. That is the P5
+corpus pattern exactly: compute once where the dependencies live, commit the numbers, and let
+the keyless suite do arithmetic over them.
+
+**A benign collision is never folded into "correct".** A cache that returns the right answer
+because two questions happened to share one has been graded on the corpus rather than on
+itself, and the grade would not survive a corpus with fewer ties. Reporting the two columns
+separately also makes the abstention structure visible instead of buried.
+
+**Alternatives considered.** *Source-identity alone* — over-counts poison by the corpus's own
+tie structure, in the direction that makes the finding look worse than it is while making the
+measurement less true. *Re-implement the comparison in `experiments/`* — a second scorer to
+keep in step with Backline's, whose drift would be invisible and would move the headline
+number. *Import Backline at sweep time* — kills keyless CI and pins the experiment to a
+sibling repo's working tree. *Count benign collisions as correct* — see above. *Count them as
+poison* — the reverse error, and also wrong: the caller got a right answer.
+
+**Consequences.** The artifact carries a 133 × 133 boolean matrix and the Backline commit
+that produced it, so "provably wrong" has a provenance rather than a claim. Regenerating the
+artifact requires Backline present; the sweep never does. If Backline's scorer changes, the
+matrix is stale until rebuilt — which is why the Backline `suite_hash` and git sha are both
+stamped into the artifact and asserted by a test.
+
+---
+
+## H-062 — Two probe families: a paraphrase has a right answer to find; a novel question does not (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H1's corpus is paraphrases, and a paraphrase is the *favourable* case for a
+semantic cache: the question it paraphrases is sitting in the cache, so a right answer is
+available and the only question is whether the threshold finds it. A production cache spends
+most of its life in the other case — asked something it has never seen, with 132 near-misses
+and no right answer anywhere. There, **every hit is wrong by construction** (or lucky, per
+H-061).
+
+Measuring only the favourable case would publish a safety curve that omits the situation the
+safety question is actually about.
+
+**Decision. Two pre-registered families, with the plan's as primary.**
+
+- **Family A — paraphrase probes** (399). §P8.H1's curve, and the headline.
+- **Family B — novel-question probes** (133). Each canonical question probed against a cache
+  holding the other 132, leave-one-out. No true match exists.
+
+Family B costs **nothing**: it needs no paraphrases, only the 133 canonical vectors, so it is
+producible before a dollar is spent and it is the half of H1 a reader can reproduce from a
+clone. It is the floor Family A sits on — the false-positive rate of the embedding space
+itself, with the corpus's own hard negatives (templates crossed with 150 artists and 12
+periods) doing the work no invented negative could do honestly.
+
+τ₀, the recommended threshold (H-063), is computed over **A ∪ B** rather than over A alone,
+because a threshold that is safe only for questions you have already answered is not a safe
+threshold.
+
+**Alternatives considered.** *Family A only* — the plan's letter, and it measures the easy
+half. *Family B only* — free and reproducible, and it cannot measure hit rate at all, since
+there is nothing correct to hit. *A held-out split (seed 100, probe 33)* — a smaller cache
+and a smaller answer key for no gain; leave-one-out uses every question as both. *Invented
+hard negatives* — the thing this corpus was chosen to avoid: a negative tuned until the test
+passed.
+
+**Consequences.** Every table in REPORT.md has a family column, and the two curves must be
+read together — quoting Family A's hit rate beside Family B's poison rate would be the most
+flattering possible pair and is exactly what the pre-registration forbids. Family B also makes
+a partial result possible: it can be measured, and was, before the paraphrase batch existed.
+
+---
+
+## H-063 — The recommended threshold is a rule fixed before the curve, not a reading of it (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H1 asks for *"the resulting savings-vs-poison curve and its knee"*. "Knee" is
+a word, not a definition, and a curve with a free reader is a curve that recommends whatever
+the reader wanted. This is the single place in H1 where post-hoc discretion could change the
+headline recommendation, so the discretion is spent in advance.
+
+**Decision.**
+
+> **τ₀, the zero-poison floor** — the **lowest** grid threshold at which the
+> silent-wrong-answer count over **Family A ∪ Family B** is zero, and stays zero at every
+> higher grid point.
+
+Because hit rate is non-increasing in threshold, τ₀ is *also* the highest-savings threshold
+among the zero-poison ones, so one rule answers both "where is it safe" and "where is it
+best" without a second, negotiable trade-off parameter. The "and stays zero above" clause
+matters: the wrong-hit count is **not** monotone — a wrong neighbour can be displaced by a
+right one as the bar rises — so the lowest zero point and the point above which zero holds
+are different numbers, and picking the first without the second would recommend a threshold
+that is unsafe slightly higher up.
+
+If no such threshold exists in `[0.700, 0.990]`, **τ₀ does not exist** and that is reported as
+BUILD_PLAN's own second branch — *"semantic caching is unsafe for this workload class, here's
+the threshold-by-threshold proof"* — rather than as a softer threshold found by relaxing the
+rule.
+
+Reported unconditionally beside it, whatever it says: **where the shipped default 0.90
+lands.** `DEFAULT_SIMILARITY_THRESHOLD`'s own docstring already says it was measured on 12
+questions and is expected to move when this data exists. If τ₀ is above 0.90, the shipped
+default is unsafe on this corpus and the report says so in those words.
+
+**Alternatives considered.** *Maximum-curvature knee detection* — a defensible name for a
+choice of smoothing, on a step function where the steps are the result. *A cost-weighted
+optimum* (dollars saved per wrong answer) — the honest general answer, and it needs a price
+for a wrong answer, which nobody has and which would become the free parameter this entry
+exists to remove. *Highest threshold with hit rate above some floor* — encodes a savings
+target as if it were a safety finding. *Read the curve and argue* — what everyone does, and
+the reason nobody trusts the answer.
+
+**Consequences.** τ₀ is computed by code, not chosen, and the sweep reports the exact
+similarity **breakpoints** beside the grid so a reader can see the step the rule landed on
+rather than a rounded grid point. Changing the rule after seeing the curve is possible only as
+an amendment to `experiments/PRE_REGISTRATION.md` in a later PR, with the original
+recommendation still published.
+
+---
+
+## H-064 — H2 compares against the direct-local run, and admits it has no paired control (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H2 pre-registers *"overall score within the documented ≤3.0 same-model noise
+bound of the fresh-run reference points (93.3 / 92.5 / 91.6)"*. Three numbers and one bound is
+not yet a criterion: against the *range* it is a 7.7-point window, against the *mean* it is
+one interval, against each separately it is three tests with a choice of which to quote
+afterwards.
+
+Backline's own §A5.5 answers a stricter question by *pairing* — a fresh control and a fresh
+treatment on the same day. That costs another ~$8, against §0.6's $10 for this experiment.
+
+**Decision — the primary criterion is `|overall − 93.3| ≤ 3.0`, and the absence of a paired
+control is stated before the result rather than after.**
+
+`93.3` is the **direct-local** fresh run. It is the right comparator for the arithmetic reason
+that it differs from this treatment by exactly one thing — the gateway hop — where `92.5` also
+differs by a cloud, an RDS, and a Fargate CPU, and `91.6` also differs by a different commit
+and a different day. Choosing the *nearest neighbour in configuration space* is the choice
+that makes the residual attributable, and it is fixed here so it cannot become the choice that
+makes the residual small.
+
+`92.5` and `91.6` are reported as context, with the full per-category table beside all three in
+`deploy/aws/README.md`'s shape. `python -m evals gate` is run and reported as the strict
+secondary check with its known variance failure modes pre-declared — it failed on *both* runs
+of the AWS experiment, in different places, and §A5.5's rule is to report that rather than
+re-roll.
+
+**The limitation, named:** without a same-day control, between-day drift — provider-side model
+updates, load, sampling — sits inside this experiment's residual and cannot be separated from
+the gateway's effect. The claim H2 can support is therefore *"the suite scored within the
+documented same-model noise bound of its direct-local reference when run through the gateway"*,
+and **not** *"the gateway changed the score by X"*. The second sentence needs the control run,
+and the control run needs $8 the plan did not budget.
+
+**Alternatives considered.** *Against the range `[91.6, 93.3] ± 3.0`* — a 7.7-point window
+that almost nothing could fail. *Against the mean of the three* — averages three configurations
+that differ in three ways. *A paired same-day control* — the correct experiment, and $8 outside
+the line item; naming it as the thing not done is more useful than a quiet omission. *Halve
+both runs to 66 questions each to afford the pair* — a different suite, not gate-comparable,
+and it would forfeit the exact ground truth that makes Backline worth pointing at anything.
+
+**Consequences.** REPORT.md's H2 verdict is a statement about a bound, not an effect size, and
+the sentence that states it says so. If a later session has $8 spare, the paired control is the
+single highest-value follow-up in this repo and it needs no new code — the runbook's own
+commands with `ANTHROPIC_BASE_URL` unset.
+
+---
+
+## H-065 — "Gateway overhead" is three numbers, and the pre-registered one is the weakest (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H2 promises *"the number that answers 'why is a gateway in Python
+defensible'"*, pre-registered as **p50 overhead < 50 ms** and *"measured from Headroom's own
+ledger timings"*. H-051 already named the column: `passthrough_overhead_ms`, defined as *first
+upstream byte → first byte out*, and it named it in Phase 6, before this data existed.
+
+That column is going to come back in **microseconds**. P1 measured 0.006 ms, P6 measured 0.019
+ms. Publishing "p50 overhead: 0.02 ms, target < 50 ms, PASS" is true, pre-registered, and would
+be a flattering non-answer to the question the plan actually asked — because
+`passthrough_overhead_ms` measures the *forwarding* cost, and the gateway's real cost is mostly
+spent *before* the upstream is opened, in authentication, routing, the rate limiter, the cache
+lookup and the budget reservation.
+
+And the ledger cannot separate that: `upstream_latency_ms` is *request received → first upstream
+byte*, which contains the admission work **and** the provider's own time to first token, with no
+mark between them.
+
+**Decision — report three numbers, in this order, with the pre-registered one first and its
+weakness stated in the same breath.**
+
+1. **`passthrough_overhead_ms` p50/p95/p99** — the pre-registered metric, H-051's column,
+   against the pre-registered `< 50 ms`. Reported first because it is the one that was promised,
+   and reported with the sentence *"this is expected to be sub-millisecond, so meeting a 50 ms
+   target by four orders of magnitude is a weak test"* attached to it rather than in a footnote.
+2. **Admission cost, measured where the provider costs nothing** — `upstream_latency_ms` over
+   ≥ 2,000 **MockProvider** requests through the full pipeline. The mock answers in
+   microseconds, so what remains is the gateway's own admission work, with real Postgres and
+   real DynamoDB Local behind it. Keyless, free, reproducible by a stranger with a clone, and it
+   is the honest answer to "what does a gateway in Python cost". Its caveat is recorded with it:
+   it excludes TLS and DNS setup to a real upstream, which httpx amortises over a keep-alive
+   pool and which a direct caller pays too.
+3. **End-to-end latency parity** — Backline's own per-question p50/p95 through the gateway
+   against the three reference runs' p50s (12,678 / 12,508 / 13,033 ms). The caller-visible
+   answer, and the noisiest: it carries a 12-second provider-side quantity in which a
+   millisecond of gateway is invisible, and there is no paired control (H-064).
+
+**Adding a fourth timing mark was considered and rejected.** A `provider_open_at` mark would
+separate admission from provider time directly and would be the clean fix. It is a change to
+`RequestContext`, to the ledger schema, and to the log line — in the phase whose job is to
+*measure the shipped gateway*, using a column H-051 pre-registered two phases ago. Measuring a
+gateway that Phase 8 modified in order to measure it is the shape of mistake this plan spends
+its invariants avoiding. The mark is the right first change of Phase 9 or 11, and this entry is
+the reason.
+
+**Alternatives considered.** *Report only the pre-registered figure* — literal compliance, and
+it answers the plan's stated question with a number that cannot fail. *Report only the mock
+admission cost* — the useful number, and it quietly replaces a pre-registered metric with a
+better one chosen after the fact. *Subtract a modelled provider TTFT from
+`upstream_latency_ms`* — invents the missing mark arithmetically, and the model would be fitted
+to the data it is used to interpret.
+
+**Consequences.** REPORT.md's overhead section is three rows, not one, and the honest headline
+is row 2. The keyless mock measurement runs in the suite, so the number is regenerated on every
+change rather than measured once — which also makes it the first thing that would notice a
+future phase putting a round trip on the admission path.
+
+---
+
+## H-066 — Phase 8's money stops: whose cap is whose, and why $12 sits inside a $10 line (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §0.6 budgets **$1** for H1's paraphrase generation and **$10** for the H2 run, with
+**$6** contingency behind them and a **$20** hard project total. The complication is discovered
+by computing, rather than quoting, Backline's own pre-run projection for the 133-question
+suite: **$11.27**. Backline's runner refuses to start when its projection exceeds `--budget`
+unless `--yes` is passed — and `AWS_DEPLOY_PLAN.md` §9 names the reflex by hand: *"never `--yes`
+reflexively"*.
+
+So `--budget 10.00` does not produce a $10 experiment. It produces either a refusal, or a
+`--yes` that switches off the projection guard entirely — which is strictly worse than raising
+the number, because it removes the check rather than moving it.
+
+**Decision — three stops, at three values, each doing one job.**
+
+| Stop | Value | Job |
+|---|---|---|
+| `experiments/h1/generate.py`'s internal cap | **$1.00** | §0.6's H1 line, enforced by the harness: the generator refuses to issue the call that would cross it |
+| Backline's `--budget` | **$12.00** | the operative stop, above its own $11.27 projection so the guard stays *on* and `--yes` is never needed |
+| Headroom's budget gate on the H2 tenant | **$15.00** | the independent backstop |
+
+**The backstop is deliberately the loosest, and that is not a mistake.** A second guard set at
+or below the first fires during normal operation, which makes it a source of corrupted runs
+rather than a safety net — and a Headroom 402 mid-suite would be scored by Backline as an
+errored row, so a backstop that fires *destroys the experiment it was protecting*. At $15 it can
+only fire if Backline's own committed-spend accounting is wrong, which is precisely the failure
+a second opinion exists for. There is a pleasing symmetry in the experiment's money being
+guarded by the product under measurement, and it is only pleasing because the gate reads
+*committed* spend — reserved plus landed — which is §0.2 rule 5 and the thing Backline's own
+runner does too.
+
+**The arithmetic against §0.6, stated rather than absorbed.** Expected H2 spend is ~$8.09 (three
+measured runs: $7.88 / $8.01 / $8.09). The $12 flag is a stop, not a plan. If a run genuinely
+lands between $10 and $12 it is drawn from the $6 contingency bucket and recorded in PHASE_LOG's
+spend line. Worst case for the phase is $1 + $12 = **$13 against the $20 project cap**, so the
+cap holds even in the case where every stop is reached.
+
+**Alternatives considered.** *`--budget 10.00 --yes`* — nominally inside the line item, and it
+disables the projection guard to get there; the worst of both. *Raise §0.6's H2 line to $12 by
+amendment* — defensible, and it edits a budget table to match a flag when the contingency bucket
+exists for exactly this. *Run the gate subset (43 questions, $3.89 projected)* — cheap, and not
+comparable to the 133-question reference points, so it would answer a different question for
+less money. *No Headroom-side backstop* — leaves one accounting system with no second opinion,
+in the repo whose product is second opinions about spend.
+
+**Consequences.** Three numbers now live in `experiments/PRE_REGISTRATION.md` §4 and in the
+runbook, and the runbook states each one's expected cost before its command. No command in this
+phase that spends money is run by Claude Code; every one is handed over — the invariant-2
+discipline the plan applies to `terraform apply`, applied to spend.
+
+---
+
+## H-067 — H3 is adjudicated from the recording that already exists (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H3 promotes the P6 chaos suite to a reported experiment and adds *"the two-GPU
+live kill"*. The session brief asks for the **delta** between what P7 captured and what §P8.H3
+specifies, and explicitly: *"If P7's artifacts already satisfy clauses, say so explicitly rather
+than re-demanding them."*
+
+The temptation is to specify a fresh recording, because a fresh recording is easy to specify and
+costs the *operator* rather than the phase. The check is whether the existing one answers the
+pre-registered questions.
+
+**Decision — no new GPU session. The recording exists; Phase 8 adds the adjudication.**
+
+What exists: `tests/test_failover_chaos.py`, green in CI since P6 at three fault intensities;
+`docs/evidence/p7-dashboard/` with seven stills, `hero.gif`, a kill timestamp and a psql
+cross-check; and — the part that settles it — **492 ledger rows surviving in the compose volume
+from the 2026-08-10 run**, 270 of them on the `vllm_a → vllm_b` chain, spanning ~92 minutes under
+the runbook's 2-second loop. That is the sustained load §P8.H3 asks for, already recorded, with
+per-request provenance.
+
+What was missing was never a picture. It was **numbers**: the psql cross-check committed with P7
+is three columns (requests, spend, failed over) and does not state the caller-visible 5xx count,
+the `failover_error` breakdown, or the re-admission interval — the three things §P8.H3 actually
+adjudicates. Those are five queries over rows that are still there, not another `docker kill` on
+a container that spends minutes reloading a 27B checkpoint.
+
+So Phase 8 ships two analysers rather than a demand: one that runs the mock chain at three
+intensities and emits a committed results artifact, and one that reads the surviving rows and
+adjudicates the three clauses. **If the analysis finds the rows cannot answer a clause, that gap
+is reported and a re-record is scheduled** — the decision is "adjudicate first", not "assume it
+is fine".
+
+**The recovery bound is arithmetic, not a choice.** H-052 published `COOLDOWN_S = 10` and one
+probe per half-open window in Phase 6; the transition happens on the request that finds the
+cooldown elapsed, with no scheduler. Under one request every `T` seconds, re-admission is
+observed within `10 + T`. The constant is read from `headroom/policy/health.py` rather than typed
+into the pre-registration, so the two cannot drift — which also means the bound could not have
+been fitted to the data, and `PRE_REGISTRATION.md` §H3.5 says so.
+
+**Alternatives considered.** *Specify a fresh sustained-load recording* — a GPU session, a 27B
+reload, and an operator evening, to produce rows materially identical to 492 that already exist.
+*Report the clauses from the mock chain only* — reproducible and free, and it drops the half of
+§P8.H3 that needed real hardware. *Report from `hero.gif`* — a picture is not a measurement,
+which is the whole reason the ledger exists. *Re-record because the rows might be truncated by
+the next `make test`* — real (H-029's caveat) and answered by extracting the analysis artifact
+**now**, which is what the analyser's committed JSON is.
+
+**Consequences.** H3's live half depends on rows in a local volume, so the extracted artifact is
+committed to `docs/evidence/p8-experiments/` in this PR and the raw query output beside it —
+after which the volume may be wiped freely. The mock half runs in CI on every pull request and is
+reproducible by a stranger; the live half is the operator's desk and is labelled as such, exactly
+as P6's two-GPU demo already is.
