@@ -4720,3 +4720,377 @@ The `image` job now builds and smokes **both** runtime images. `console healthy`
 console answering `/api/healthz` with no gateway anywhere in the job — which is what makes
 it safe for compose to gate on, and the same liveness-only rule the gateway's own
 `/healthz` has followed since H-000.
+
+---
+
+## Phase 8 — The experiments (2026-08-10)
+
+Branch `claude/p8-experiments`. BUILD_PLAN §P8's words are the spec: *"Three pre-registered
+experiments. Hypotheses, metrics, and falsification below are the pre-registration; they
+were written before any data existed and get adjudicated in `experiments/results/REPORT.md`
+with the same verdict discipline as Backline's BENCHMARK_NOTES."*
+
+**No gateway feature was added, changed, or removed in this phase.** `headroom/` is
+untouched. That is the phase in one line: the machinery finished at Phase 7, and this PR
+points it at a question.
+
+**Shipped**
+
+- **The pre-registration, committed before any data existed** —
+  `experiments/PRE_REGISTRATION.md` at `aa134f4`, with **H-059 … H-067**, ahead of any
+  corpus, sweep, run, or analysis in the tree. It fixes every metric definition, bound, and
+  analysis choice §P8 left open, and where document and code could differ the document wins.
+  One disclosure sits in §0 rather than hidden: H3's live rows already existed, so every H3
+  bound is derived from H-052's published constants instead of from the data.
+- **Amendment A1, also before any data**: H1's corpus is the **130 answer-keyed questions**,
+  not all 133. Three of Backline's questions (`hand-adversarial-01…03`) are prompt-injection
+  canaries with `expected: null` and `tiers: ["t2"]` — they carry no T1 answer key, so they
+  cannot be seeded from ground truth (H-059) and have no defined equivalence (H-061). The
+  rule is mechanical and stated two ways that must agree; `load_suite` raises if they ever
+  disagree.
+- **`experiments/`** — eleven modules, all under `mypy --strict` and ruff, with exactly one
+  able to spend money:
+
+  ```
+  artifacts.py   stable JSON, content hashing over *meaning*, provenance blocks
+  h1/suite.py    Backline's answer-keyed questions, split question | answer-protocol
+  h1/rubric.py   the preserve-every-entity rubric, hashed into the artifact
+  h1/checks.py   mechanical entity / period / figure survival checks
+  h1/generate.py PAID, operator-run, hard $1.00 stop reading committed spend
+  h1/build.py    equivalence + embeddings -> the golden artifact
+  h1/corpus.py   reading it back — keyless, torch-free, Backline-free
+  h1/sweep.py    the admission decision replayed across the whole grid
+  h1/figure.py   the curve, in the console's own validated palette
+  h2/preflight.py refuse an $8 run against a tenant that would invalidate it
+  h2/bench.py    the gateway's admission cost, on the MockProvider
+  h2/analyze.py  the run adjudicated against the pre-registration and nothing else
+  h3/chaos.py    the mock chain at three intensities, promoted to a figure
+  h3/livekill.py the two-GPU kill, adjudicated from the ledger it left
+  ```
+
+- **H1's headline finding, for $0.00.** Family B — the leave-one-out novel-question family
+  (H-062) — needs no paraphrases, so the hard-negative half of the curve was produced before
+  a dollar was spent. At the shipped 0.90 default, **98 of 130 never-before-seen questions
+  are answered from cache and 92 of those answers are provably wrong**. At 0.99, 18 still hit
+  and all 18 are wrong. **τ₀ does not exist** — and cannot, since adding Family A can only
+  add probes. BUILD_PLAN §P8.H1's second branch, decided.
+- **The mechanism, named rather than mysterious.** The closest wrong answer scores
+  **0.999539**: two reconciliation questions differing in one period token (`2026-02` against
+  `2026-04`) with completely different answers. Genuinely unrelated questions sit at 0.578,
+  so the embedding is working exactly as designed — entity-substituted templated questions
+  are maximally similar in form and maximally different in answer.
+- **H-060's sensitivity check paid for itself immediately.** Stripping the shared
+  answer-format tail drops the 0.90 hit rate from **75% to 24%**. Reporting only the
+  tail-stripped curve would have understated the danger threefold; naming which curve was
+  primary *before* either existed is why that is a finding here rather than an argument.
+- **The gateway's admission cost, measured** (H-065's secondary): 2,000 requests through the
+  full pipeline against the MockProvider, **p50 0.207 ms** in memory and **1.441 ms** with
+  DynamoDB Local behind the limiter and the budget gate. The two atomic conditional writes
+  Phases 4 and 4b exist for cost **1.23 ms** — priced for the first time, and 0.01% of
+  Backline's 12,678 ms per-question p50.
+- **H3, adjudicated with no new GPU session** (H-067). The mock chain at three intensities:
+  60 requests, **0 caller-visible 5xx**, four cut points, **4/4 terminal error events, 0
+  silent truncations, 0 splices**. The live kill: **270 requests over 77 minutes across two
+  kill-and-restore cycles, every one HTTP 200**, 141 failovers, and the breaker's 10-second
+  cooldown visible in the raw attempt spacing (4.7 s before it trips, 14.1 s after).
+- **The H2 harness, complete and tested, with the run left to the operator.** A pre-flight
+  that refuses on any of six conditions that would invalidate the measurement, a paid tool
+  smoke for risk register item 2, and an analyser whose every verdict — including
+  `INVALIDATES THE RUN` — is exercised on fixture rows before a dollar is spent.
+- **`experiments/RUNBOOK.md`** — every money-spending command in dependency order with its
+  cost stated before it, and three stops at three values (H-066): $1.00 inside the generator,
+  $12.00 on Backline's own committed-spend gate, $15.00 as Headroom's independent backstop.
+- **`experiments/results/REPORT.md`** — the adjudication, with the verdicts above and what
+  each measures *and does not*.
+- **Evidence**: `docs/evidence/p8-experiments/` with the 492 exported ledger rows and a
+  README explaining why they are committed — the ledger is a test fixture and those rows were
+  one `make test` from gone (H-029).
+- **Tests: 1148 keyless** (1092 → 1148), 2 live-marked and deselected. New files —
+  `test_experiments_h1` (31), `test_experiments_h2` (17), `test_experiments_h3` (13). Every
+  Phase 0…7 test still green, and **none changed**.
+
+**Deferred**
+
+- **H1's Family A — the paraphrase probes.** The ~$0.30 paid step, operator-run, with the
+  runbook's §1. It measures the *savings* side: how many legitimate hits a cache would give
+  up. It **cannot change the τ₀ verdict**, which is why the finding is publishable now.
+- **H2's run itself**, ~$8.20, operator-run. Everything it needs is in place and tested.
+- **The paired same-day control for H2** — deliberately, and named as the single
+  highest-value follow-up in the repo (H-064). §A5.5 defines parity as a paired comparison;
+  a control run costs another ~$8 against §0.6's $10, so H2 supports a statement about a
+  *bound* rather than an effect size, and the report says so before the result.
+- **A `provider_open_at` timing mark**, which would separate admission cost from provider
+  time directly and is the clean fix for H-065's problem. Rejected *for this phase*:
+  modifying the gateway in order to measure it is the shape of mistake the plan's invariants
+  exist to avoid. It is the right first change of Phase 9 or 11.
+- **An entity-and-period filter on semantic hits** — what H1's finding actually argues for.
+  Named in REPORT.md as the first thing the cache should grow; not built, because Phase 8
+  adds no gateway features.
+
+**Deviations**
+
+1. **`experiments/` joins `mypy --strict`.** `pyproject.toml`'s `files` gains it. It is not
+   in the wheel — it is a sibling tree like `scripts/` — but it computes the project's
+   headline finding, and code that produces a published number deserves the gateway's
+   treatment.
+2. **`experiments/h3/chaos.py` imports from `tests/`.** The one module in `experiments/`
+   that does. It reads `INTENSITIES` and `PRE_TOKEN_FAULTS` out of
+   `tests/test_failover_chaos.py` so the artifact describes the scenarios **CI actually
+   runs**; a copy would be a second definition free to drift, and the number in the report
+   would slowly stop meaning what the tick means. `tests/support/` has been an explicit
+   harness layer since Phase 1 and the MockProvider it drives is production code. The
+   dependency points at the harness, never the reverse.
+3. **H1's corpus is 130 questions, not 133** — amendment A1, above. Reported in the artifact,
+   in the report, and asserted by a test rather than left to a document.
+4. **The paraphrase generator talks to Anthropic directly by default**, not through Headroom.
+   `--base-url` points it at the gateway for anyone who wants the dogfood, and the runbook
+   says so. Direct is the default because the generator builds the *instrument*, and an
+   instrument built through the system under measurement is a confound if anything goes
+   wrong — on the one step that costs money to repeat.
+5. **`experiments/h1/generate.py` prices with the gateway's own dated price book.** Its
+   budget stop resolves `claude-haiku-4-5`'s rate through `headroom.metering.prices` rather
+   than a constant, so the experiment's money guard is the product's own D-017-proof
+   arithmetic. Read-only; no metering behaviour changed.
+6. **§0.6's H2 line and the `--budget` flag are different numbers, deliberately** (H-066).
+   Backline's own computed projection is **$11.27**, and its runner refuses to start above
+   `--budget` without `--yes` — so `--budget 10.00` buys a refusal or a disabled guard. The
+   stop is $12, the expectation is $8.09, the gap is §0.6's contingency bucket, and this log
+   records what is actually spent.
+7. **Additions the plan's Phase 8 text does not enumerate**, all additive: the leave-one-out
+   probe family (H-062, and the reason a result exists at $0.00); the two-embedding
+   sensitivity curve (H-060); the answer-equivalence matrix and the benign-collision column
+   (H-061); the MockProvider admission-cost bench (H-065); the per-probe breaker-mechanism
+   check (§H3.2's claim without its aggregate); and `docs/evidence/p8-experiments/`.
+
+---
+
+**Gate** — *all three adjudicated in REPORT.md with verdicts; the H1 curve as both committed
+JSON and a chart in the repo's visual language; the corpus hashed and drift-pinned;
+PHASE_LOG records spend vs the §0.6 caps.* Plus the session brief's additions: all experiment
+code keyless-tested in CI, all prior tests green, ruff + mypy clean.
+
+### THE HEADLINE — H1, and it cost nothing
+
+```
+$ uv run python -m experiments.h1.sweep
+[prompt] 130 probes · counts {'silent_wrong_answer': 123, 'benign_collision': 7}
+         · max SWA similarity 0.999539 · min correct similarity None · τ₀ None
+[body]   130 probes · counts {'silent_wrong_answer': 122, 'benign_collision': 8}
+         · max SWA similarity 0.998554 · min correct similarity None · τ₀ None
+```
+
+The curve, at the thresholds a reader will look for (prompt space — what the gateway really
+embeds):
+
+```
+threshold   served   silently wrong   benign   miss   modelled saving
+   0.70       130          123           7        0       $7.71
+   0.80       127          121           6        3       $7.53
+   0.85       117          111           6       13       $6.94
+   0.90 <--    98           92           6       32       $5.81      the shipped default
+   0.95        32           32           0       98       $1.90
+   0.99        18           18           0      112       $1.07
+```
+
+**τ₀ — the recommended threshold, by a rule fixed before the curve (H-063) — does not
+exist.** No grid point in 0.70–0.99 reaches zero wrong answers.
+
+And the pair that makes it concrete, printed from the artifact rather than narrated:
+
+```
+cos 0.999539   reconciliation-008  <-  reconciliation-010
+  ASKED : Scan every statement for period 2026-02 for reporting anomalies — …
+  SERVED: Scan every statement for period 2026-04 for reporting anomalies — …
+  the caller would receive: 'Scan complete: 2 out-of-tolerance finding(s). …'
+  the true answer is:       'Scan complete: 5 out-of-tolerance finding(s). …'
+
+sanity: cos(catalog_lookup-001, reconciliation-001) = 0.578098
+```
+
+The embedding is not broken. Two questions differing in seven characters are, to a cosine,
+the same question.
+
+### THE BUILD CAUGHT TWO THINGS THAT WOULD HAVE BEEN SILENT
+
+*The diagonal check fired on the first run:*
+
+```
+$ python -m experiments.h1.build --no-paraphrases
+equivalence: 130² pairs through Backline's own scorer…
+contract_terms-004: its own rendered answer does not score 1.0 through Backline's scorer.
+Ground truth must satisfy the scorer or 'provably wrong' means nothing (H-061).
+Rendered: 'ANSWER: 2E+1%'
+```
+
+Three of Backline's percent answer keys are stored as `2E+1` / `3E+1`, and its own `_MONEY`
+regex reads `2E+1` as **2**. So a naive render of ground truth scored 2% against an expected
+20% and failed for its own question — which would have made every "wrong" classification
+downstream meaningless. Fixed with `format(value, "f")`: **Phase 3's `0E-12` scar, one repo
+over**, and found by the check that exists for exactly this.
+
+*The exclusion rule found the second:* three questions carry no T1 answer key at all. They
+cannot be seeded from ground truth and have no defined equivalence, so amendment A1 removes
+them — mechanically, stated twice, asserted by a test, and reported in the artifact.
+
+### H3 — THE THREE CLAUSES
+
+*The mock chain, three deterministic intensities:*
+
+```
+$ uv run python -m experiments.h3.chaos
+  light   20 requests, 5 faults (25%)  -> {200: 20}, caller-visible 5xx: 0, hops 5,  breaker closed
+  heavy   20 requests, 10 faults (50%) -> {200: 20}, caller-visible 5xx: 0, hops 18, breaker open
+  brutal  20 requests, 20 faults (100%)-> {200: 20}, caller-visible 5xx: 0, hops 20, breaker open
+  mid-stream cuts: 4/4 terminal error events, 0 silent truncations, 0 splices
+```
+
+*The two-GPU kill, from the 492 rows the operator's run left behind:*
+
+```
+$ uv run python -m experiments.h3.livekill --rows docs/evidence/p8-experiments/h3-livekill-ledger-rows.json
+270 requests on the vllm chain over 77.2 min, one every 4.65s
+  failover: {0: 129, 1: 141}  reasons: {'upstream_unavailable': 58, 'breaker_open': 82, 'upstream_timeout': 1}
+  clause 1 (no caller-visible 5xx): HOLDS (0 found)
+  clause 2 (recovery within bound):  EXCEEDED (max probe gap 14.74s vs bound 14.65s)
+  clause 3 (terminal error events):  NO CUTS IN THIS WINDOW
+  outages: 2
+```
+
+**Clause 2 is the one worth reading, because the pre-registered bound is exceeded and was not
+moved.** Two of 39 probe gaps sit over it, by 0.09 s and 0.02 s. The bound was
+`COOLDOWN_S + T` with `T` the median load interval — 14.65 s — and its premise, *"one request
+every T seconds"*, idealises a loop whose intervals actually spanned **4.01 s to 19.99 s**.
+
+So the claim underneath the bound was checked without any aggregate: **every one of the 37
+probes was the first request to arrive at or after the previous attempt plus the cooldown.
+37/37.** Both are published; the flattering one is not published alone.
+
+The cooldown is legible in the raw attempt spacing, which is the nicest thing in this data:
+
+```
+before the breaker trips   4.7  4.8  4.7  4.6  4.8  4.8  4.6  4.7    the load's own interval
+after it trips            14.1 14.1 14.1 14.2 14.3 14.3 14.2 14.1    cooldown + one interval
+```
+
+Two outages, 339 s and 380 s, each recovering **one load interval** after the last hop — one
+probe went through, succeeded, closed the breaker, and the next request was on `vllm_a`.
+
+### H2 — THE HALF THAT IS FREE
+
+```
+$ uv run python -m experiments.h2.bench
+  in-memory        n=2000   p50 0.2074 ms · p95 0.3288 ms · p99 0.4765 ms
+  dynamodb-local   n=2000   p50 1.4408 ms · p95 2.2875 ms · p99 4.6334 ms
+  two DynamoDB conditional writes cost p50 1.2334 ms, p95 1.9587 ms
+```
+
+Against Backline's measured 12,678 ms per-question p50, the gateway's whole admission path —
+authentication, routing, the token buckets, the cache lookup, the budget reservation — is
+**0.011% of a request**. The conditional writes that make the budget gate and the rate
+limiter unraceable cost **1.2 ms**, priced here for the first time.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+163 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 162 source files
+
+$ make test
+================ 1148 passed, 2 deselected, 1 warning in 18.15s ================
+```
+
+**1092 → 1148.** The 56 are `test_experiments_h1.py` (31), `test_experiments_h2.py` (17) and
+`test_experiments_h3.py` (13). **No existing test changed** — the first phase since Phase 2
+where that is true, and it follows from the phase adding no gateway code.
+
+**And the same 1148 pass with no torch installed at all**, which is the claim the whole
+committed-artifact design rests on — CI's environment, reproduced locally rather than trusted
+(the Phase 5 lesson):
+
+```
+$ uv sync                       # drop the `embed` extra: this is what CI has
+$ .venv/bin/python -c "import torch"
+ModuleNotFoundError: No module named 'torch'
+$ uv run mypy
+Success: no issues found in 162 source files
+$ uv run pytest -q
+1148 passed, 2 deselected, 1 warning in 18.14s
+$ uv run pytest -q | grep -c SKIPPED
+0
+$ uv sync --extra embed         # put it back
+```
+
+Every similarity number in H1 was produced by the real `bge-small-en-v1.5` and is asserted in
+CI **with no model, no torch, no network, and no Backline** — out of a committed artifact
+whose hash covers its texts and its equivalence matrix. That is the Phase 5 corpus pattern at
+133-question scale, and it is what makes this finding reproducible by a stranger with a clone.
+
+### The gate's clauses, individually
+
+*All three adjudicated in REPORT.md with verdicts.* H1: no safe threshold exists, with the
+threshold-by-threshold table. H2: not run, with the free half measured and the paid half's
+criteria fixed. H3: clauses 1 and 3 hold; clause 2's aggregate bound is exceeded by 0.09 s
+and its mechanism holds 37/37 — reported as both.
+
+*The H1 curve as both committed JSON and a chart in the repo's visual language.*
+`experiments/results/h1_curve.json` (every grid point, both families, both embeddings) and
+`h1_curve.svg` — two panels, the console's own tokens, the palette validated in Phase 7
+against this exact surface (H-057) rather than re-picked. Rendered and **looked at**, which
+caught a header colliding with the panel titles and direct labels running off the right edge;
+the legend that replaced them is in the file's docstring with that reason attached.
+
+*The corpus hashed and drift-pinned.* `corpus_hash` covers the texts, the provenance mapping
+and the equivalence matrix — never the vectors, never the timestamps, so a rounding change is
+not a corpus change (the Phase 5 rule). `test_the_corpus_hash_still_describes_the_corpus`
+fails on a hand-edit; the vectors file names the corpus hash it was built beside and
+`load_vectors` refuses a mismatch; and
+`test_the_committed_curve_is_the_one_this_corpus_produces` recomputes the published curve from
+the published corpus on every run, so a stale result file cannot survive.
+
+*All experiment code keyless-tested in CI.* 61 of the 56 new tests run against committed
+artifacts and fixtures; the rest are pure arithmetic. Two are worth naming:
+
+- `test_the_offline_sweep_makes_the_same_decision_as_the_shipped_store` — the whole experiment
+  is an *offline replay* of the gateway's admission decision, and "offline replay" is an
+  equivalence claim. So 130 entries go into a real `ResponseCacheStore` with the corpus's own
+  vectors and its `search(..., limit=1)` is asked for the same top-1 the sweep computed. They
+  agree on which entry and on the similarity to 1e-6.
+- `test_one_5xx_would_falsify_clause_1` — the sabotage shape, applied to an *analysis*: a
+  committed row is edited to carry a 503 and the verdict must flip to FALSIFIED. A verdict
+  that has never been seen to fail is a verdict nobody should believe.
+
+**Assumed-facts register (§0.4)**
+
+- **A2 — VERIFIED (the mechanism; the end-to-end run is the operator's).** *Anthropic SDKs
+  honor `base_url` override, so Backline can point its Anthropic provider at Headroom
+  unchanged.* Read out of the installed SDK rather than assumed: `anthropic` 0.120.2 resolves
+  `base_url` from `ANTHROPIC_BASE_URL` when the constructor is passed `None`, and Backline's
+  `AnthropicProvider` passes `None` by default. So the integration is two environment
+  variables and **zero changes to Backline**, its scoring included. The $0.02 smoke that
+  proves it end to end with a tool block is `RUNBOOK.md` §2c, and remains the operator's.
+- **A5 — still VERIFIED, and about to be tested where it has never been tested.** Tool
+  round-trips are proved keylessly (`tests/test_tool_blocks.py`, byte equality both
+  directions) and nothing in this phase touched the proxy. What has *not* happened is a tool
+  block through the real Anthropic API through this gateway; that is exactly what the
+  pre-flight smoke buys for two cents before the $8 run, per risk register item 2.
+- **A1, A3, A4, A6, A7** — not due at this gate, none touched.
+
+**Spend — $0.00.** Against §0.6's Phase 8 caps of **$1** (H1 generation), **$10** (the H2
+run) and **$6** (contingency). Every number in this entry came from the operator's own CPU,
+the MockProvider, or ledger rows a GPU demo left behind. The two paid steps are specified,
+capped, and handed over: ~$0.30 for H1's paraphrase batch and ~$8.20 for H2, worst case
+$13 against the $20 project total.
+
+**Operator verification** — `experiments/RUNBOOK.md`, in dependency order, with each
+command's expected cost stated before it.
+
+### CI
+
+*(PR-8 pending — filled in from `gh run view` once the run completes.)*

@@ -1,0 +1,194 @@
+{
+ "schema": "h3_livekill/1",
+ "provenance": {
+  "produced_by": "experiments/h3/livekill.py",
+  "generated_at": "2026-08-10T20:24:40+00:00",
+  "headroom_commit": "870f36fff61852d10e2b400406674ca83b12f58d",
+  "notes": "The operator's two-GPU kill demo. Rows exported before the next `make test` truncated the ledger (H-029)."
+ },
+ "window": {
+  "first": "2026-08-10T06:16:16.516914+00:00",
+  "last": "2026-08-10T07:33:31.33163+00:00",
+  "span_s": 4634.81,
+  "requests": 270,
+  "median_inter_request_s": 4.65,
+  "models": [
+   "cyankiwi/Qwen3.6-27B-AWQ-INT4"
+  ]
+ },
+ "not_this_experiment": {
+  "rows": 222,
+  "note": "Same ledger, different traffic: `make seed`'s mock workload and its deliberate refusals. Counted so the filter is visible rather than silent.",
+  "outcomes": {
+   "ok": 180,
+   "upstream_error": 9,
+   "budget_exceeded": 6,
+   "rate_limited": 18,
+   "upstream_stream_cut": 6,
+   "upstream_timeout": 3
+  }
+ },
+ "outcomes": {
+  "ok": 270
+ },
+ "status_codes": {
+  "200": 270
+ },
+ "failover": {
+  "hops": {
+   "0": 129,
+   "1": 141
+  },
+  "served_by": {
+   "vllm_a": 129,
+   "vllm_b": 141
+  },
+  "reasons": {
+   "upstream_unavailable": 58,
+   "breaker_open": 82,
+   "upstream_timeout": 1
+  }
+ },
+ "clause_1_no_caller_visible_5xx": {
+  "statement": "zero caller-visible 5xx for pre-first-token faults, at every intensity",
+  "caller_visible_5xx": 0,
+  "rows": [],
+  "verdict": "HOLDS"
+ },
+ "clause_2_recovery_within_bound": {
+  "statement": "re-admission on the first request after COOLDOWN_S, so under one request every T seconds it is observed within COOLDOWN_S + T",
+  "cooldown_s": 10.0,
+  "load_interval_s": 4.65,
+  "bound_s": 14.65,
+  "probe_gaps_s": [
+   14.07,
+   14.08,
+   14.2,
+   14.33,
+   14.28,
+   14.18,
+   14.15,
+   14.37,
+   14.08,
+   14.03,
+   14.06,
+   14.22,
+   14.43,
+   14.23,
+   14.27,
+   14.74,
+   14.34,
+   14.67,
+   14.41,
+   13.69,
+   13.87,
+   13.91,
+   13.82,
+   13.79,
+   13.49,
+   13.88,
+   13.69,
+   13.54,
+   13.78,
+   13.72,
+   14.08,
+   14.0,
+   14.21,
+   14.0,
+   14.03,
+   14.02,
+   13.99
+  ],
+  "median_probe_gap_s": 14.07,
+  "max_probe_gap_s": 14.74,
+  "over_bound": [
+   14.74,
+   14.67
+  ],
+  "verdict": "EXCEEDED",
+  "mechanism": {
+   "statement": "each probe was the first request to arrive at or after the previous attempt plus COOLDOWN_S",
+   "probes_checked": 37,
+   "probes_correct": 37,
+   "verdict": "HOLDS"
+  },
+  "load_interval_range_s": [
+   4.01,
+   19.99
+  ]
+ },
+ "clause_3_mid_stream_faults_are_terminal_events": {
+  "statement": "mid-stream faults surface as terminal error events, 100%, never silently",
+  "mid_stream_cuts": 0,
+  "recorded_as_ok": 0,
+  "note": "The ledger records a cut as `upstream_stream_cut` rather than `ok`, so a silently-served truncation would appear here as a success. It cannot see the frames themselves: the frame-level proof is the keyless chaos suite.",
+  "verdict": "NO CUTS IN THIS WINDOW"
+ },
+ "outages": [
+  {
+   "started_at": "2026-08-10T06:19:55.083549+00:00",
+   "ended_at": "2026-08-10T06:25:34.246706+00:00",
+   "duration_s": 339.16,
+   "requests": 72,
+   "real_attempts": 30,
+   "skipped_by_breaker": 42,
+   "probe_gaps_s": [
+    14.07,
+    14.08,
+    14.2,
+    14.33,
+    14.28,
+    14.18,
+    14.15,
+    14.37,
+    14.08,
+    14.03,
+    14.06,
+    14.22,
+    14.43,
+    14.23,
+    14.27,
+    14.74,
+    14.34,
+    14.67,
+    14.41
+   ],
+   "probes_checked": 19,
+   "probes_correct": 19,
+   "recovered_at": "2026-08-10T06:25:39.049383+00:00",
+   "recovery_gap_s": 4.8
+  },
+  {
+   "started_at": "2026-08-10T07:24:01.954058+00:00",
+   "ended_at": "2026-08-10T07:30:21.488903+00:00",
+   "duration_s": 379.53,
+   "requests": 69,
+   "real_attempts": 29,
+   "skipped_by_breaker": 40,
+   "probe_gaps_s": [
+    13.69,
+    13.87,
+    13.91,
+    13.82,
+    13.79,
+    13.49,
+    13.88,
+    13.69,
+    13.54,
+    13.78,
+    13.72,
+    14.08,
+    14.0,
+    14.21,
+    14.0,
+    14.03,
+    14.02,
+    13.99
+   ],
+   "probes_checked": 18,
+   "probes_correct": 18,
+   "recovered_at": "2026-08-10T07:30:26.140422+00:00",
+   "recovery_gap_s": 4.65
+  }
+ ]
+}
