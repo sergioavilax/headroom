@@ -1,0 +1,18 @@
+# After 4 consecutive failures the breaker opened (from /tmp/gateway.log, last breaker_open row):
+{
+  "request_id": "hr_9a56791ae62c4117a69f2a26554183bd",
+  "failover_error": "breaker_open",
+  "failover_attempts": [
+    "vllm_a:breaker_open",
+    "vllm_b:ok"
+  ],
+  "outcome": "ok",
+  "status": 200
+}
+# Observed live during the run: state=open, failures=4, last_error=upstream_unavailable, reopen_in_s=6.477
+# Current state after the instance was restarted and re-admitted:
+{
+  "state": "closed",
+  "samples": 1,
+  "failures": 0
+}

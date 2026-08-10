@@ -136,9 +136,16 @@ class LedgerEntry:
     #: auditable after the fact, and the answer key for cache correctness.
     cache_source_request_id: str | None = None
 
-    # --- seams for later phases, written by them, present from now -----------------
-    #: Phase 6 counts fallback attempts. Zero means the primary served it.
+    # --- what failover did (Phase 6) -------------------------------------------------
+    #: Chain slots that did not serve. Zero means the primary served it. A candidate the
+    #: circuit breaker skipped counts the same as one that was tried and failed: the
+    #: question is whether the request went where it was routed.
     failover_hops: int = 0
+    #: The first candidate passed over, and why. NULL when ``failover_hops`` is 0.
+    #: Complementary to ``error_reason`` / ``upstream_status``, which carry the *last*
+    #: failure — the one the caller was handed when a chain ran out (H-051).
+    failover_from: str | None = None
+    failover_error: str | None = None
 
     # --- assigned by the store -----------------------------------------------------
     id: str | None = None

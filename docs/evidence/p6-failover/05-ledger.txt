@@ -1,0 +1,13 @@
+$ SELECT provider, failover_hops, failover_from, failover_error, outcome, status_code FROM usage_ledger ORDER BY started_at DESC
+ provider | failover_hops | failover_from |    failover_error    | outcome | status_code 
+----------+---------------+---------------+----------------------+---------+-------------
+ vllm_a   |             0 |               |                      | ok      |         200
+ vllm_b   |             1 | vllm_a        | breaker_open         | ok      |         200
+ vllm_b   |             1 | vllm_a        | breaker_open         | ok      |         200
+ vllm_b   |             1 | vllm_a        | upstream_unavailable | ok      |         200
+ vllm_b   |             1 | vllm_a        | upstream_unavailable | ok      |         200
+ vllm_b   |             1 | vllm_a        | upstream_unavailable | ok      |         200
+ vllm_b   |             1 | vllm_a        | upstream_unavailable | ok      |         200
+ vllm_a   |             0 |               |                      | ok      |         200
+(8 rows)
+

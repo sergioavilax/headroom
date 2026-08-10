@@ -228,6 +228,15 @@ async def test_the_log_shape_is_complete(gateway: GatewayHarness) -> None:
         "cache_similarity",
         "cache_avoided_usd",
         "cache_source_request_id",
+        # Phase 6. `provider` above already says who served; these say what it took to
+        # get there. `failover_attempts` is null on the overwhelming majority of lines —
+        # the ones the primary answered — and on the interesting ones it names every
+        # provider involved and why each was passed over, which is the single line the
+        # two-GPU kill demo is read from.
+        "failover_hops",
+        "failover_from",
+        "failover_error",
+        "failover_attempts",
         "error_source",
         "error_reason",
         "upstream_latency_ms",

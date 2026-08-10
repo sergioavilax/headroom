@@ -36,11 +36,27 @@ from headroom.providers import mock_scripts
 from headroom.providers.base import Provider, UpstreamRequest, UpstreamResponse
 from headroom.providers.registry import register_kind
 
-__all__ = ["CONTROL_SCRIPT", "MockProvider", "MockScript", "MockScriptBook"]
+__all__ = [
+    "BUILTIN_FAULT_PREFIX",
+    "CONTROL_SCRIPT",
+    "MockProvider",
+    "MockScript",
+    "MockScriptBook",
+    "builtin_script",
+]
 
 #: The ``x-headroom-`` control header a test uses to select a script. The proxy strips
 #: the prefix, so a request header of ``x-headroom-mock-script`` arrives as this key.
 CONTROL_SCRIPT: Final = "mock-script"
+
+#: Script names beginning with this need no book entry — see :func:`builtin_script`.
+#: A prefix rather than a bare vocabulary so that a test's own script name can never
+#: collide with one by accident.
+BUILTIN_FAULT_PREFIX: Final = "fault-"
+
+#: Where ``fault-cut`` severs the stream: after the opening frames and a couple of text
+#: deltas, so a caller sees a plausible fragment and then a terminal error event.
+BUILTIN_CUT_AFTER: Final = 5
 
 FAULT_TIMEOUT: Final = "timeout"
 FAULT_CONNECT_ERROR: Final = "connect_error"
@@ -225,14 +241,84 @@ class MockProvider(Provider):
         return response
 
     def script_for(self, request: UpstreamRequest) -> MockScript:
-        """The named script if the request asked for one, else a canned reply."""
+        """The named script if the request asked for one, else a canned reply.
+
+        Resolution order, most specific first:
+
+        1. ``book["<name>@<provider>"]`` — **a script specialised to one instance.**
+           Phase 6 needs exactly that: one request, one script name, two providers that
+           must behave *differently* (A returns 529, B serves the answer). The
+           alternative — a book per provider — would make a failover test set up two
+           books to say one thing.
+        2. ``book["<name>"]`` — every script written before this phase, unchanged.
+        3. **A built-in fault** (:func:`builtin_script`), which needs no book at all and
+           is therefore the only one a *running container* can reach.
+        4. Otherwise ``KeyError``, because a typo'd script name must not quietly become
+           a happy path in a fault-injection suite.
+        """
         name = request.control.get(CONTROL_SCRIPT)
-        if name is not None:
-            script = self.book.get(name)
-            if script is None:
-                raise KeyError(f"no mock script named {name!r}")
+        if name is None:
+            return _default_script(request)
+        script = self.book.get(f"{name}@{self.name}") or self.book.get(name)
+        if script is not None:
             return script
+        builtin = builtin_script(name, request, self.name)
+        if builtin is not None:
+            return builtin
+        raise KeyError(f"no mock script named {name!r} (provider {self.name!r})")
+
+
+def builtin_script(name: str, request: UpstreamRequest, provider: str) -> MockScript | None:
+    """A fault a **running gateway** can be asked for, with no test process involved.
+
+    Phase 1 made the mock fault-injectable per request so that *tests* could drive the
+    whole stack. Phase 6 needs the same thing one layer out: `make up` plus two curls
+    should demonstrate a failover with no key, no network, no GPU, and no spend — and a
+    script book only exists inside a test process. So a handful of faults are built in,
+    addressable over HTTP by name:
+
+    ``x-headroom-mock-script: fault-529`` (any status), ``fault-timeout``,
+    ``fault-connect``, ``fault-cut``.
+
+    **A fault may be aimed at one instance**, with the same ``@`` suffix the book uses:
+    ``fault-529@mock`` breaks the chain's primary and leaves its fallback answering
+    normally, which is the whole demo in one header. Every other instance falls through
+    to its ordinary reply.
+
+    Returns ``None`` for anything not in this vocabulary, so a mistyped script name still
+    raises rather than quietly becoming a happy path.
+    """
+    base, _, target = name.partition("@")
+    if not base.startswith(BUILTIN_FAULT_PREFIX):
+        return None
+    kind = base[len(BUILTIN_FAULT_PREFIX) :]
+    if not (kind.isdigit() or kind in {"timeout", "connect", "cut"}):
+        return None
+    if target and target != provider:
         return _default_script(request)
+    if kind.isdigit():
+        return MockScript.error(int(kind), dialect=request.dialect)
+    if kind == "timeout":
+        return MockScript.timeout()
+    if kind == "connect":
+        return MockScript.connect_error()
+    # A mid-stream cut: the fault that must *not* fail over, and therefore the one worth
+    # being able to show a caller from the outside.
+    cut = _default_script(_streaming(request))
+    return MockScript(chunks=cut.chunks, cut_after_chunks=BUILTIN_CUT_AFTER)
+
+
+def _streaming(request: UpstreamRequest) -> UpstreamRequest:
+    """The same request as a streamed one, so ``fault-cut`` has a stream to cut."""
+    return UpstreamRequest(
+        dialect=request.dialect,
+        path=request.path,
+        model=request.model,
+        body=request.body,
+        stream=True,
+        headers=request.headers,
+        control=request.control,
+    )
 
 
 def _default_script(request: UpstreamRequest) -> MockScript:
@@ -300,4 +386,6 @@ def _build_mock_provider(name: str, **_: object) -> Provider:
     return MockProvider(name=name)
 
 
-register_kind("mock", _build_mock_provider)
+# Both dialects, because the mock genuinely speaks both — which is also what lets a
+# keyless failover chain be built out of two of them (BUILD_PLAN L4, H-049).
+register_kind("mock", _build_mock_provider, dialects=frozenset({"anthropic", "openai"}))

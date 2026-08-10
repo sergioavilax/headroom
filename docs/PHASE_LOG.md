@@ -3312,3 +3312,844 @@ whole point of the fixture, and CI is where it is proved rather than claimed.
 The `image` job is worth one line too: it builds the container **without** the extra and
 smokes `/healthz`, which is why `LazyEmbedder` had to be lazy in the first place — a
 gateway that imported torch at construction could not have booted there.
+
+---
+
+## Phase 6 — Failover and resilience: kill a GPU on camera (2026-08-09)
+
+Branch `claude/p6-failover`, GitHub #8. BUILD_PLAN §P6's words are the spec: *"provider
+health tracking (rolling error/latency windows), retry with jittered exponential backoff on
+429/5xx, and same-dialect failover chains from the routing table (L4) … a circuit breaker
+trips a provider out of rotation after a threshold and probes it back in."*
+
+**Shipped**
+
+- **The failover executor** (`headroom/policy/failover.py`) — the only object in the
+  codebase allowed to call a provider twice for one request. It replaces **one line** of
+  `headroom/api/proxy.py`, the one that used to read `await provider.open(...)`, and
+  everything above and below it is unchanged. That is the phase in a sentence: failover is
+  a widening of *how* an upstream is obtained, not of what a request is.
+- **The splice guard, which is the decision the phase turns on** (**H-048**). A request may
+  be retried for exactly as long as nothing about its response has been committed to the
+  client — the predicate is `ctx.first_token_out_at is None`. In the shipped proxy that
+  holds *structurally*: the executor returns before any code that can yield. It is checked
+  anyway, on every retry, because "structurally unreachable" is a property of today's call
+  sites and call sites change. After the line, H-008's discipline is unchanged: a terminal
+  error event in the caller's own dialect, never a second provider's prose.
+- **The commit point is later than it looks, and that is worth having.** A *non-streamed*
+  body is read in full before anything is sent, so a connection that dies mid-read has
+  still committed nothing and can still fail over. The executor therefore reads
+  non-streamed bodies **inside** the retry loop, which is why `BufferedUpstreamResponse`
+  exists — and operationally it is the difference between killing a container mid-request
+  and losing that request, or not.
+- **A closed, small trigger set** (**H-049**): transport faults, a body that dies mid-read,
+  upstream **429**, upstream **5xx**. Not an upstream 4xx (the next provider says the same
+  thing one round trip later), not a `ConfigurationError` (routing around one's own
+  misconfiguration is how it stays undiscovered for a month), and **never the gateway's
+  own 402 or 429** — those are raised before the executor exists in the call path and
+  neither is a `ProviderError`, the only class this file catches. Failing over on your own
+  rate limit moves a burst instead of shedding it; failing over on your own budget refusal
+  spends the money somewhere else.
+- **Chains are per-route config, and failover is opt-in.** `fallbacks:` plus an optional
+  `max_attempts: 1..5`, both defaulted so that **a rule mentioning neither behaves exactly
+  as it did in Phase 5** — one call, no retry, no backoff, no breaker on its path. The
+  attempt sequence wraps above the chain length (`a, b, a`), which is how a
+  single-provider route asks to be retried rather than abandoned.
+- **BUILD_PLAN L4 stopped being structural and became checked.** `register_kind` now
+  requires each kind to declare which dialects it speaks, and `build_gateway` refuses to
+  start on a route whose primary *or* fallback cannot speak the route's dialect. Routing
+  being per dialect made a chain same-dialect by construction; nothing structural stopped
+  `fallbacks: [anthropic]` under an `openai:` route, which would hand a chat-completions
+  body to the Messages API on exactly the day the primary went down.
+- **A scope narrows a chain and can never widen it.** A key scoped to `vllm_a` and not
+  `vllm_b` is not served by `vllm_b` when `vllm_a` fails. The primary still answers 403
+  through `require_provider`; the rest is filtered, so an outage cannot widen a permission.
+- **Backoff is paid to a provider that already failed, not to a fresh one** (**H-050**).
+  Nothing about `vllm_a` being down suggests `vllm_b` needs a moment, so moving down a
+  chain costs no latency at all — which is the opposite of what a retry library written for
+  one endpoint does. Coming back to one that already failed *this request* pays full jitter
+  over 50 ms, doubling, capped at 2 s; `BackoffPolicy.worst_case_s` publishes the bound
+  (150 ms across three attempts). `sleep` and `jitter` are injected, so CI asserts the exact
+  schedule in microseconds of wall clock.
+- **Provider health and a circuit breaker** (`headroom/policy/health.py`, **H-052**): a
+  rolling window of 20, a floor of 5 samples, a 0.5 failure ratio, a 10-second cooldown,
+  one probe at a time, and the window cleared when a probe succeeds — without which the
+  failures that tripped the breaker are still in it and the next blip re-trips, turning a
+  ten-second outage into a ten-minute one. **In memory, per process, never shared**: a
+  breaker is not a fact about the world, it is a record of what *this* task can reach.
+- **The breaker never skips the last candidate.** Refusing the only remaining upstream
+  would convert a provider's outage into the gateway's own — strictly worse than trying and
+  failing — so the final slot is always attempted, which also makes it the natural probe.
+- **A provider is scored when its response finishes, not when it starts.** An upstream that
+  answers headers and then dies mid-answer is not healthy, and that is exactly what
+  `docker kill` on a live vLLM produces. The executor scores what it can judge alone; the
+  streaming path scores the stream when it ends. One attempt, one observation. A client
+  disconnect is scored by nobody, and an upstream 4xx counts as a *success* — a 400 is a
+  healthy provider correctly refusing a bad request, and counting it would let one tenant's
+  malformed payloads trip a breaker for everybody else.
+- **`migrations/0006_ledger_failover.sql`** — `failover_from` and `failover_error`, plus a
+  partial index on `failover_hops > 0`. `failover_hops` itself has been a column since
+  `0002`, reserved for this phase. The three together answer three different questions:
+  `provider` says who served, `failover_hops` how many candidates were passed over,
+  `failover_from`/`failover_error` which one first and why — the operational question
+  (*we are serving from `vllm_b`; what happened to `vllm_a`?*) that `error_reason` and
+  `upstream_status`, which describe the **last** thing that happened, cannot answer.
+  **H-051.**
+- **A breaker-skipped candidate counts as a hop**, so `failover_hops > 0` keeps meaning
+  "the primary did not serve this" once an outage becomes persistent enough to trip the
+  breaker — which is exactly when somebody is reading it. `failover_error: breaker_open`
+  keeps the two cases distinguishable.
+- **The upstream timing mark is rewound between attempts**
+  (`RequestContext.restart_upstream_timing`, the only place in the project where a mark
+  moves backwards). A failed attempt's error body stamps `first_upstream_byte_at`, and
+  marks are idempotent — so without the rewind `passthrough_overhead_ms`, the column
+  §P8.H2 publishes against a pre-registered p50 < 50 ms, would silently measure the whole
+  failover sequence instead of the gateway's own cost.
+- **One request, one row, one reservation, however many providers it took** (**H-053**).
+  Admission happens above the executor and settlement below it, so hops are invisible to
+  money by construction — no compensating release, no second hold, nothing to keep in sync.
+  A hop consumes no extra rate-limit unit either: the limiter meters client requests, not
+  upstream attempts, and charging rate for the gateway's own retry decision would make a
+  provider outage look like the tenant misbehaving.
+- **`/admin/providers`** (`headroom/api/providers.py`): `GET` (listing and one), and
+  `DELETE /{name}/health` — the incident-response route, spelled with `/health` because a
+  `DELETE` on the provider itself would read as *remove this provider*, which a running
+  gateway can never do. The view joins health with **the chains each provider sits in**,
+  because "why is my traffic coming from the fallback" is answered by neither alone. This
+  is what Phase 7's provider-health tiles read.
+- **Response headers in Headroom's own closed namespace**: `x-headroom-failover-hops` and
+  `-from`, present only when there was a hop — so the overwhelmingly common response gains
+  no bytes. Trustworthy because H-038 already strips every `x-headroom-*` header from every
+  upstream response.
+- **The MockProvider became fault-injectable from *outside* a test process.** Scripts may
+  be specialised per instance (`"name@mock_b"`), which is how one request makes A fail and
+  B serve; and a small closed vocabulary of built-ins — `fault-529` (any status),
+  `fault-timeout`, `fault-connect`, `fault-cut`, each optionally aimed with `@name` — needs
+  no script book at all, so `make up` plus two curls demonstrates a failover with no key,
+  no network, no GPU, and no spend. A mistyped name still raises.
+- **The shipped `config/routing.yaml` carries two real chains**: `vllm_a → vllm_b` for the
+  OpenAI dialect (the operator's two 4090s, ports 8010 and 8011 per `docs/vllm.md`) and
+  `mock → mock_fallback` so the keyless demo has one too. The `claude-` route deliberately
+  has none.
+- **Tests: 1056 keyless** (924 → 1056), 2 live-marked and deselected by default. New files —
+  `test_failover_matrix` (32), `test_failover_backoff` (20), `test_provider_health` (17),
+  `test_failover_config` (17), `test_failover_chaos` (16), `test_failover_ledger` (11),
+  `test_failover_boundary` (8), `test_admin_providers` (8); `test_routing` grew 3 (17 → 20).
+  Every Phase 0…5 test still green, and **one** of them changed (deviation 3).
+- **Docs**: H-048 … H-053 in `docs/DECISIONS.md`; **`docs/vllm.md` updated** (below);
+  `docs/evidence/` created with the P6 capture list; README gains *Failover that refuses to
+  serve a Frankenstein answer*; `.env.example` documents `VLLM_B_BASE_URL`;
+  `migrations/README.md` status table.
+
+**The `docs/vllm.md` update (a deliverable, not a note)**
+
+The GPU-pinning workaround that shipped in Phase 2 as **UNTESTED** — and that Phase 2's
+*Deferred* section named as Phase 6's pre-flight — has been run and works:
+
+- **`--gpus all` + `-e CUDA_VISIBLE_DEVICES=<UUID>` is now VERIFIED** (2026-08-09): the
+  model landed on the named card first try, confirmed by the uuid-keyed `nvidia-smi` query.
+- **`--gpus device=N` and `--gpus device=UUID` remain VERIFIED-broken** and the file now
+  says *do not use* rather than *unreliable*.
+- **The standing two-instance topology is documented**: instance A on host port 8010
+  (`vllm_a`, the chain's primary, `VLLM_BASE_URL`), instance B on 8011 (`vllm_b`, the
+  fallback, `VLLM_B_BASE_URL`), one per card, identical launch flags, both named so the
+  demo's `docker kill vllm-a` is unambiguous.
+- **One new negative fact**: `nvidia-smi --query-compute-apps` cannot map a container to a
+  card under WSL2 — it reports a single virtual PID against both GPUs with `[N/A]` memory.
+  Per-GPU *memory* is the only reliable signal, which is why `--query-gpu=uuid,memory.used`
+  stays the documented check.
+
+Corroborated during this session by inspecting both running containers rather than by
+trusting the flags: the instance launched with `--gpus all` + `CUDA_VISIBLE_DEVICES` is
+pinned to the UUID it names, while the instance still launched with `--gpus device=<the
+same UUID>` is demonstrably not on that card — both cards read ~23 GB used, so the two are
+on different GPUs and only one of them is where it asked to be. The broken form and the
+working form, running side by side, landing in different places.
+
+```
+$ nvidia-smi --query-gpu=index,uuid,name,memory.used,memory.free --format=csv
+index, uuid, name, memory.used [MiB], memory.free [MiB]
+0, GPU-61bdb28e-…, NVIDIA GeForce RTX 4090, 23736 MiB, 407 MiB
+1, GPU-ad348511-…, NVIDIA GeForce RTX 4090, 23332 MiB, 811 MiB
+
+$ for p in 8010 8011; do curl -sS "http://localhost:$p/v1/models" | head -c 60; echo; done
+{"object":"list","data":[{"id":"cyankiwi/Qwen3.6-27B-AWQ-INT4"
+{"object":"list","data":[{"id":"cyankiwi/Qwen3.6-27B-AWQ-INT4"
+```
+
+**Deferred**
+
+- **The two-GPU kill demo itself.** The chain, the config, the ledger columns, the admin
+  surface, and the pre-flight are all in place and verified; the `docker kill` is the
+  operator's, because it takes down a container that spends minutes reloading a 27B
+  checkpoint and this session is not the one that should decide when that happens. The
+  exact commands, in order, with what correct output looks like at each step, are in *The
+  live demo* below; `docs/evidence/p6-failover/` is waiting with a capture list.
+- **The dashboard half of §P6's demo.** BUILD_PLAN's Phase 6 text says *"watch the
+  dashboard show traffic shift"* — there is no dashboard until Phase 7, and §P7's own gate
+  re-runs this demo watching it ("that's the hero GIF"). What this phase produces instead is
+  the ledger-and-log version of the same evidence, which is what §P8.H3 actually reports
+  from.
+- **Latency-based tripping.** The rolling window records latency and `/admin/providers`
+  reports p50/p95, and nothing trips on it: a useful rule needs a baseline per model and
+  per prompt size, which is a research project rather than a threshold (H-052).
+- **Health shared across processes.** Deliberately never (H-052), not deferred.
+- **Concurrency limits, per-key budgets, prompt-cache tier pricing** — still deferred from
+  Phases 4, 4b, and 3 respectively; untouched by this phase.
+
+**Deviations**
+
+1. **The shipped `config/routing.yaml` renamed `vllm` to `vllm_a` and gained three
+   providers** (`vllm_b`, `mock_fallback`). BUILD_PLAN L5 has always named *two* vLLM
+   instances as launch providers and §P6 makes the pair the demo; the single `vllm` entry
+   was the placeholder Phase 1 shipped, with a comment saying Phase 6 would add the second.
+   `VLLM_BASE_URL` still addresses the primary, so the live smoke and every doc that names
+   it are unchanged. `mock_fallback` is the same argument one layer down: a keyless demo
+   that needs a config edit before it works is a demo nobody runs.
+2. **`register_kind` gained a required `dialects` keyword.** A tightening of a registration
+   contract rather than an addition to it, taken deliberately: a kind that has not said
+   which wire format it speaks cannot be wired safely, and a permissive default is how L4
+   ends up unenforced. Three in-repo call sites, no external ones.
+3. **One Phase 1 test changed**, because the log-field set it pins grew:
+   `test_request_context.py::test_the_log_shape_is_complete`. The same class of change as
+   Phase 3's deviation 7, Phase 4's deviation 4, and Phase 5's deviation 3. No Phase 1
+   *behaviour* changed.
+4. **`migrations/0006` adds two more columns to `usage_ledger`**, which H-024's closing
+   remark said would stop after `0002`. The same answer Phases 4 and 5 gave: that sentence
+   was about the Phase 5 and 6 *seams*, which really are present as columns —
+   `failover_hops` is one of them — and it did not anticipate a phase needing to record
+   *why* a request left where it was routed. A second table joined on `request_id` would
+   put that one join away from the row that answers everything else. Additive, nullable,
+   `0002` untouched (H-003).
+5. **The live smokes gained one assertion**, and it is a Phase 6 consequence rather than a
+   tidy-up: the shipped OpenAI route is now a chain, so a smoke pointed at a *broken*
+   primary would be quietly served by the fallback and pass. Both smokes now assert
+   `failover_hops == 0` with a message naming the provider that actually served.
+6. **The MockProvider gained built-in fault scripts** (`fault-*`) and per-instance script
+   specialisation (`"name@provider"`). The first is what makes a *running container* demo
+   of this phase possible at all — a script book only exists inside a test process — and
+   the second is what lets one request make A fail and B serve. Both are additive: a
+   mistyped script name still raises, and every script written before this phase resolves
+   exactly as it did.
+7. **Additions the plan's Phase 6 text does not enumerate**, all additive: `/admin/providers`
+   (the plan puts health *tiles* in Phase 7 and this is what they read); the
+   `x-headroom-failover-*` response headers; `max_attempts` as per-route config with a
+   published ceiling; `Route`/`RouteRule.attempts()` on the routing table; and
+   `docs/evidence/` with its README, which invariant 9 has required since Phase 0 and which
+   no phase had yet needed.
+
+---
+
+**Gate** — *chaos suite green in CI; the two-GPU kill demo captured to `docs/evidence/`
+with the ledger rows showing the hop counts.* Plus the session brief's additions: the
+failover matrix, the streaming-boundary pair with a splice sabotage, no double billing, an
+exhausted-chain honesty test, and backoff on controlled clocks.
+
+### THE SPLICE — the headline artifact
+
+The naive implementation, executed. `tests/test_failover_boundary.py` mounts a
+`_passthrough` that opens the fallback when a stream dies and keeps yielding — fifteen
+lines, each locally reasonable — over the real one, and drives the real gateway through it.
+`mock_a` starts answering about France and is cut after five deltas; `mock_b` answers about
+Germany.
+
+```
+$ uv run pytest tests/test_failover_boundary.py -q
+........                                                                 [100%]
+8 passed in 0.06s
+```
+
+What the two implementations hand the caller, for the identical fault:
+
+```
+SHIPPED
+  text     "The capital of France is "
+  events   message_start, content_block_start, ping, 5 × content_block_delta, error
+  no message_stop, no second message_start
+  outcome  upstream_stream_cut     failover_hops 0     mock_b was never called
+
+SPLICED (the sabotage)
+  text     "The capital of France is The capital of Germany is Berlin."
+  events   message_start, …, message_start, …, message_stop
+  HTTP 200, stop_reason "end_turn", and NO error event anywhere in the stream
+```
+
+The frightening assertion in that test is not `assert "Berlin" in text`. It is
+**`assert "error" not in events`** — the spliced stream is well formed, terminates cleanly,
+and every SDK on the far end returns it as one complete message. Two models wrote it and
+nothing in the transcript says so. That is what H-048 exists to make impossible, and it is
+why the boundary is a checked predicate rather than a comment.
+
+### THE FAILOVER MATRIX
+
+Every trigger, every non-trigger, driven through the whole stack — routes, auth, limiter,
+cache, budget gate, meter — rather than against the executor.
+
+```
+$ uv run pytest tests/test_failover_matrix.py -q
+................................                                         [100%]
+32 passed in 0.18s
+```
+
+| Fault on the primary | Result |
+|---|---|
+| upstream 429, 500, 502, 503, 529 | fallback serves, `failover_hops: 1` |
+| timeout, connect error | fallback serves, `failover_error: upstream_timeout` / `upstream_unavailable` |
+| 529 on a *streamed* request | fallback serves the whole stream, one `message_start`, no error frame |
+| **upstream 400, 401, 403, 404, 422** | **forwarded verbatim; the fallback is never called** |
+| **gateway 429 (rate limit)** | **no provider in the chain is called at all** |
+| **gateway 402 (budget)** | **no provider in the chain is called at all** |
+| **403 (provider out of scope)** | **no provider in the chain is called at all** |
+| **mid-stream cut** | terminal error event; fallback never called |
+| **cache hit** | served from the entry; both providers scripted to fail and neither is asked |
+
+The two gateway rows are asserted in the strong form — *not* "the header says gateway",
+which is H-038's own test, but **`chain.providers["mock_b"].received == []`**. The limiter
+and the budget gate raise before the executor exists in the call path, so failing over on
+our own refusal is not a bug that was avoided, it is a bug with nowhere to live.
+
+### THE EXHAUSTED CHAIN
+
+Fail closed, carrying the **last** failure, with the error class preserved so Phase 1's
+invented statuses and stable `headroom.reason` values still mean what they meant.
+
+```
+A: 529, B: 503   ->  HTTP 503, B's own body forwarded verbatim, error-source: upstream
+                     x-headroom-failover-hops: 1   x-headroom-failover-from: mock_a
+A: connect, B: timeout
+                 ->  HTTP 504, headroom.reason "upstream_timeout"
+                     message: "…; failover chain exhausted:
+                               mock_a:upstream_unavailable -> mock_b:upstream_timeout"
+```
+
+And a route with **no** chain keeps its Phase 1 error exactly: no trail, no decoration,
+`failover_hops: 0`.
+
+### NO DOUBLE BILLING
+
+```
+$ uv run pytest tests/test_failover_ledger.py -q
+...........                                                              [100%]
+11 passed in 0.06s
+```
+
+The arithmetic, on the tenant's own counters rather than on the code's shape:
+
+| | requests | upstream calls | ledger rows | settled spend |
+|---|---|---|---|---|
+| primary serves | 1 | 1 | 1 | $0.0000115 |
+| primary 529s, fallback serves | 1 | 2 | **1** | **$0.0000115** |
+| both 529 | 1 | 2 | 1 | $0 (hold released — no model ran) |
+| both time out | 1 | 2 | 1 | the estimate (H-031: a model may well have been billed) |
+
+Two identical requests, one clean and one after a hop, move the counter by exactly
+`2 × $0.0000115`. A hop also consumes no second rate-limit unit — a bucket at 10/min reads
+`available: 9` after a request that touched two providers.
+
+### BACKOFF, ON A CLOCK THAT NEVER MOVES
+
+```
+$ uv run pytest tests/test_failover_backoff.py -q
+....................                                                     [100%]
+20 passed in 0.05s
+```
+
+Nothing in this suite sleeps. The executor takes its `sleep` as a parameter and CI passes a
+recorder; the assertions are on the exact schedule.
+
+```
+chain a -> b, one attempt each        delays []            no wait for a fresh candidate
+chain a, max_attempts 3               delays [0.05, 0.1]   worst case 0.15s, published
+chain a -> b, max_attempts 3          delays [0.05]        a, b, a — one repeat, one sleep
+no chain at all                       delays []            Phase 5's path, bit for bit
+```
+
+### THE CHAOS SUITE — three intensities, deterministic
+
+```
+$ uv run pytest tests/test_failover_chaos.py -q
+................                                                         [100%]
+16 passed in 0.21s
+```
+
+Twenty requests per intensity, with a fixed fault schedule cycling through 529 / 429 / 500 /
+timeout / connect error — 25%, 50%, and 100% of requests hitting a broken primary, with the
+breaker's clock frozen so that once it trips the fallback carries everything.
+
+```
+light  (25%)   20 requests, 20 × HTTP 200, zero caller-visible 5xx
+heavy  (50%)   20 requests, 20 × HTTP 200, zero caller-visible 5xx
+brutal (100%)  20 requests, 20 × HTTP 200, zero caller-visible 5xx
+```
+
+One ledger row per request at every intensity, hop counts matching what the contexts
+recorded, and every row `outcome: ok`. Mid-stream cuts are deliberately *outside* that
+promise — they cannot be inside it, since the status line is spent — and are asserted
+separately at four cut points including one *after* the last text delta, where the fragment
+reads as a finished answer and only the missing `message_stop` gives it away: terminal
+error event, 100%, no hop, fallback never called. That is §P8.H3's falsification condition
+run forwards.
+
+### THE SABOTAGE RUNS — eight, each reverted immediately
+
+Green on the first attempt is when a suite deserves the most suspicion, so each claim was
+tested by breaking the thing it protects. All eight were applied by script and reverted;
+`diff` against pre-sabotage copies of all four touched files reports them identical, and the
+1056 below is the re-run.
+
+*Sabotage A — the splice guard is removed.* Only the direct executor test notices, and that
+is **honest rather than weak**: in the shipped proxy the guard is structurally unreachable,
+which is exactly why it needs a test that reaches past the proxy to it.
+
+```
+1 failed, 1048 passed, 2 deselected
+FAILED tests/test_failover_boundary.py::test_the_executor_itself_refuses_to_retry_once_a_byte_is_out
+```
+
+*Sabotage B — every 4xx becomes retryable* (the permissive reading of "retry on errors"):
+
+```
+6 failed, 1043 passed, 2 deselected
+FAILED tests/test_failover_matrix.py::test_a_client_error_from_upstream_is_forwarded_not_retried[400]
+FAILED tests/test_failover_matrix.py::test_a_client_error_from_upstream_is_forwarded_not_retried[401]
+FAILED tests/test_failover_matrix.py::test_a_client_error_from_upstream_is_forwarded_not_retried[403]
+FAILED tests/test_failover_matrix.py::test_a_client_error_from_upstream_is_forwarded_not_retried[404]
+FAILED tests/test_failover_matrix.py::test_a_client_error_from_upstream_is_forwarded_not_retried[422]
+FAILED tests/test_provider_health.py::test_an_upstream_client_error_does_not_count_as_ill_health
+```
+
+*Sabotage C — backoff before every attempt, fresh providers included.* This is what every
+retry library written for one endpoint does, and it costs latency on precisely the case
+failover exists to make fast:
+
+```
+6 failed, 1043 passed, 2 deselected
+FAILED tests/test_failover_backoff.py::test_moving_to_a_fresh_provider_costs_no_delay
+FAILED tests/test_failover_backoff.py::test_a_wrapped_chain_pays_only_on_the_repeat
+FAILED tests/test_failover_chaos.py::test_the_backoff_stays_inside_its_published_bound[light]
+FAILED tests/test_failover_chaos.py::test_the_backoff_stays_inside_its_published_bound[heavy]
+FAILED tests/test_failover_chaos.py::test_the_backoff_stays_inside_its_published_bound[brutal]
+FAILED tests/test_failover_chaos.py::test_a_tripped_breaker_stops_a_retry_budget_being_spent_on_a_dead_provider
+```
+
+*Sabotage D — hops count only real attempts, so a breaker-skipped candidate vanishes.* The
+hop count would drop back to zero the moment an outage became persistent — which is exactly
+when somebody is reading it:
+
+```
+3 failed, 1046 passed, 2 deselected
+FAILED tests/test_failover_chaos.py::test_every_request_is_metered_exactly_once_under_chaos[heavy]
+FAILED tests/test_failover_chaos.py::test_every_request_is_metered_exactly_once_under_chaos[brutal]
+FAILED tests/test_provider_health.py::test_a_tripped_primary_is_skipped_and_the_hop_is_still_counted
+```
+
+*Sabotage E — the breaker may skip the last candidate*, converting an upstream's outage into
+the gateway's own:
+
+```
+2 failed, 1047 passed, 2 deselected
+FAILED tests/test_failover_chaos.py::test_a_tripped_breaker_stops_a_retry_budget_being_spent_on_a_dead_provider
+FAILED tests/test_provider_health.py::test_the_breaker_never_skips_the_last_candidate
+```
+
+*Sabotage F — the upstream timing mark is not rewound between attempts.* The one that would
+be invisible in production: every failed-over row's `passthrough_overhead_ms` would quietly
+include the whole failover sequence, and §P8.H2's headline number would be measuring the
+wrong thing.
+
+```
+1 failed, 1048 passed, 2 deselected
+FAILED tests/test_failover_ledger.py::test_the_upstream_mark_is_rewound_between_attempts
+```
+
+*Sabotage G — a recovered provider's window is not cleared*, so the failures that tripped
+the breaker are still in it and the next blip re-trips:
+
+```
+1 failed, 1048 passed, 2 deselected
+FAILED tests/test_provider_health.py::test_a_successful_probe_closes_the_breaker_and_clears_the_window
+```
+
+*Sabotage H — half-open admits everybody*, stampeding a provider at the moment it recovers:
+
+```
+1 failed, 1048 passed, 2 deselected
+FAILED tests/test_provider_health.py::test_the_cooldown_admits_exactly_one_probe
+```
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+141 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 141 source files
+
+$ make test
+================ 1056 passed, 2 deselected, 1 warning in 15.57s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1058 tests collected (1056 deselected) in 0.16s
+```
+
+**1056 passed, 0 skipped** — the Postgres and DynamoDB halves of all four contract suites
+executed against the compose containers rather than skipping (H-012).
+
+Per-file counts for the new and changed files:
+
+```
+32 tests/test_failover_matrix.py     16 tests/test_failover_chaos.py
+20 tests/test_failover_backoff.py    11 tests/test_failover_ledger.py
+17 tests/test_provider_health.py      8 tests/test_failover_boundary.py
+17 tests/test_failover_config.py      8 tests/test_admin_providers.py
+20 tests/test_routing.py (was 17)
+```
+
+**And the same 1056 pass with no torch installed at all** — CI's environment, reproduced
+locally rather than trusted (the Phase 5 lesson):
+
+```
+$ uv sync                       # drop the `embed` extra: this is what CI has
+$ uv run mypy
+Success: no issues found in 141 source files
+$ uv run pytest -q
+================ 1056 passed, 2 deselected, 1 warning in 15.83s ================
+$ uv sync --extra embed         # put it back
+```
+
+**H-012 still holds with the new tests.** A fresh clone with no stack up runs a smaller
+suite *loudly*, and a stated-but-unreachable endpoint fails rather than skips:
+
+```
+$ docker compose stop db dynamodb
+$ uv run pytest -q                          # endpoints unset — inferred
+925 passed, 131 skipped, 2 deselected, 1 warning in 4.63s
+
+$ DATABASE_URL=postgresql://…:5433/headroom uv run pytest -q tests/test_ledger_store.py
+19 passed, 23 errors in 0.22s
+```
+
+### End to end through the real container, on a wiped volume, keyless
+
+```
+$ docker compose down -v && make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 6 migration(s): 0001_tenants_and_virtual_keys, 0002_usage_ledger,
+                        0003_ledger_budget_columns, 0004_rate_limits,
+                        0005_response_cache, 0006_ledger_failover
+
+### 2. every configured provider, its breaker, and the chains it sits in
+anthropic      anthropic      closed  samples=0   anthropic:'claude-'->anthropic
+mock           mock           closed  samples=0   anthropic:'mock-'->mock+mock_fallback openai:'mock-'->mock+mock_fallback
+mock_fallback  mock           closed  samples=0   anthropic:'mock-'->mock+mock_fallback openai:'mock-'->mock+mock_fallback
+vllm_a         openai_compat  closed  samples=0   openai:''->vllm_a+vllm_b
+vllm_b         openai_compat  closed  samples=0   openai:''->vllm_a+vllm_b
+
+### 3. the primary serves — and the response says nothing about failover
+HTTP 200   x-headroom-failover-*: absent
+
+### 4. the primary 529s -> the fallback answers, and the response says so
+HTTP 200
+  x-headroom-failover-from: mock
+  x-headroom-failover-hops: 1
+  body: {"id":"msg_mock_6ca20aa0926a68c6","type":"message","role":"assistant", …
+
+### 5. a client error is NOT a hop: forwarded verbatim, fallback untouched
+HTTP 400   x-headroom: {'x-headroom-error-source': 'upstream'}
+
+### 6. a mid-stream cut: a terminal error event, and NO second provider
+HTTP 200   x-headroom: absent
+  last frames: event: error | data: {"type":"error","error":{"type":"api_error",
+    "message":"mock upstream closed the connection after 5 chunk(s)"},
+    "headroom":{"reason":"upstream_stream_cut","request_id":"hr_db15336f2c23…"}}
+
+### 7. five failures -> the breaker trips
+state=open samples=5 failures=3 ratio=0.6 consecutive=2
+last_error=upstream_timeout reopen_in_s=9.977
+
+### 8. tripped: the primary is skipped entirely, the hop is still counted
+HTTP 200   x-headroom: {'x-headroom-failover-hops': '1', 'x-headroom-failover-from': 'mock'}
+
+### 9. what the ledger says
+   provider    | hops | failover_from |   failover_error    |       outcome       | st  |    usd_cost    |  cost_status
+---------------+------+---------------+---------------------+---------------------+-----+----------------+---------------
+ mock          |    0 |               |                     | ok                  | 200 | 0.000011500000 | priced
+ mock_fallback |    1 | mock          | upstream_status_529 | ok                  | 200 | 0.000011500000 | priced
+ mock          |    0 |               |                     | upstream_error      | 400 | 0.000000000000 | not_billable
+ mock          |    0 |               |                     | upstream_stream_cut | 200 |                | usage_unknown
+ mock_fallback |    1 | mock          | upstream_timeout    | ok                  | 200 | 0.000011500000 | priced
+ mock_fallback |    1 | mock          | breaker_open        | ok                  | 200 | 0.000011500000 | priced
+ mock_fallback |    1 | mock          | breaker_open        | ok                  | 200 | 0.000011500000 | priced
+ mock_fallback |    1 | mock          | breaker_open        | ok                  | 200 | 0.000011500000 | priced
+ mock_fallback |    1 | mock          | breaker_open        | ok                  | 200 | 0.000011500000 | priced
+ mock_fallback |    1 | mock          | breaker_open        | ok                  | 200 | 0.000011500000 | priced
+(10 rows)
+
+### 10. two request log lines, each naming both providers
+{"request_id":"hr_c25a95e89c02432db1f056321858215e","model":"mock-model-1",
+ "provider":"mock_fallback","outcome":"ok","status":200,"upstream_status":200,
+ "failover_hops":1,"failover_from":"mock","failover_error":"upstream_status_529",
+ "failover_attempts":["mock:upstream_status_529","mock_fallback:ok"],
+ "usd_cost":"0.000011500000","cost_status":"priced",
+ "upstream_latency_ms":13.737,"ttft_ms":13.755,"passthrough_overhead_ms":0.019,"total_ms":13.756}
+{"request_id":"hr_6bfafb4d2f07490fbf72e2d72e8e3287","model":"mock-model-1",
+ "provider":"mock_fallback","outcome":"ok","status":200,"upstream_status":200,
+ "failover_hops":1,"failover_from":"mock","failover_error":"breaker_open",
+ "failover_attempts":["mock:breaker_open","mock_fallback:ok"],
+ "usd_cost":"0.000011500000","cost_status":"priced",
+ "upstream_latency_ms":4.438,"ttft_ms":4.457,"passthrough_overhead_ms":0.02,"total_ms":4.458}
+
+### 11. DELETE the health record: back in rotation immediately
+state=closed samples=0 total_failures=3 (the record survives, the verdict does not)
+next request -> HTTP 200  x-headroom: absent
+```
+
+Five things in that output are the phase in miniature.
+
+**Step 3 against step 4.** A request the primary served carries no failover headers at all —
+not `hops: 0`, *absent* — so the overwhelmingly common response gained no bytes from this
+phase. That matters because §P8.H2 measures exactly that path.
+
+**Step 5.** A 400 is forwarded verbatim with `error-source: upstream` and no hop. The
+fallback was never asked, because it would have said the same thing one round trip later.
+
+**Step 6.** The cut produces a terminal error event and `mock_fallback` is never called —
+the boundary, in the real container, with a healthy fallback one line away.
+
+**Step 7's arithmetic is worth reading slowly.** `samples=5 failures=3 ratio=0.6`, and the
+breaker trips on a window that is only 60% failures: the 400 in step 5 was recorded as a
+**success** (a healthy provider correctly refusing a bad request) and the cut in step 6 as a
+failure (an upstream that answered and then died). One request, one observation, and the
+ratio rule catches the half-failing provider a consecutive-failures rule never would.
+
+**And `passthrough_overhead_ms: 0.019` on a request whose `upstream_latency_ms` was 13.7.**
+That is the timing rewind doing its job: the gateway's own cost is 19 microseconds, not the
+thirteen milliseconds the failed attempt took. Without it, §P8.H2's column would silently
+measure failover duration.
+
+### The live demo — the operator's, with the exact commands
+
+**Pre-flight (assumption A6).** Both instances must answer with the same checkpoint, and
+each must be on its own card:
+
+```bash
+nvidia-smi --query-gpu=index,uuid,name,memory.used,memory.free --format=csv
+for p in 8010 8011; do curl -sS "http://localhost:$p/v1/models" | head -c 80; echo; done
+```
+
+*Correct output:* two 4090s each holding ~23 GB, and two identical
+`cyankiwi/Qwen3.6-27B-AWQ-INT4` listings. If both models are on one card, stop — see
+`docs/vllm.md`, and relaunch with `--gpus all -e CUDA_VISIBLE_DEVICES=<uuid>`.
+
+**Which instance is the primary.** `config/routing.yaml` routes every OpenAI-dialect model
+to **`vllm_a`** with **`vllm_b`** as its fallback. `vllm_a` is `VLLM_BASE_URL`, defaulting
+to `http://localhost:8010`; `vllm_b` is `VLLM_B_BASE_URL`, defaulting to
+`http://localhost:8011`. **The container to kill is the one publishing 8010.**
+
+```bash
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep 8010     # confirm its name first
+```
+
+*(At the time of writing that container is unnamed — `busy_cartwright`. Relaunching it with
+`--name vllm-a` per `docs/vllm.md` makes step 3 unambiguous, which matters on camera.)*
+
+**Setup — the gateway on the host**, so `localhost:8010/8011` mean the instances:
+
+```bash
+cd ~/code/headroom
+make up                                    # postgres + dynamodb + migrations
+export HEADROOM_ADMIN_TOKEN=…              # leading space, per invariant 3
+uv run uvicorn headroom.api.main:app --port 8090 &
+
+GW=http://localhost:8090
+TENANT=$(curl -sS -X POST $GW/admin/tenants -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" \
+  -H 'content-type: application/json' -d '{"name":"gpu-failover-demo"}' | jq -r .id)
+KEY=$(curl -sS -X POST $GW/admin/keys -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" \
+  -H 'content-type: application/json' -d "{\"tenant_id\":\"$TENANT\",\"name\":\"demo\"}" | jq -r .key)
+MODEL=cyankiwi/Qwen3.6-27B-AWQ-INT4
+```
+
+**(a) A request served normally by the primary.**
+
+```bash
+curl -sS -D- -o /tmp/a.json -X POST $GW/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d "{\"model\":\"$MODEL\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Say: headroom ok\"}]}" \
+  | grep -Ei '^(HTTP|x-headroom)'
+```
+
+*Correct output:* `HTTP/1.1 200 OK`, an `x-headroom-request-id`, and **no
+`x-headroom-failover-*` header at all**. A request the primary served has no story to tell.
+
+```bash
+curl -sS $GW/admin/providers -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" \
+  | jq -r '.[] | select(.name|startswith("vllm")) | "\(.name) \(.state) ok=\(.total_successes) fail=\(.total_failures) p50=\(.p50_latency_ms)"'
+```
+
+*Correct output:* `vllm_a closed ok=1 fail=0 p50=<some hundreds of ms>` and
+`vllm_b closed ok=0 fail=0 p50=null`.
+
+**(b) Kill the primary, mid-conversation-flow.**
+
+```bash
+docker kill vllm-a          # or: docker kill $(docker ps -q --filter publish=8010)
+```
+
+*Correct output:* the container name, and `curl http://localhost:8010/v1/models` now fails
+with connection refused. Any request that was in flight when the kill landed gets one of
+two honest answers depending on where it was: a **streamed** one that had already sent
+bytes ends in an `event: error` with `upstream_stream_cut` — no splice, ever — while a
+**non-streamed** one whose body was still being read fails over silently and returns 200.
+
+**(c) The next request fails over.**
+
+```bash
+curl -sS -D- -o /tmp/b.json -X POST $GW/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d "{\"model\":\"$MODEL\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Say: headroom ok\"}]}" \
+  | grep -Ei '^(HTTP|x-headroom)'
+```
+
+*Correct output:*
+
+```
+HTTP/1.1 200 OK
+x-headroom-failover-hops: 1
+x-headroom-failover-from: vllm_a
+```
+
+The ledger row, which is the evidence the gate asks for:
+
+```bash
+docker compose exec -T db psql -U headroom -d headroom -c \
+  "SELECT provider, failover_hops, failover_from, failover_error, outcome, status_code
+     FROM usage_ledger ORDER BY started_at DESC LIMIT 3"
+```
+
+*Correct output:* the newest row reads
+`vllm_b | 1 | vllm_a | upstream_unavailable | ok | 200`.
+
+And the log line naming **both** providers — the one to screenshot:
+
+```bash
+# the gateway is in the foreground shell; or, if backgrounded, tail its output
+grep failover_attempts /tmp/gateway.log | tail -1 | jq .
+```
+
+*Correct output, the fields that matter:*
+
+```json
+{"provider": "vllm_b", "failover_hops": 1, "failover_from": "vllm_a",
+ "failover_error": "upstream_unavailable",
+ "failover_attempts": ["vllm_a:upstream_unavailable", "vllm_b:ok"],
+ "outcome": "ok", "status": 200}
+```
+
+**(d) Watch the breaker trip, then bring the instance back.**
+
+```bash
+for i in $(seq 1 5); do
+  curl -sS -o /dev/null -w '%{http_code} ' -X POST $GW/v1/chat/completions \
+    -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+    -d "{\"model\":\"$MODEL\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+done; echo
+curl -sS $GW/admin/providers/vllm_a -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" | jq \
+  '{state, samples, failures, failure_ratio, consecutive_failures, last_error, reopen_in_s}'
+```
+
+*Correct output:* five `200`s — **zero failed requests, which is the claim** — and then
+`"state": "open"`, `"last_error": "upstream_unavailable"`, `"reopen_in_s"` counting down
+from 10. From here on `vllm_a` is skipped rather than tried, and the rows still read
+`failover_hops: 1` with `failover_error: breaker_open`.
+
+```bash
+# restart instance A exactly as docs/vllm.md documents it, then wait ~10s and ask again
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST $GW/v1/chat/completions … # as above
+curl -sS $GW/admin/providers/vllm_a -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" | jq .state
+```
+
+*Correct output:* `200`, then `"closed"` — one probe went through, succeeded, and closed the
+breaker. The next ledger row reads `vllm_a | 0 | | | ok | 200`. If the operator would rather
+not wait out the cooldown:
+
+```bash
+curl -sS -X DELETE $GW/admin/providers/vllm_a/health -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN" | jq .state
+```
+
+**Capture** everything above into `docs/evidence/p6-failover/` per that directory's README,
+**before** the next `make test` — the Postgres contract suite truncates the control plane
+and `usage_ledger` references it, so the rows go with it (H-029's caveat, unchanged).
+
+**Cost: $0.00.** Both models are the operator's own, on the operator's own cards.
+
+**Assumed-facts register (§0.4)**
+
+- **A6 — VERIFIED.** *The two local vLLM instances still serve with `--tool-call-parser
+  qwen3_xml --reasoning-parser qwen3` per the operator's known-good config.* Both answered
+  `/v1/models` with `cyankiwi/Qwen3.6-27B-AWQ-INT4` on 2026-08-09, launched with those exact
+  flags (read back from `docker inspect`, not assumed), on ports 8010 and 8011, one per
+  4090. The GPU-placement half — which `docs/vllm.md` had carried as **UNTESTED** since
+  Phase 2 and which Phase 2 explicitly deferred to this gate — is now VERIFIED: `--gpus
+  all` + `CUDA_VISIBLE_DEVICES=<UUID>` pins to the named card, and Docker's own
+  `--gpus device=` still does not.
+- **A4, A5 — still VERIFIED, and re-proved under the feature most likely to break them.**
+  Failover is the first thing in the project that can hand a caller a *different provider's*
+  bytes, and the fidelity guarantee survives because nothing about the passthrough changed:
+  a chain member's response is forwarded by the same code, and the one implementation that
+  would have violated it (splicing) is the sabotage rather than the design. All 1056 tests
+  that prove passthrough fidelity run through the executor.
+- **A1, A2, A3, A7** — not due at this gate, none touched.
+
+**Spend** — $0.00. Every test ran on the MockProvider, the container demo talked to nothing
+outside the compose network, and the vLLM pre-flight ran on the operator's own GPUs.
+
+### CI
+
+CI on PR-6 ([run 31340486751](https://github.com/sergioavilax/headroom/actions/runs/31340486751)),
+all three jobs green on the first run, no annotations:
+
+```
+$ gh run view 31340486751 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+gateway image builds and serves: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 141 source files
+pytest (…service containers) | ===== 1056 passed, 2 deselected, 1 warning in 27.93s =====
+pytest (…service containers) | tests/test_failover_boundary.py::test_the_sabotage_serves_a_frankenstein_answer PASSED
+pytest (…service containers) | tests/test_failover_boundary.py::test_the_shipped_gateway_refuses_the_same_splice PASSED
+pytest (…service containers) | tests/test_failover_boundary.py::test_the_executor_itself_refuses_to_retry_once_a_byte_is_out PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_no_caller_sees_a_5xx_at_any_intensity[light] PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_no_caller_sees_a_5xx_at_any_intensity[heavy] PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_no_caller_sees_a_5xx_at_any_intensity[brutal] PASSED
+pytest (…service containers) | tests/test_failover_chaos.py::test_every_request_is_metered_exactly_once_under_chaos[brutal] PASSED
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+gateway image builds and serves | gateway healthy
+```
+
+**1056 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of all four contract suites executed against the service
+containers rather than skipping (H-012).
+
+**BUILD_PLAN §P6's "chaos suite green in CI" is now a property of every pull request.** The
+whole of this phase is keyless: three fault intensities against a mock chain, the splice
+sabotage, the boundary pair, and the backoff schedule all run on a runner with no GPU, no
+provider key, and no network to anything — which is what makes §P8.H3's mock-chain half
+reproducible by a stranger with a clone, and the two-GPU half the only part that needs the
+operator's desk.
+
+The `image` job is worth one line again: it builds the container and smokes `/healthz` with
+no Postgres, no DynamoDB, and no `embed` extra anywhere in the job. Phase 6 added a fifth
+provider to the shipped routing config and a startup dialect check on top of it, and the
+gateway still boots with nothing reachable — which is what Phase 9's container needs before
+its secrets arrive.

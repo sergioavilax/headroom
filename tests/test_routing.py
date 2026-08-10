@@ -138,11 +138,50 @@ def test_the_committed_config_loads_and_routes_what_it_claims() -> None:
     config = load_config(DEFAULT_CONFIG_PATH)
     routing = config.routing_table()
 
-    assert set(config.providers) == {"mock", "anthropic", "vllm"}
+    assert set(config.providers) == {"mock", "mock_fallback", "anthropic", "vllm_a", "vllm_b"}
     assert routing.resolve("anthropic", "claude-opus-5") == "anthropic"
     assert routing.resolve("anthropic", "mock-model-1") == "mock"
     assert routing.resolve("openai", "mock-model-1") == "mock"
-    assert routing.resolve("openai", "Qwen/Qwen3-27B") == "vllm"
+    assert routing.resolve("openai", "Qwen/Qwen3-27B") == "vllm_a"
+
+
+def test_the_committed_config_chains_the_two_vllm_instances() -> None:
+    """The Phase 6 kill demo, as a property of the file the operator actually deploys.
+
+    BUILD_PLAN L5 names two single-GPU vLLM instances as launch providers and §P6 makes
+    the pair the chaos demo. If this chain is ever quietly dropped, the demo becomes a
+    very slow single card and nothing else would notice.
+    """
+    routing = load_config(DEFAULT_CONFIG_PATH).routing_table()
+    route = routing.resolve_route("openai", "Qwen/Qwen3-27B")
+
+    assert route.rule.chain == ("vllm_a", "vllm_b")
+    assert route.attempts == ("vllm_a", "vllm_b")
+
+
+def test_the_committed_config_gives_the_keyless_demo_a_chain_too() -> None:
+    """``make up`` plus two curls shows a failover with no key, no network, and no spend.
+
+    Same argument that put ``mock`` in the shipped config at all (H-014): a demo that
+    needs a config edit before it works is a demo nobody runs.
+    """
+    routing = load_config(DEFAULT_CONFIG_PATH).routing_table()
+
+    for dialect in ("anthropic", "openai"):
+        route = routing.resolve_route(dialect, "mock-model-1")
+        assert route.attempts == ("mock", "mock_fallback")
+
+
+def test_the_anthropic_route_still_makes_exactly_one_attempt() -> None:
+    """Failover is opt-in per route, so adding it changed nothing for anybody else.
+
+    A rule with no ``fallbacks`` and no ``max_attempts`` is one attempt — no retry, no
+    backoff, no breaker on the path. Asserted against the route that spends real money,
+    which is the one where a silent retry would be most expensive.
+    """
+    routing = load_config(DEFAULT_CONFIG_PATH).routing_table()
+
+    assert routing.resolve_route("anthropic", "claude-opus-5").attempts == ("anthropic",)
 
 
 def test_the_committed_config_builds_a_gateway_without_any_credential(
@@ -159,8 +198,17 @@ def test_the_committed_config_builds_a_gateway_without_any_credential(
 
     gateway = build_gateway(load_config(DEFAULT_CONFIG_PATH))
 
-    assert gateway.registry.names() == ["anthropic", "mock", "vllm"]
+    assert gateway.registry.names() == ["anthropic", "mock", "mock_fallback", "vllm_a", "vllm_b"]
     assert gateway.provider_for("anthropic", "mock-model-1").kind == "mock"
+    # Every configured provider is health-tracked from startup, so "configured and idle"
+    # and "not configured" are different answers on the very first `/admin/providers`.
+    assert [snapshot.provider for snapshot in gateway.health.snapshots()] == [
+        "anthropic",
+        "mock",
+        "mock_fallback",
+        "vllm_a",
+        "vllm_b",
+    ]
 
 
 def test_a_literal_credential_in_config_is_rejected_by_the_schema() -> None:

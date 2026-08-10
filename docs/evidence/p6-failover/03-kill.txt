@@ -1,0 +1,6 @@
+# docker kill vllm-a — executed during the P6 gate session, 2026-08-10 UTC.
+# Docker's event record was lost (--rm container); the ledger brackets the moment:
+ # baseline (pre-kill, served by vllm_a): 2026-08-10 03:13:23.106281+00+
+ # first failed-over request:             2026-08-10 03:14:04.48987+00 +
+ # the kill landed between these two timestamps
+

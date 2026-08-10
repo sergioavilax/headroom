@@ -34,6 +34,7 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 | `0003_ledger_budget_columns.sql` | 4 | `budget_status`, `budget_reserved_usd`, `budget_settled_usd` on `usage_ledger` |
 | `0004_rate_limits.sql` | 4b | `requests_per_min`, `tokens_per_min` on `tenants` and `virtual_keys` |
 | `0005_response_cache.sql` | 5 | `CREATE EXTENSION vector`; `response_cache`; cache policy on `tenants`; the avoided-cost columns on `usage_ledger` |
+| `0006_ledger_failover.sql` | 6 | `failover_from`, `failover_error` on `usage_ledger`, plus a partial index on the rows that hopped |
 
 All five are applied, so all five are immutable: a change is `0006_*.sql`.
 
@@ -71,6 +72,14 @@ says otherwise; a cache that switches itself on is a cache nobody consented to. 
 `usage_ledger` columns it adds are *avoided* cost and provenance, deliberately **not** the
 existing token and cost columns: a cache hit generates nothing and is billed nothing, so
 every `SUM(output_tokens)` written before this migration keeps meaning what it meant.
+
+`0006` finishes a column `0002` opened. `failover_hops` has been on `usage_ledger` since
+that migration, reserved for Phase 6 and defaulting to zero, so every existing row already
+means "the primary served it". The two columns beside it record the **first** candidate a
+request passed over and why — because `provider`, `upstream_status`, and `error_reason`
+between them describe only who served and what happened *last*, and the operational
+question is why the request left where it was routed (H-051). Additive, nullable, and the
+index is partial: the overwhelming majority of rows have nothing to say here.
 
 `make up` applies migrations inside the gateway container once the stack is healthy;
 `make migrate` applies them from the host against `DATABASE_URL`.
