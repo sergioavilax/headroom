@@ -2,8 +2,8 @@
  "schema": "h1_paraphrases/1",
  "provenance": {
   "produced_by": "experiments/h1/generate.py",
-  "generated_at": "2026-08-10T21:05:10+00:00",
-  "headroom_commit": "e2abf5752eba8e209be72274c5f3444485d967da",
+  "generated_at": "2026-08-10T21:33:46+00:00",
+  "headroom_commit": "696fec9aaa9a9948b2dd140c334b951c691ef30d",
   "inputs": {
    "suite_hash": "6eef41c6706f309a",
    "world_seed": 20260805,
@@ -20,11 +20,11 @@
   "per_question": 3
  },
  "spend": {
-  "usd": "0.189785000000",
+  "usd": "0.019801000000",
   "cap_usd": "1.00",
-  "calls": 163,
-  "input_tokens": 89450,
-  "output_tokens": 20067,
+  "calls": 15,
+  "input_tokens": 8426,
+  "output_tokens": 2275,
   "usd_per_mtok_in": "1.00",
   "usd_per_mtok_out": "5.00",
   "price_effective_from": "2026-08-08"
@@ -390,6 +390,24 @@
    ],
    "attempts": 1
   },
+  "cross_collateral-004": {
+   "body": "Across all of Felix & The Chorus's cross-collateralized deals, how much of their 2025-10 royalties went to recoupment?",
+   "paraphrases": [
+    "Of Felix & The Chorus's 2025-10 royalties subject to cross-collateralized deals, how much was applied to recoupment across all such arrangements?",
+    "How much recoupment did cross-collateralized deals for Felix & The Chorus claim from their 2025-10 royalties in total?",
+    "What portion of Felix & The Chorus's 2025-10 royalties went toward recoupment under all of their cross-collateralized deals?"
+   ],
+   "attempts": 1
+  },
+  "cross_collateral-005": {
+   "body": "Across all of Paloma Gardens's cross-collateralized deals, how much of their 2025-12 royalties went to recoupment?",
+   "paraphrases": [
+    "What portion of Paloma Gardens's 2025-12 royalties were applied to recoupment across their entire portfolio of cross-collateralized deals?",
+    "In Paloma Gardens's cross-collateralized deals taken together, what amount of their 2025-12 royalties was directed toward recoupment?",
+    "How much recoupment did Paloma Gardens's 2025-12 royalties cover when viewed across all of their cross-collateralized deals combined?"
+   ],
+   "attempts": 1
+  },
   "cross_collateral-006": {
    "body": "Sparrow's deals share one pooled recoupment account. What is their net payable for 2025-12, after the pooled recoupment?",
    "paraphrases": [
@@ -417,12 +435,30 @@
    ],
    "attempts": 1
   },
+  "hand-catalog_lookup-01": {
+   "body": "Counting every release it appears on — original album or EP, plus any compilations — how many releases in our catalog carry The Cinder Spectra's track \"Gilded Satellites, Pt. 3\"?",
+   "paraphrases": [
+    "How many releases in our catalog include The Cinder Spectra's \"Gilded Satellites, Pt. 3\", counting both the original album or EP and any compilations where it appears?",
+    "Across our entire catalog, including the original album or EP plus all compilations, how many releases feature The Cinder Spectra's track \"Gilded Satellites, Pt. 3\"?",
+    "In total, how many releases in our catalog contain The Cinder Spectra's \"Gilded Satellites, Pt. 3\" — considering the original album or EP alongside any compilations it may appear on?"
+   ],
+   "attempts": 1
+  },
   "hand-catalog_lookup-02": {
    "body": "Which imprint released \"Drifting Mirrors EP\"?",
    "paraphrases": [
     "What label put out \"Drifting Mirrors EP\"?",
     "\"Drifting Mirrors EP\" was released by which imprint?",
     "Which record label released \"Drifting Mirrors EP\"?"
+   ],
+   "attempts": 1
+  },
+  "hand-contract_terms-01": {
+   "body": "What streaming royalty rate governed The Cinder Spectra's revenue on 2025-11-24? Please cite the clause that controls on that specific date.",
+   "paraphrases": [
+    "On 2025-11-24, which streaming royalty rate applied to The Cinder Spectra's revenue, and what clause governed it on that date?",
+    "Cite the clause that controlled The Cinder Spectra's streaming royalty rate for revenue on 2025-11-24.",
+    "What clause dictated the streaming royalty rate for The Cinder Spectra's revenue on 2025-11-24?"
    ],
    "attempts": 1
   },
@@ -453,6 +489,15 @@
    ],
    "attempts": 2
   },
+  "hand-cross_collateral-01": {
+   "body": "Voltage has more than one agreement with us, and the deals pool a single recoupment account. Across all of their deals, what unrecouped balance remained after 2026-06?",
+   "paraphrases": [
+    "After 2026-06, what was the unrecouped balance that remained across all agreements with Voltage, given that their multiple deals share a single recoupment account?",
+    "Voltage maintains more than one agreement with us, and their deals pool into a single recoupment account. What unrecouped balance was left after 2026-06 when considering all of their deals combined?",
+    "Given that Voltage has multiple agreements with us that feed into one shared recoupment account, what unrecouped balance persisted across all their deals following 2026-06?"
+   ],
+   "attempts": 1
+  },
   "hand-cross_collateral-02": {
    "body": "For 2026-01, how much of Voltage's earnings — across every one of their pooled deals — went to recoupment rather than payout?",
    "paraphrases": [
@@ -468,6 +513,24 @@
     "After running reconciliation for 2025-07 by scanning statements for anomalies, computing proposed allocations while excluding corrupt reporting, and submitting one batch with flags for human review, identify which artists should receive more than $1,000 in 2025-07.",
     "For 2025-07, reconcile by examining the period's statements for anomalies, calculating allocations with any corrupt reporting removed, submitting a single batch with attached flags to humans for review—then determine: what artists merit payment exceeding $1,000 in 2025-07?",
     "Perform reconciliation of 2025-07 statements to locate anomalies, propose allocations excluding corrupt reporting, and deliver exactly one flagged batch for human review. Which artists warrant more than $1,000 payment in 2025-07?"
+   ],
+   "attempts": 1
+  },
+  "hand-multi_step-02": {
+   "body": "Suppose Maren & The Aurora earns $25,000 in streaming revenue in the United Kingdom (GB) during 2026-05. Under the terms governing that month, what royalty would that revenue generate, before recoupment? Cite the rate clause you applied.",
+   "paraphrases": [
+    "If Maren & The Aurora receives $25,000 from streaming in GB during 2026-05, how much royalty would be owed before recoupment under that period's terms, and which rate clause governs this calculation?",
+    "What royalty amount would Maren & The Aurora owe on $25,000 in United Kingdom streaming revenue earned during 2026-05, before recoupment is applied, and what is the applicable rate clause?",
+    "In 2026-05, Maren & The Aurora generated $25,000 in streaming revenue in the GB territory. Before recoupment, what royalty does this produce under the relevant terms, and cite the rate clause that applies."
+   ],
+   "attempts": 1
+  },
+  "hand-reconciliation-01": {
+   "body": "Audit one statement for me: statement id 1201 (Kinetic Digital, period 2026-06). Scan it for reporting anomalies and report ONLY findings that are genuinely out of tolerance. If something was measured but sits inside tolerance, say so in prose without flagging it. Do not submit anything.",
+   "paraphrases": [
+    "Review statement id 1201 (Kinetic Digital, period 2026-06) for reporting anomalies, flagging only findings that fall genuinely outside tolerance; note measured items within tolerance in prose form without flagging them, and do not submit anything.",
+    "Examine statement id 1201 (Kinetic Digital, period 2026-06) and identify reporting anomalies that are genuinely out of tolerance only, describing measured items that remain inside tolerance in prose without flagging, and do not submit anything.",
+    "Audit statement id 1201 (Kinetic Digital, period 2026-06) to detect reporting anomalies genuinely outside tolerance while documenting measured items inside tolerance in prose without flags; do not submit anything."
    ],
    "attempts": 1
   },
@@ -543,6 +606,15 @@
    ],
    "attempts": 1
   },
+  "hand-sql_analytics-02": {
+   "body": "Exactly as loaded in our system, how many line items does the Meridian Musikvertrieb statement for 2026-05 contain (statement id 1102)?",
+   "paraphrases": [
+    "What is the exact count of line items present in statement id 1102, the Meridian Musikvertrieb statement for 2026-05, as it appears in our system?",
+    "Statement id 1102 from Meridian Musikvertrieb covering 2026-05 contains how many line items according to our system records?",
+    "In our system, the Meridian Musikvertrieb statement for 2026-05 (statement id 1102) is loaded with precisely how many line items?"
+   ],
+   "attempts": 1
+  },
   "multi_step-001": {
    "body": "Run reconciliation for 2025-08: scan the period's statements for anomalies, compute proposed allocations with corrupt reporting excluded, and submit exactly one batch for human review with your flags attached. Then answer: which artists should be paid more than $500 for 2025-08?",
    "paraphrases": [
@@ -585,6 +657,51 @@
     "After running reconciliation for 2026-01 by scanning statements for anomalies, computing proposed allocations with corrupt reporting excluded, and submitting exactly one batch for human review with your flags attached, which artists should receive more than $1,250 for 2026-01?",
     "Perform reconciliation for 2026-01: identify anomalies in the period's statements, calculate proposed allocations excluding corrupt reporting, and submit one batch for human review bearing your flags. Which artists merit payment exceeding $1,250 for 2026-01?",
     "Reconcile 2026-01 by examining statements for anomalies, deriving proposed allocations with corrupt reporting set aside, and presenting exactly one batch to human reviewers with flags noted. For 2026-01, name the artists who should be paid above $1,250."
+   ],
+   "attempts": 1
+  },
+  "multi_step-006": {
+   "body": "Suppose Yuki Takeda earns $10,000 in streaming revenue in the United States (US) during 2026-02. Under the terms governing as of 2026-02-28, what royalty would that revenue generate, before recoupment? Cite the rate clause you applied.",
+   "paraphrases": [
+    "What royalty, before recoupment, would Yuki Takeda's $10,000 in United States streaming revenue during 2026-02 generate under the terms in effect as of 2026-02-28? Cite the applicable rate clause.",
+    "Under the terms as of 2026-02-28, cite the rate clause and calculate the royalty before recoupment on Yuki Takeda's $10,000 United States streaming revenue earned in 2026-02.",
+    "As of 2026-02-28, if Yuki Takeda generated $10,000 in United States streaming revenue during 2026-02, what royalty would accrue before recoupment? Name the rate clause applied."
+   ],
+   "attempts": 1
+  },
+  "multi_step-007": {
+   "body": "Suppose The Blazing Atlas earns $40,000 in streaming revenue in Germany (DE) during 2026-02. Under the terms governing as of 2026-02-28, what royalty would that revenue generate, before recoupment? Cite the rate clause you applied.",
+   "paraphrases": [
+    "Given that The Blazing Atlas generates $40,000 in streaming revenue from Germany (DE) during 2026-02, what royalty amount would be produced under the applicable terms as of 2026-02-28, prior to recoupment? Identify the rate clause used.",
+    "What royalty would The Blazing Atlas receive from $40,000 in streaming revenue earned in DE during 2026-02, applying the terms effective 2026-02-28 and before recoupment is applied? State which rate clause governs this calculation.",
+    "If The Blazing Atlas accrues $40,000 in streaming revenue in Germany (DE) throughout 2026-02, how much royalty results under the governing terms of 2026-02-28, absent recoupment? Reference the applicable rate clause."
+   ],
+   "attempts": 1
+  },
+  "multi_step-008": {
+   "body": "Suppose Paloma & The Effigy earns $15,000 in download revenue in the United States (US) during 2026-02. Under the terms governing as of 2026-02-28, what royalty would that revenue generate, before recoupment? Cite the rate clause you applied.",
+   "paraphrases": [
+    "If Paloma & The Effigy generates $15,000 in United States download revenue during 2026-02, what royalty amount would result from that revenue under the terms effective as of 2026-02-28, prior to recoupment? Please identify the rate clause you used.",
+    "What royalty would $15,000 in download revenue earned by Paloma & The Effigy in the US during 2026-02 produce under the terms in effect on 2026-02-28, before recoupment is applied? State the rate clause applied.",
+    "Based on the terms as of 2026-02-28, Paloma & The Effigy's $15,000 in United States download revenue during 2026-02 would generate what royalty before recoupment? Name the rate clause you relied on."
+   ],
+   "attempts": 1
+  },
+  "multi_step-009": {
+   "body": "Suppose Esme Spectra earns $30,000 in streaming revenue in the United Kingdom (GB) during 2026-02. Under the terms governing as of 2026-02-28, what royalty would that revenue generate, before recoupment? Cite the rate clause you applied.",
+   "paraphrases": [
+    "If Esme Spectra receives $30,000 in streaming revenue from the United Kingdom (GB) in 2026-02, what royalty amount would be produced under the terms effective as of 2026-02-28, prior to recoupment, and which rate clause governs this calculation?",
+    "What royalty on $30,000 in streaming revenue earned by Esme Spectra in the United Kingdom (GB) during 2026-02 would apply under the terms in force on 2026-02-28, before recoupment? Identify the applicable rate clause.",
+    "Esme Spectra generates $30,000 in streaming revenue in the United Kingdom (GB) during 2026-02. Using the terms as of 2026-02-28, calculate the royalty owed before recoupment and state which rate clause applies."
+   ],
+   "attempts": 1
+  },
+  "multi_step-010": {
+   "body": "Suppose The Vivid Quarry earns $20,000 in download revenue in the United Kingdom (GB) during 2026-02. Under the terms governing as of 2026-02-28, what royalty would that revenue generate, before recoupment? Cite the rate clause you applied.",
+   "paraphrases": [
+    "The Vivid Quarry receives $20,000 in download revenue from the United Kingdom (GB) in 2026-02. What royalty would be generated from that revenue under the terms effective 2026-02-28, prior to recoupment? Identify the rate clause applied.",
+    "Under the terms in effect as of 2026-02-28, how much royalty would The Vivid Quarry's $20,000 in download revenue from the United Kingdom (GB) during 2026-02 generate before recoupment? State which rate clause was used.",
+    "If The Vivid Quarry earned $20,000 from downloads in the United Kingdom (GB) during 2026-02, what royalty would that amount produce under the 2026-02-28 terms before recoupment? Reference the applicable rate clause."
    ],
    "attempts": 1
   },
@@ -1029,6 +1146,24 @@
    ],
    "attempts": 1
   },
+  "sql_analytics-003": {
+   "body": "Summing every statement line dated 2026-05 across all feeds, how many units did the track \"Bones\" (ISRC QZFBR2100139) report?",
+   "paraphrases": [
+    "How many units were reported for the track \"Bones\" (ISRC QZFBR2100139) when you total all statement lines with a date of 2026-05 from every feed?",
+    "Across all feeds, what is the total unit count for \"Bones\" (ISRC QZFBR2100139) for every statement line dated 2026-05?",
+    "What total number of units did \"Bones\" (ISRC QZFBR2100139) report across all feeds for statement lines dated 2026-05?"
+   ],
+   "attempts": 1
+  },
+  "sql_analytics-004": {
+   "body": "Summing every statement line dated 2025-08 across all feeds, how many units did the track \"Distant Umbrellas\" (ISRC QZFBR2300267) report?",
+   "paraphrases": [
+    "How many units did \"Distant Umbrellas\" (ISRC QZFBR2300267) accumulate across all feeds when you sum every statement line from 2025-08?",
+    "What is the total unit count for the track \"Distant Umbrellas\" (ISRC QZFBR2300267) from all statement lines dated 2025-08 across every feed?",
+    "Across all feeds, sum the units reported on every statement line dated 2025-08 for \"Distant Umbrellas\" (ISRC QZFBR2300267)—what is that total?"
+   ],
+   "attempts": 1
+  },
   "sql_analytics-005": {
    "body": "Which territory reported the most units on the Chorusly store in 2026-01 (statement lines dated 2026-01)?",
    "paraphrases": [
@@ -1055,136 +1190,16 @@
     "The SyncBridge Licensing statement for 2025-11 (statement id 506) contains what total gross amount, expressed in USD?"
    ],
    "attempts": 1
+  },
+  "sql_analytics-008": {
+   "body": "Across the whole seeded window (2025-07 through 2026-06), how many statements did we receive from Meridian Musikvertrieb?",
+   "paraphrases": [
+    "During the period 2025-07 through 2026-06, what was the total count of statements received from Meridian Musikvertrieb?",
+    "How many statements from Meridian Musikvertrieb were received throughout the seeded window spanning 2025-07 through 2026-06?",
+    "In the seeded window 2025-07 through 2026-06, how many statements did Meridian Musikvertrieb provide to us?"
+   ],
+   "attempts": 1
   }
  },
- "unresolved": [
-  {
-   "id": "hand-catalog_lookup-01",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Counting",
-    "attempt 3, candidate 2: lost name: Counting",
-    "attempt 3, candidate 3: lost code: EP; lost name: Counting"
-   ]
-  },
-  {
-   "id": "hand-contract_terms-01",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Please",
-    "attempt 3, candidate 2: lost name: Please",
-    "attempt 3, candidate 3: lost name: Please"
-   ]
-  },
-  {
-   "id": "cross_collateral-004",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Across",
-    "attempt 3, candidate 2: lost name: Across",
-    "attempt 3, candidate 3: lost name: Across"
-   ]
-  },
-  {
-   "id": "cross_collateral-005",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Across",
-    "attempt 3, candidate 2: lost name: Across",
-    "attempt 3, candidate 3: lost name: Across"
-   ]
-  },
-  {
-   "id": "hand-cross_collateral-01",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Across",
-    "attempt 3, candidate 2: lost name: Across",
-    "attempt 3, candidate 3: lost name: Across"
-   ]
-  },
-  {
-   "id": "sql_analytics-003",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Summing",
-    "attempt 3, candidate 2: lost name: Summing",
-    "attempt 3, candidate 3: lost name: Summing"
-   ]
-  },
-  {
-   "id": "sql_analytics-004",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Summing",
-    "attempt 3, candidate 2: lost name: Summing",
-    "attempt 3, candidate 3: lost name: Summing"
-   ]
-  },
-  {
-   "id": "sql_analytics-008",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Across",
-    "attempt 3, candidate 2: lost name: Across",
-    "attempt 3, candidate 3: lost name: Across"
-   ]
-  },
-  {
-   "id": "hand-sql_analytics-02",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Exactly",
-    "attempt 3, candidate 2: lost name: Exactly",
-    "attempt 3, candidate 3: lost name: Exactly"
-   ]
-  },
-  {
-   "id": "hand-reconciliation-01",
-   "failures": [
-    "attempt 3, candidate 1: lost code: ONLY; lost name: Audit",
-    "attempt 3, candidate 2: lost code: ONLY",
-    "attempt 3, candidate 3: lost code: ONLY; lost name: Audit"
-   ]
-  },
-  {
-   "id": "multi_step-006",
-   "failures": [
-    "attempt 3, candidate 1: lost code: US; lost name: Suppose",
-    "attempt 3, candidate 2: lost name: States, Suppose, United",
-    "attempt 3, candidate 3: lost code: US; lost name: Suppose"
-   ]
-  },
-  {
-   "id": "multi_step-007",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Germany, Suppose",
-    "attempt 3, candidate 2: lost name: Suppose",
-    "attempt 3, candidate 3: lost name: Germany, Suppose"
-   ]
-  },
-  {
-   "id": "multi_step-008",
-   "failures": [
-    "attempt 3, candidate 1: lost code: US; lost name: Suppose",
-    "attempt 3, candidate 2: lost code: US; lost name: Suppose",
-    "attempt 3, candidate 3: lost code: US; lost name: Suppose"
-   ]
-  },
-  {
-   "id": "multi_step-009",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Suppose",
-    "attempt 3, candidate 2: lost name: Kingdom, Suppose, United",
-    "attempt 3, candidate 3: lost name: Kingdom, Suppose, United"
-   ]
-  },
-  {
-   "id": "multi_step-010",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Suppose",
-    "attempt 3, candidate 2: lost name: Kingdom, Suppose, United",
-    "attempt 3, candidate 3: lost name: Kingdom, Suppose, United"
-   ]
-  },
-  {
-   "id": "hand-multi_step-02",
-   "failures": [
-    "attempt 3, candidate 1: lost name: Kingdom, Suppose, United",
-    "attempt 3, candidate 2: lost name: Suppose",
-    "attempt 3, candidate 3: lost name: Kingdom, Suppose, United"
-   ]
-  }
- ]
+ "unresolved": []
 }
