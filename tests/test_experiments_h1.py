@@ -30,9 +30,12 @@ from experiments.h1.build import (
 )
 from experiments.h1.checks import (
     CompoundAsk,
+    Prohibition,
+    ask_segments,
     check_batch,
     check_paraphrase,
     compound_ask,
+    prohibitions,
     required_tokens,
     salient_tokens,
 )
@@ -411,37 +414,30 @@ def test_a_paraphrase_may_open_with_the_name_it_has_to_keep(corpus: H1Corpus) ->
 
 # --- the compound ask (H-069) --------------------------------------------------------------
 
-#: The 17 questions whose committed paraphrases collapse a two-part ask, found by auditing
-#: the accepted batch against the rule the moment the rule existed. They are **not** a
-#: tolerated exception: they are a redraw the operator has not run yet, and until they do,
-#: `build.py` refuses the corpus that carries them. The set is an upper bound, so it goes
-#: green on its own as the redraws land and it cannot hide a *new* collapse appearing
-#: somewhere else.
+#: The questions whose committed paraphrases fail a check, found by auditing the accepted
+#: batch against each new rule the moment that rule existed. They are **not** a tolerated
+#: exception: they are a redraw the operator has not run yet, and until they do, `build.py`
+#: refuses the corpus that carries them. The set is an upper bound, so it goes green on its
+#: own as the redraws land and it cannot hide a *new* failure appearing somewhere else.
 #:
-#: It is still 17 because the corpus this reads is still the one built from the v1 batch.
-#: The redraws thrashed — 17 → 8 → 5 → 5 over three rounds, five ids failing three to four
-#: independent draws on the identical shape — so H-070 took H-069's other lever and bumped
-#: `RUBRIC_VERSION` to 2. This set now empties **all at once**, when the v2 regeneration is
-#: built into a new corpus, rather than id by id; and it stays an upper bound either way.
+#: It held H-069's 17 compound-ask collapses until the v2 regeneration, and **those emptied
+#: all at once exactly as H-070 said they would** — the audit below now reports zero
+#: compound-ask failures across all 390 probes, which is the rubric bump's receipt.
+#:
+#: These seven are H-071's: the batch inverts or drops a bare prohibition. Six are the
+#: `Do not submit a batch.` bodies; `hand-reconciliation-01` loses `Do not submit anything.`
+#: in all three of its candidates, which is the same failure at its widest. `-002` and `-014`
+#: fail with a *different* prohibition rather than none at all (`Do not group submissions.`,
+#: `Do not process multiple statements.`) — the model keeps the shape and swaps the content.
 AWAITING_REDRAW: Final = frozenset(
     {
-        "contract_terms-001",
-        "contract_terms-002",
-        "contract_terms-004",
-        "contract_terms-005",
-        "contract_terms-006",
-        "contract_terms-007",
-        "contract_terms-008",
-        "contract_terms-009",
-        "contract_terms-011",
-        "contract_terms-012",
-        "contract_terms-013",
-        "contract_terms-014",
-        "contract_terms-015",
-        "contract_terms-016",
-        "hand-contract_terms-01",
-        "hand-contract_terms-02",
-        "hand-contract_terms-04",
+        "hand-reconciliation-01",
+        "reconciliation-001",
+        "reconciliation-002",
+        "reconciliation-006",
+        "reconciliation-007",
+        "reconciliation-010",
+        "reconciliation-014",
     }
 )
 
@@ -565,6 +561,239 @@ def test_a_body_that_asks_for_one_thing_is_not_compound(body: str, why: str) -> 
     assert compound_ask(body) is None, why
 
 
+# --- the prohibition (H-071) ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("question_id", "candidate"),
+    [
+        # `reconciliation-006#p1` as drawn under rubric v2 — the probe the operator's
+        # spot-check failed, and the reason this rule exists.
+        (
+            "reconciliation-006",
+            "Examine all statements covering period 2025-12 for reporting anomalies — "
+            "duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, "
+            "suspicious territory spikes, and dashboard divergence — and report only "
+            "genuine, out-of-tolerance findings, submitting them individually rather than "
+            "as a batch.",
+        ),
+        # The forced redraw's p3. Its p1 — the *sampled* probe — came back clean, so a
+        # spot-check of the same 20 ids would have passed the redraw and shipped this.
+        (
+            "reconciliation-006",
+            "Across all statements for period 2025-12, scan for reporting anomalies — "
+            "duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, "
+            "suspicious territory spikes, and dashboard divergence — and report genuine, "
+            "out-of-tolerance findings only, submitting them individually rather than as a "
+            "batch.",
+        ),
+        # …and `reconciliation-001#p3`, which the audit found on a different body. Three
+        # independent draws, one shape: the prohibition becomes an order about what to do
+        # instead.
+        (
+            "reconciliation-001",
+            "Scan the full set of statements for 2025-07 to detect anomalies — duplicates, "
+            "unknown ISRCs, currency mismatches, negative units, period bleed, suspicious "
+            "territory spikes, and dashboard divergence — reporting only findings that are "
+            "genuine and out of tolerance, submitted individually rather than as a batch.",
+        ),
+    ],
+    ids=["spot-check-reject", "redraw-p3", "audit-find-on-another-body"],
+)
+def test_the_inversion_the_operator_caught_by_hand_is_now_caught_mechanically(
+    corpus: H1Corpus, question_id: str, candidate: str
+) -> None:
+    """`Do not submit a batch.` became `submit them individually`, three times.
+
+    Every token rule passes these — the body's own words `submit` and `batch` are both still
+    in the sentence, which is exactly why nothing was looking. What changed is the polarity:
+    the source forbids an action and names no alternative; the rewrite orders one.
+    """
+    result = check_paraphrase(body=corpus.question(question_id).body, candidate=candidate)
+    assert result.ok is False
+    assert any("inverted the prohibition" in failure for failure in result.failures), (
+        result.failures
+    )
+    # The token layer really does pass it — otherwise this test proves nothing.
+    assert not any("lost" in failure for failure in result.failures), result.failures
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        # Verbatim retention.
+        "Examine each statement covering period 2025-12 for reporting anomalies: duplicates, "
+        "unknown ISRCs, currency mismatches, negative units, period bleed, suspicious "
+        "territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance "
+        "findings; do not submit a batch.",
+        # The negation over the object alone — the sampled probe of the redraw.
+        "Review all statements for 2025-12 and identify reporting anomalies — including "
+        "duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, "
+        "suspicious territory spikes, and dashboard divergence — reporting only genuine, "
+        "out-of-tolerance findings, not a batch submission.",
+        # A different negator over the verb.
+        "Examine all statements with period 2025-12 to identify reporting anomalies—"
+        "duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, "
+        "suspicious territory spikes, and dashboard divergence—and report only genuine, "
+        "out-of-tolerance findings without submitting a batch.",
+        # A hyphenated compound: the verb is in the middle of one token.
+        "Across all statements for 2025-12, locate reporting anomalies — duplicates, unknown "
+        "ISRCs, currency mismatches, negative units, period bleed, suspicious territory "
+        "spikes, and dashboard divergence — and report only genuine, out-of-tolerance "
+        "findings; do not batch-submit.",
+        # A lexical negative, with no negator and no verb anywhere in it.
+        "Examine each statement covering period 2025-12 to identify reporting anomalies—"
+        "duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, "
+        "suspicious territory spikes, and dashboard divergence—reporting only genuine, "
+        "out-of-tolerance findings and avoiding batch submission.",
+    ],
+    ids=["verbatim", "over-the-object", "another-negator", "hyphenated", "lexical-negative"],
+)
+def test_the_ways_english_keeps_a_prohibition_all_pass(corpus: H1Corpus, candidate: str) -> None:
+    """A rule no faithful paraphrase can satisfy is a stuck generator (H-068), so the forms
+    the batch has actually produced are pinned. All five are real draws off this body."""
+    result = check_paraphrase(body=corpus.question("reconciliation-006").body, candidate=candidate)
+    assert result.ok, result.failures
+
+
+@pytest.mark.parametrize(
+    ("candidate", "why"),
+    [
+        (
+            "Examine each statement for the 2025-08 period and flag reporting irregularities "
+            "including duplicate records, invalid ISRCs, currency discrepancies, units below "
+            "zero, cross-period leakage, unusual territory spikes, and dashboard deviations. "
+            "Report genuine findings that exceed tolerance thresholds only. Do not group "
+            "submissions.",
+            "a prohibition about something else is not this prohibition",
+        ),
+    ],
+    ids=["swapped-for-another-prohibition"],
+)
+def test_a_prohibition_can_be_dropped_as_well_as_inverted(
+    corpus: H1Corpus, candidate: str, why: str
+) -> None:
+    """The second clause, and the one that catches the quieter failure.
+
+    `Do not group submissions.` keeps the *shape* — an imperative prohibition, in final
+    position — and swaps what is forbidden. Nothing negates submitting, and nothing negates a
+    batch, so nothing here forbids what the body forbids.
+    """
+    result = check_paraphrase(body=corpus.question("reconciliation-002").body, candidate=candidate)
+    assert result.ok is False, why
+    assert any("dropped the prohibition" in failure for failure in result.failures), result.failures
+
+
+def test_the_prohibition_is_read_off_the_body_and_not_listed() -> None:
+    """`submit` and `batch` are extracted, never named. Hand it another body and it reads
+    that one — which is what stops this being a rule about fourteen ids."""
+    assert prohibitions("Reconcile the ledger. Do not overwrite the staging table.") == (
+        Prohibition(verb="overwrite", obj="table", text="Do not overwrite the staging table."),
+    )
+    assert prohibitions("Report the anomalies and never flag a within-tolerance line.") == (
+        Prohibition(verb="flag", obj="line", text="never flag a within-tolerance line."),
+    )
+
+
+def test_the_rule_finds_the_whole_reconciliation_family(corpus: H1Corpus) -> None:
+    """15 bodies, one family — the exposure the rule found, rather than the one it was given.
+
+    It is also the shape H-069 explicitly left alone: *"a body whose parts are all
+    instructions (the reconciliation runs) is out of its scope, deliberately"*. That was the
+    right call on the evidence then and the wrong bet in hindsight, which is what a spot-check
+    is for.
+    """
+    found = {
+        question.id: found
+        for question in corpus.questions
+        if (found := prohibitions(question.body))
+    }
+    assert len(found) == 15
+    assert {question_id.rsplit("-", 1)[0] for question_id in found} == {
+        "reconciliation",
+        "hand-reconciliation",
+    }
+    assert found["reconciliation-006"] == (
+        Prohibition(verb="submit", obj="batch", text="Do not submit a batch."),
+    )
+    # The hand-written body forbids the act itself, with no object to hang a negation on.
+    assert found["hand-reconciliation-01"] == (
+        Prohibition(verb="submit", obj="anything", text="Do not submit anything."),
+    )
+
+
+def test_every_prohibiting_body_satisfies_its_own_rule(corpus: H1Corpus) -> None:
+    """The original is the one text that is certainly faithful — H-068's diagnostic, applied
+    for the third time to the amendment that answers it."""
+    for question in corpus.questions:
+        for forbidden in prohibitions(question.body):
+            assert forbidden.survives_in(question.body), question.id
+            assert not forbidden.instructed_in(question.body), question.id
+
+
+@pytest.mark.parametrize(
+    ("body", "why"),
+    [
+        (
+            "Before any amendments changed it, what streaming royalty rate did the original "
+            "agreement set? This is a question about the historical terms, not what applies "
+            "today.",
+            "`not` over a noun phrase is a clarification, not an order",
+        ),
+        (
+            "If something was measured but sits inside tolerance, say so in prose without "
+            "flagging it.",
+            "a negation modifying an affirmative instruction is out of scope, deliberately",
+        ),
+        (
+            "How many tracks does Halcyon Drift have in our catalog as primary artist?",
+            "no instruction at all",
+        ),
+    ],
+    ids=["clarifying-not", "prohibitive-adjunct", "bare-question"],
+)
+def test_a_negation_that_is_not_an_order_is_not_a_prohibition(body: str, why: str) -> None:
+    assert prohibitions(body) == (), why
+
+
+def test_the_adjunct_is_out_of_scope_but_the_bare_prohibition_beside_it_is_not(
+    corpus: H1Corpus,
+) -> None:
+    """`hand-reconciliation-01` carries both shapes in one body, which is the cleanest
+    statement of where the line is.
+
+    `…say so in prose without flagging it.` is left to the spot-check: the sentence's own verb
+    is positive and a faithful rewrite may restructure it into a restriction. `Do not submit
+    anything.` is the rule's business, and all three committed candidates dropped it.
+    """
+    body = corpus.question("hand-reconciliation-01").body
+    assert "without flagging it" in body
+    assert [forbidden.verb for forbidden in prohibitions(body)] == ["submit"]
+
+
+def test_ask_segments_splits_a_sentence_that_ends_in_a_letter() -> None:
+    """The bug that made this rule a no-op until it was fixed (H-071).
+
+    `_ASK_BREAK` carried `re.IGNORECASE` for its coordinator alternatives, which also applied
+    to the `(?<![A-Z]\\.)` guard that exists to hold `U.S.` together — so *any* letter before a
+    full stop suppressed the split, and a prohibition living in its own declarative sentence
+    was never a segment of its own. The initials guard still has to work, which is the second
+    assertion.
+    """
+    assert ask_segments("Report the findings. Do not submit a batch.") == (
+        "Report the findings.",
+        "Do not submit a batch.",
+    )
+    assert ask_segments("Revenue in the U.S. rose sharply.") == (
+        "Revenue in the U.S. rose sharply.",
+    )
+    # The word alternatives are still case-insensitive.
+    assert ask_segments("Report the findings AND cite the clause.") == (
+        "Report the findings",
+        "cite the clause.",
+    )
+
+
 def test_the_committed_batch_is_clean_apart_from_the_audited_redraws(corpus: H1Corpus) -> None:
     """Every probe in the corpus, re-checked against the rules as they stand *now*.
 
@@ -583,14 +812,14 @@ def test_the_committed_batch_is_clean_apart_from_the_audited_redraws(corpus: H1C
 # --- `--only` is a redo, not a resume (H-069) ----------------------------------------------
 
 
-def _question(question_id: str) -> SuiteQuestion:
+def _question(question_id: str, *, body: str = "body") -> SuiteQuestion:
     return SuiteQuestion(
         id=question_id,
         category="c",
         agent="counsel",
         answer_kind="money",
         tiers=("t1",),
-        body="body",
+        body=body,
         tail="tail",
         expected="1.00",
         tolerance=None,
@@ -737,6 +966,59 @@ def test_the_build_refuses_a_batch_from_another_rubric(tmp_path: pathlib.Path) -
     with pytest.raises(SystemExit) as stop:
         _load_paraphrases(path, _two_question_suite())
     assert "never mixed across" in str(stop.value)
+
+
+def test_the_build_names_every_rejected_question_at_once(tmp_path: pathlib.Path) -> None:
+    """An audit of the whole batch must cost one build, not one build per finding (H-071).
+
+    Both questions here fail, for different reasons — `done` inverts a prohibition, `todo`
+    loses a period — and the refusal has to carry both plus the command that redraws them.
+    Refusing on the first id turns a seven-id redraw into six surprised rebuilds.
+    """
+    suite = Suite(
+        name="core",
+        suite_hash="h",
+        world_seed=1,
+        questions=(
+            _question("done", body="Report the anomalies. Do not submit a batch."),
+            _question("todo", body="What was billed in 2026-02?"),
+        ),
+        excluded=(),
+    )
+    path = write_json(
+        tmp_path / "h1_paraphrases.json",
+        {
+            "schema": "h1_paraphrases/1",
+            "rubric": {"version": rubric.RUBRIC_VERSION},
+            "unresolved": [],
+            "questions": {
+                "done": {
+                    "paraphrases": [
+                        "Report the anomalies, submitting them individually rather than "
+                        "as a batch.",
+                        "Report the anomalies; do not submit a batch.",
+                        "Report the anomalies without submitting a batch.",
+                    ]
+                },
+                "todo": {
+                    "paraphrases": [
+                        "What amount was billed in February 2026?",
+                        "What was invoiced during 2026-02?",
+                        "What sum was billed in the 2026-02 period?",
+                    ]
+                },
+            },
+        },
+    )
+
+    with pytest.raises(SystemExit) as stop:
+        _load_paraphrases(path, suite)
+
+    message = str(stop.value)
+    assert "2 of 2 questions" in message
+    assert "inverted the prohibition" in message
+    assert "lost period: 2026-02" in message
+    assert "--only done,todo" in message
 
 
 # --- rendering ground truth ---------------------------------------------------------------

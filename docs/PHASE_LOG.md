@@ -5353,3 +5353,104 @@ uv run pytest                1 failed, 1197 passed, 2 deselected, 1 warning in 1
                              (the failure is the same pre-existing stale-curve pin;
                               1190 passed / 1 failed before this session)
 ```
+
+---
+
+## Phase 8 — the spot-check's second catch: a prohibition must stay a prohibition (2026-08-10)
+
+**Branch** `claude/p8-experiments` · **Decisions** H-071 · No spend, no sweep, no build.
+
+**What the operator found**
+
+Their spot-check failed `reconciliation-006#p1`. The body ends `Do not submit a batch.`; the
+paraphrase ended *"submitting them individually rather than as a batch"* — a bare prohibition
+turned into an order to do the alternative. The forced redraw returned a **clean `#p1` and the
+identical inversion in `#p3`**, so a re-read of the same sampled ids would have approved it.
+This is the third pre-measurement checker amendment, and the **second distinct systematic
+drift** the human clause of the QA chain has caught that the mechanical clause could not see:
+scope compression (H-069), now negation inversion.
+
+**Shipped**
+
+- **`prohibitions()` and `Prohibition`** in `experiments/h1/checks.py`. The shape is read off
+  the body — negator opening an ask, then a verb — and the forbidden verb and its object are
+  extracted, not listed: hand it `Do not overwrite the staging table.` and it reads
+  `overwrite`/`table`. It finds **15 bodies, the whole reconciliation family**. Two clauses: the
+  prohibition must still be negated somewhere, and the forbidden verb must not appear as an
+  order. Both are load-bearing — the first alone passes every inversion in the batch, the
+  second alone misses all three of `hand-reconciliation-01`'s dropped candidates.
+- **Six faithful constructions pinned as passing** (verbatim, `without submitting a batch`,
+  `not a batch submission`, `not batched`, `avoiding batch submission`, `do not batch-submit`),
+  and **all 15 prohibiting bodies satisfy their own rule** — H-068's diagnostic, third outing.
+- **A regex bug fixed, and it was total for this check.** `_ASK_BREAK` carried `re.IGNORECASE`
+  across the whole pattern, which turned its `(?<![A-Z]\.)` initials guard into "any letter
+  before a full stop" — so **`ask_segments()` has never split a sentence ending in a letter**.
+  Prohibitions end in `batch.` and `anything.`, so the new check found *zero* of fifteen until
+  the flag was scoped to the word alternatives with `(?i:…)`. Measured effect on H-069: **0
+  verdict changes across all 390 committed probes**, and all four of its pinned faithful forms
+  pass either way. Effect on H-070's thrash: unknowable, because rejected drafts are never
+  persisted — recorded as a possibility, not a cause.
+- **The build refusal names every failing id at once**, with the `--only` command. It stopped
+  at the first id before, which would have made this seven-id audit cost six surprised rebuilds.
+- **18 tests**, including the three observed inversions, the drop-vs-invert split, the scope
+  boundary (`hand-reconciliation-01` carries both an in-scope prohibition and an out-of-scope
+  adjunct in one body), and the regex fix in both directions.
+
+**The audit, and `AWAITING_REDRAW`**
+
+13 of 390 probes fail across **7 questions** — `hand-reconciliation-01` (3 of 3),
+`reconciliation-007` (3 of 3), `-002` and `-014` (2 of 3), `-001`, `-006`, `-010` (1 of 3).
+They are in `AWAITING_REDRAW` as an upper bound, never as a tolerated exception; `build.py`
+refuses the corpus while they are there. Two fail by *dropping* rather than inverting —
+`Do not group submissions.`, `Do not process multiple statements.` — the prohibition's shape
+kept and its content swapped.
+
+**H-069's 17 emptied exactly as H-070 said they would.** The same audit reports **zero**
+compound-ask failures across the v2 batch, down from 25 across 17 questions. That is the
+rubric bump's receipt, and it is now a committed fact rather than an expectation.
+
+**The rubric was deliberately not bumped**
+
+32 of 45 candidates on prohibiting bodies already pass, in six constructions; eight of the
+thirteen failures are one template. H-070's lever exists and its condition — the same ids
+`unresolved` across repeated `--only` rounds — has not been tested once here. Expected retry
+burden is stated in H-071 and the runbook so it can be held to account: ≈74% of questions
+resolve in three rounds on the batch-wide rate, ≈16% on the pessimistic selected rate, so
+**expect one to three of the seven to need a second round**.
+
+**A correction to H-070's budget arithmetic**
+
+H-070 projected the v2 regeneration at ~$0.30 and concluded a third would need a budget
+amendment. It landed at **$0.190212 in 147 calls** (`0f1556d`). Recoverable cumulative landed
+H1 paraphrase spend is ≈ **$0.51** — a *lower bound*, since the `spend` block holds only the
+last run and the `--only` rounds between `0f1556d` and `7d75d41` are gone. Roughly half of
+§0.6's `$1` whole-project line remains, so a `RUBRIC_VERSION = 3` would fit inside it. The
+argument for trying the checker alone rests on evidence, not on affordability.
+
+**Deferred to the operator (invariant: Claude Code never runs spend)**
+
+The seven-id redraw. `experiments/RUNBOOK.md` §1b carries the command; the projection was
+computed here from `Rates.worst_case()` without invoking the generator — **`worst case
+$0.020541`** for one round each, ceiling **~$0.062** at three rounds, against the unchanged
+`$1.00` stop. Confirm with `--dry-run` (free, sends nothing) before dropping the flag. Only
+**2 of the 20** sampled probes belong to a redrawn id (`reconciliation-006#p1`,
+`reconciliation-010#p1`), so the re-check after the rebuild is two sentences, not twenty. Then:
+redraw → rebuild → spot-check → sweep → figure.
+
+**Pre-existing red, not introduced here**
+
+`test_the_committed_curve_is_the_one_this_corpus_produces`, unchanged and for the same reason:
+`experiments/results/h1_curve.json` pins a corpus hash the current artifact no longer has, and
+clearing it means sweeping a corpus that this session has just proven carries 13 bad probes.
+It clears when the sweep runs on a corpus that deserves it.
+
+**Gate**
+
+```
+uv run ruff check .          All checks passed!
+uv run ruff format --check . 163 files already formatted
+uv run mypy                  Success: no issues found in 162 source files
+uv run pytest                1 failed, 1215 passed, 2 deselected, 1 warning in 17.51s
+                             (the failure is the same pre-existing stale-curve pin;
+                              1197 passed / 1 failed before this session)
+```

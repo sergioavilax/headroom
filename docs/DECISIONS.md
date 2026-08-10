@@ -4059,3 +4059,209 @@ wrote is stamped v2, so a bare re-run resumes rather than restarting.
   Making the harness's stop read cumulative landed spend out of the artifact is the obvious
   follow-up; it is deliberately **not** done here, mid-lever, where it could halt the very
   run this entry authorises.
+
+---
+
+## H-071 — A prohibition must survive as a prohibition; and `ask_segments` never split a sentence (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the spot-check again — the third amendment it has produced, and
+the second *distinct* systematic drift it has caught — and failed `reconciliation-006#p1`. The
+body ends with a bare prohibition:
+
+```
+Scan every statement for period 2025-12 for reporting anomalies — duplicates, unknown ISRCs,
+currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard
+divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.
+```
+
+The candidate ended:
+
+```
+p1  … and report only genuine, out-of-tolerance findings, submitting them individually
+    rather than as a batch.
+```
+
+*Do not submit a batch* forbids an action and names no alternative. *Submit them individually
+rather than as a batch* orders one. Answer the rewrite faithfully and an agent submits; answer
+the original faithfully and it submits nothing. Every mechanical rule passed it — entity,
+period, figure, length, no blank line, no protocol token — and the compound-ask rule does not
+look at an all-instruction body at all. Nothing was lost: `submit` and `batch` are both still
+in the sentence. The **polarity** moved.
+
+The operator forced a redraw (~$0.0018). Its sampled probe — `#p1`, the one the seeded sample
+names — came back clean, and **`#p3` reproduced the identical inversion**, verbatim:
+
+```
+p3  … and report genuine, out-of-tolerance findings only, submitting them individually
+    rather than as a batch.
+```
+
+So a re-read of the same twenty ids would have approved the redraw and shipped the drift.
+
+**A correction to the finding as filed.** The inversion occurred **twice** on
+`reconciliation-006`, not three times: the v1 draw was clean on all three candidates, the v2
+draw inverted `#p1`, the redraw inverted `#p3`. The third instance of the identical template
+is on a *different* body — `reconciliation-001#p3`, *"submitted individually rather than as a
+batch"* — found by the audit, along with the same failure in five more places. Two independent
+draws on one body plus six bodies across one family is stronger evidence than three draws on
+one body, so the conclusion stands and is better supported than as filed.
+
+**Decision — make the prohibition survive mechanically, on the same footing as an entity.**
+
+`prohibitions()` reads the shape off the body: an ask whose *own* verb is negated — an optional
+lead adverb, an optional auxiliary, a negator from `PROHIBITION_MARKERS`, then a verb. It
+extracts what is forbidden (`submit`) and what it is forbidden on (`batch`), reusing H-069's
+`_demand_phrase()`. Nothing is listed; hand it `Do not overwrite the staging table.` and it
+reads `overwrite`/`table`. In this suite it finds **15 bodies — the whole reconciliation
+family**, including `hand-reconciliation-01`'s `Do not submit anything.`
+
+`Prohibition` then asks two things of a candidate:
+
+* **It survives.** Some negation must still scope the forbidden verb or its object. The batch
+  already produces six constructions that satisfy this: verbatim (`do not submit a batch`),
+  another negator over the verb (`without submitting a batch`), a negation over the object
+  alone (`not a batch submission`, `not as a batch`, `not batched`), a lexical negative
+  (`avoiding batch submission`), a participial one (`excluding batch entries`, `omitting batch
+  submissions`), and a hyphenated compound (`do not batch-submit`). All six are pinned as
+  passing tests.
+* **It has not become an order.** No un-negated use of the forbidden verb may appear anywhere.
+  This is the clause that catches the inversion, and it is why the contrastives (`rather than`,
+  `instead of`) count as negation for the *first* clause: `rather than as a batch` really does
+  forbid the batch, so failing it there would produce a vague diagnosis where an accurate one
+  is available.
+
+**Scope, and it is narrow deliberately.** The rule fires only where the negator *opens* an ask
+— the bare prohibition standing as its own instruction, which is what every observed failure
+is. A negation modifying an otherwise affirmative instruction (`say so in prose without
+flagging it`, which occurs once, in `hand-reconciliation-01`) is left to the spot-check: there
+the sentence's own verb is positive, a faithful rewrite may restructure it into a restriction
+(`flag only what is out of tolerance`), and no inversion has been observed on that shape.
+Widening a rule to a shape without evidence is how H-068's stuck generator happened. That one
+body carries both shapes, which is the cleanest statement of where the line sits, and it is a
+test.
+
+**Every one of the 15 prohibiting bodies satisfies its own rule**, and that is a test —
+H-068's diagnostic, applied for the third time to the amendment that answers it.
+
+**And the second finding, which is why the first one did nothing at all.** Wired in, the new
+check found **zero** prohibitions in a suite with fifteen. `_ASK_BREAK` carried `re.IGNORECASE`
+for its coordinator alternatives (`and`, `or`, `plus`, `as well as`), and the flag applied to
+the whole pattern — including the `(?<![A-Z]\.)` guard that exists to keep `U.S.` from reading
+as a sentence end. Case-insensitively that guard reads *any letter* followed by a full stop, so
+**`ask_segments()` has never split on a sentence ending in a letter.** `Report the findings. Do
+not submit a batch.` was one segment; `What is the rate? Cite the clause.` split, because the
+guard needs a literal `.`. The fix scopes the flag to the two word alternatives with inline
+`(?i:…)` groups, and the initials guard is a test in both directions.
+
+What the bug cost, measured rather than assumed:
+
+* **H-071: everything.** Prohibitions live in sentences ending in `batch.` and `anything.` —
+  both letters — so the new check was a silent no-op until the regex was fixed.
+* **H-069: nothing measurable.** Re-running the compound-ask rule over all 390 committed probes
+  with the buggy pattern and with the fixed one changes **0 verdicts**, and all four faithful
+  forms H-069 pins pass either way. Compound bodies end their question with `?`, and rewrites
+  that separate the demands with a full stop tend to end the first on a date (`… as of
+  2026-06-30. Cite the clause.`), which splits under both patterns.
+* **The H-070 thrash: not recoverable.** A rewrite shaped `Identify the governing clause. What
+  rate applies?` would have been failed by the bug and passed by the fix. Whether any of the
+  17 → 8 → 5 → 5 rejections had that shape cannot be known — rejected drafts are never
+  persisted, only the diagnosis line is. Recorded here as a possibility that cannot be ruled
+  out, not as a cause.
+
+`_SENTENCE_BREAK`, which `compound_ask()` uses to find the shape in the first place, never
+carried the flag and was always correct — so every *body* was parsed correctly throughout. Only
+candidate-side segmentation was affected.
+
+**The rubric is deliberately *not* bumped to version 3.** H-070's lever exists and its
+condition is named there: redraws thrashing. That condition has not been tested once here. The
+evidence for trying the checker alone first:
+
+* **32 of 45 candidates on prohibiting bodies already pass**, in six distinct constructions.
+  This is not a shape the model cannot produce; it is one it sometimes replaces with a
+  helpful-sounding alternative. H-069's starting position was 50 of 75 — and note the
+  difference in what is being asked: the compound ask needed the model to *generate* a second
+  demand it kept compressing, where this needs it to *not add* an instruction.
+* **The failures cluster on one habit.** Eight of the thirteen are the same template,
+  `individually rather than as a batch`.
+* **The redraw is cheap and narrow.** Seven ids, worst case `$0.020541`, three-round ceiling
+  `$0.062`. A version bump discards all 130 and costs a fresh spot-check of all twenty sampled
+  probes; the seven-id redraw invalidates **2 of the 20** (`reconciliation-006#p1`,
+  `reconciliation-010#p1`) and leaves the operator's other eighteen readings standing.
+
+**Expected retry burden, stated so the operator can hold it to account.** Batch-wide, the
+per-candidate failure rate is **13/45 = 28.9%**. All three candidates must pass in the same
+round, so a clean round is `(1 − 0.289)³ ≈ 36%`, and three rounds resolve a question with
+probability **≈ 74%**. Measured only on the seven selected the rate is 13/21 = 61.9%, but those
+seven were selected *because* they failed, so that is the pessimistic bound and gives ≈ 16%.
+The truth is between. **Expect one to three of the seven to need a second `--only` round or to
+land `unresolved`.** `hand-reconciliation-01` and `reconciliation-007` failed 3 of 3 and are
+the two most likely to stick.
+
+**The thrash condition, pre-committed.** If the same ids land `unresolved` across two `--only`
+rounds — H-069's condition, the one H-070 fired on — the next lever is `RUBRIC_VERSION = 3`
+carrying a rule for prohibitions, plus a full regeneration. That is the operator's costed
+decision, not a silent one.
+
+**A correction to H-070's budget arithmetic, which changes what that lever costs.** H-070 said
+a third full regeneration "would need a budget amendment", projecting the v2 run at ~$0.30. It
+landed at **$0.190212 in 147 calls** (`0f1556d`). Recoverable cumulative landed spend is
+therefore ≈ **$0.51**, not the ~$0.62 implied — and it is a *lower bound*, because the `spend`
+block records only the last run and any `--only` rounds between `0f1556d` and `7d75d41` are
+unrecoverable from the repo. On the recoverable figures roughly **half** the §0.6 line remains
+and a `RUBRIC_VERSION = 3` at ~$0.19–0.30 fits inside it, so it is **not** a budget amendment
+unless those unrecorded rounds were large. The case for trying the checker alone therefore
+rests on the evidence above and not on affordability — which is the honest place for it to
+rest.
+
+**Alternatives rejected.**
+
+* *Require the body's own negator to survive literally.* The batch produces six faithful
+  constructions and only one reuses `do not`. A rule admitting one correct answer in six is
+  H-068 exactly.
+* *Require only that some negation survives.* Passes every inversion in the batch — they all
+  keep `rather than as a batch` — and passes `Do not group submissions.` too. It is the clause
+  that does not discriminate.
+* *Require only that no affirmative order appears.* Misses all three of
+  `hand-reconciliation-01`'s candidates, which drop `Do not submit anything.` and instruct
+  nothing at all. Both clauses are load-bearing; each catches what the other cannot see.
+* *Extend the rule to prohibitive adjuncts (`without flagging it`).* No inversion has been
+  observed on that shape, and `hand-reconciliation-01#p1`'s `flagging only findings that
+  genuinely exceed tolerance` is a faithful restructuring the rule would have failed. Scope
+  follows evidence.
+* *Bump the rubric now.* Above — the condition for it has not been tested.
+* *Leave it to the spot-check.* It samples 20 of 390, and it had just approved the redraw's
+  `#p1` while `#p3` carried the very drift the redraw was ordered to fix.
+
+**Consequences.**
+
+* **The accepted batch was audited: 13 of 390 probes fail, across 7 questions** —
+  `hand-reconciliation-01` (3 of 3), `reconciliation-007` (3 of 3), `-002` and `-014` (2 of 3),
+  `-001`, `-006` and `-010` (1 of 3). They are recorded in `AWAITING_REDRAW` in
+  `tests/test_experiments_h1.py` as a redraw that has not happened yet, never as a tolerated
+  exception, and `build.py` refuses to assemble a corpus while they are there — which is the
+  correct state, loudly. The set is an upper bound, so it clears itself as redraws land and
+  cannot hide a new failure appearing elsewhere.
+* **Two of the seven fail by *dropping* rather than inverting**, the quieter half of the same
+  finding. `reconciliation-002#p2` says `Do not group submissions.` and
+  `reconciliation-014#p1` says `Do not process multiple statements.` — the prohibition's shape
+  kept, its content swapped. `hand-reconciliation-01` loses `Do not submit anything.` in all
+  three candidates, which in this domain is the difference between an agent that writes to the
+  world and one that does not.
+* **H-069's `AWAITING_REDRAW` emptied exactly as H-070 predicted.** The audit reports **zero**
+  compound-ask failures across all 390 probes of the v2 batch, down from 25 across 17
+  questions. That is the rubric bump's receipt, and it is now a committed fact rather than an
+  expectation.
+* **A build refusal now names every failing id at once**, with the `--only` command that fixes
+  them. It stopped at the first id before, which would have made this seven-id audit cost six
+  surprised rebuilds to discover — the same "loudly, once" property the `unresolved` branch
+  already had.
+* **Pre-measurement, per risk register item 3.** No sweep has read the current corpus. The
+  checker is corrected against *failures*, never against a curve.
+* **Stated limit.** This catches a bare prohibition inverted or dropped. It does not catch a
+  prohibition whose *object* drifts while a negation survives, it does not look at prohibitive
+  adjuncts, and it says nothing about the drifts that neither a token rule nor a structural
+  rule can see. The spot-check remains the chain's second clause — and it has now found two
+  distinct systematic drifts the mechanical layer was blind to by construction, which is an
+  argument for keeping a human in the chain rather than for replacing them.

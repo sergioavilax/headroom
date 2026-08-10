@@ -134,7 +134,11 @@ pre-costed lever was taken: **`RUBRIC_VERSION` is now 2** (**H-070**), and the `
 that used to live here would now be refused, because a batch is never mixed across rubric
 versions. The regeneration below replaces it.
 
-#### The version-2 regeneration — **the command to run now**: all 130, ~$0.30
+#### The version-2 regeneration — run, landed, superseded (history, do not re-run)
+
+**It was run on 2026-08-10 and it landed: `$0.190212` in 147 calls (`0f1556d`), under the
+~$0.30 projection.** The batch completed 130/130 and the corpus was rebuilt (`7d75d41`). Kept
+below because the projection and the reasoning are the record of what was bought.
 
 Rule 4 of the rubric now asks for what the checker checks: a body that asks for a value and
 *separately* instructs a citation must stay two asks in the rewrite, with one faithful form
@@ -184,6 +188,62 @@ Then rebuild (step 1d) and spot-check (step 1c). **Every one of the 390 probes i
 the spot-check is a fresh read of all 20** — the seeded sample names the same probe ids as
 before (the seed does not move; a sample you can re-draw is not a sample), but nothing behind
 them is what you read last time.
+
+#### The prohibition redraw — **the command to run now**: 7 ids, ~$0.02
+
+Your spot-check failed `reconciliation-006#p1` for inverting a negation — the body says
+`Do not submit a batch.` and the paraphrase said *"submitting them individually rather than as
+a batch"*, which orders the submission the body forbids. The forced redraw came back with a
+**clean `#p1` and the identical inversion in `#p3`**, so re-reading the same sampled ids would
+have passed it. That became a mechanical check (**H-071**), and the audit of the accepted batch
+found **13 bad probes across 7 questions**:
+
+| id | probes | what happened |
+| --- | --- | --- |
+| `hand-reconciliation-01` | 3 of 3 | `Do not submit anything.` dropped entirely |
+| `reconciliation-007` | 3 of 3 | inverted, three different ways |
+| `reconciliation-002` | 2 of 3 | one inverted, one swapped for `Do not group submissions.` |
+| `reconciliation-014` | 2 of 3 | one inverted, one swapped for `Do not process multiple statements.` |
+| `reconciliation-001` | 1 of 3 | inverted |
+| `reconciliation-006` | 1 of 3 | inverted (the `#p3` above) |
+| `reconciliation-010` | 1 of 3 | inverted |
+
+`build.py` refuses to rebuild the corpus until these are clean, and it now prints **all seven
+ids at once** with the command below rather than stopping at the first. The rubric is *not*
+bumped — H-071 argues the checker alone should be tried first, and states the condition under
+which that judgement is overturned.
+
+```bash
+uv run python -m experiments.h1.generate --dry-run --only \
+hand-reconciliation-01,reconciliation-001,reconciliation-002,reconciliation-006,\
+reconciliation-007,reconciliation-010,reconciliation-014      # free, sends nothing
+
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate --only \
+hand-reconciliation-01,reconciliation-001,reconciliation-002,reconciliation-006,\
+reconciliation-007,reconciliation-010,reconciliation-014      # ~$0.02, hard stop at $1.00
+```
+
+The dry run prints `7 to generate · redo (--only)` and **`worst case $0.020541`** against the
+unchanged `$1.00` stop, plus the `will be REDRAWN` line naming all seven. That worst case is
+one round each priced pessimistically (three bytes per token, a full `max_tokens` of output);
+a question needing all three rounds costs up to three times its share, so the true ceiling for
+this command is **~$0.062**. Confirm it with `--dry-run` before you drop the flag — the
+projection is produced by the same `select()` the run uses, so the two cannot disagree.
+
+**What to expect, so you can hold H-071 to account.** The per-candidate failure rate across all
+15 prohibiting bodies is 13/45 ≈ **29%**, and all three candidates must pass in one round — so
+a clean round is ≈36% and three rounds resolve a question ≈74% of the time. Measured only on
+these seven it is 62%, but they were picked *because* they failed, so that is the pessimistic
+bound. **Expect one to three of the seven to need a second `--only` round or to land
+`unresolved`**; `hand-reconciliation-01` and `reconciliation-007` failed 3 of 3 and are the
+likeliest to stick. If the same ids are still `unresolved` after a **second** round, that is
+H-069's thrash condition and the next lever is `RUBRIC_VERSION = 3` — a costed decision for
+you, described in H-071, and one that on the recoverable spend figures still fits inside §0.6's
+`$1` line.
+
+Then rebuild (step 1d) and spot-check (step 1c). **Only 2 of your 20 sampled probes change** —
+`reconciliation-006#p1` and `reconciliation-010#p1` — so this is a re-read of two, not of
+twenty. The other eighteen are untouched text you have already approved.
 
 ### 1c. The spot-check — **your gate, not the harness's**
 
