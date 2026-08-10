@@ -1,0 +1,8 @@
+$ probe after restart:
+HTTP 200
+$ GET /admin/providers/vllm_a:
+{
+  "state": "closed",
+  "samples": 1,
+  "failures": 0
+}
