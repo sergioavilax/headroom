@@ -2,8 +2,8 @@
  "schema": "h1_paraphrases/1",
  "provenance": {
   "produced_by": "experiments/h1/generate.py",
-  "generated_at": "2026-08-10T22:45:29+00:00",
-  "headroom_commit": "0f1556de19e22753cb5929ad6d031eae2f6f72f7",
+  "generated_at": "2026-08-10T22:47:13+00:00",
+  "headroom_commit": "7d75d412492160075443e140d334a2c94c0f7227",
   "inputs": {
    "suite_hash": "6eef41c6706f309a",
    "world_seed": 20260805,
@@ -20,11 +20,11 @@
   "per_question": 3
  },
  "spend": {
-  "usd": "0.002596000000",
+  "usd": "0.001797000000",
   "cap_usd": "1.00",
-  "calls": 2,
-  "input_tokens": 1416,
-  "output_tokens": 236,
+  "calls": 1,
+  "input_tokens": 737,
+  "output_tokens": 212,
   "usd_per_mtok_in": "1.00",
   "usd_per_mtok_out": "5.00",
   "price_effective_from": "2026-08-08"
@@ -753,9 +753,9 @@
   "reconciliation-006": {
    "body": "Scan every statement for period 2025-12 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.",
    "paraphrases": [
-    "Examine all statements covering period 2025-12 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings, submitting them individually rather than as a batch.",
-    "Review each statement for the period 2025-12 to identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings without submitting them as a batch.",
-    "Across all statements for 2025-12, locate reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings; do not batch-submit."
+    "Review all statements for 2025-12 and identify reporting anomalies — including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — reporting only genuine, out-of-tolerance findings, not a batch submission.",
+    "Examine each statement covering period 2025-12 for reporting anomalies: duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings; do not submit a batch.",
+    "Across all statements for period 2025-12, scan for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report genuine, out-of-tolerance findings only, submitting them individually rather than as a batch."
    ],
    "attempts": 1
   },

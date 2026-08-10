@@ -3,8 +3,8 @@
  "stage": "complete",
  "provenance": {
   "produced_by": "experiments/h1/build.py",
-  "generated_at": "2026-08-10T22:45:45+00:00",
-  "headroom_commit": "0f1556de19e22753cb5929ad6d031eae2f6f72f7",
+  "generated_at": "2026-08-10T22:47:13+00:00",
+  "headroom_commit": "7d75d412492160075443e140d334a2c94c0f7227",
   "inputs": {
    "suite_hash": "6eef41c6706f309a",
    "backline_commit": "9053bec4f98cc8d8bc1b1e0790fe44ec7d79a113",
@@ -3738,24 +3738,24 @@
    "source": "reconciliation-006",
    "category": "reconciliation",
    "answer_kind": "flags",
-   "body": "Examine all statements covering period 2025-12 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings, submitting them individually rather than as a batch.",
-   "prompt": "Examine all statements covering period 2025-12 for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings, submitting them individually rather than as a batch.\n\nReport each out-of-tolerance anomaly as its own line exactly `FLAG: <kind> <label|staged>:<line_id>` (e.g. `FLAG: duplicate_line label:12345678`). Never flag a measurement that is within tolerance — describe it in prose instead. If nothing is out of tolerance, output no FLAG lines and say so."
+   "body": "Review all statements for 2025-12 and identify reporting anomalies — including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — reporting only genuine, out-of-tolerance findings, not a batch submission.",
+   "prompt": "Review all statements for 2025-12 and identify reporting anomalies — including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — reporting only genuine, out-of-tolerance findings, not a batch submission.\n\nReport each out-of-tolerance anomaly as its own line exactly `FLAG: <kind> <label|staged>:<line_id>` (e.g. `FLAG: duplicate_line label:12345678`). Never flag a measurement that is within tolerance — describe it in prose instead. If nothing is out of tolerance, output no FLAG lines and say so."
   },
   {
    "id": "reconciliation-006#p2",
    "source": "reconciliation-006",
    "category": "reconciliation",
    "answer_kind": "flags",
-   "body": "Review each statement for the period 2025-12 to identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings without submitting them as a batch.",
-   "prompt": "Review each statement for the period 2025-12 to identify reporting anomalies including duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence; report only genuine, out-of-tolerance findings without submitting them as a batch.\n\nReport each out-of-tolerance anomaly as its own line exactly `FLAG: <kind> <label|staged>:<line_id>` (e.g. `FLAG: duplicate_line label:12345678`). Never flag a measurement that is within tolerance — describe it in prose instead. If nothing is out of tolerance, output no FLAG lines and say so."
+   "body": "Examine each statement covering period 2025-12 for reporting anomalies: duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings; do not submit a batch.",
+   "prompt": "Examine each statement covering period 2025-12 for reporting anomalies: duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence. Report only genuine, out-of-tolerance findings; do not submit a batch.\n\nReport each out-of-tolerance anomaly as its own line exactly `FLAG: <kind> <label|staged>:<line_id>` (e.g. `FLAG: duplicate_line label:12345678`). Never flag a measurement that is within tolerance — describe it in prose instead. If nothing is out of tolerance, output no FLAG lines and say so."
   },
   {
    "id": "reconciliation-006#p3",
    "source": "reconciliation-006",
    "category": "reconciliation",
    "answer_kind": "flags",
-   "body": "Across all statements for 2025-12, locate reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings; do not batch-submit.",
-   "prompt": "Across all statements for 2025-12, locate reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report only genuine, out-of-tolerance findings; do not batch-submit.\n\nReport each out-of-tolerance anomaly as its own line exactly `FLAG: <kind> <label|staged>:<line_id>` (e.g. `FLAG: duplicate_line label:12345678`). Never flag a measurement that is within tolerance — describe it in prose instead. If nothing is out of tolerance, output no FLAG lines and say so."
+   "body": "Across all statements for period 2025-12, scan for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report genuine, out-of-tolerance findings only, submitting them individually rather than as a batch.",
+   "prompt": "Across all statements for period 2025-12, scan for reporting anomalies — duplicates, unknown ISRCs, currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard divergence — and report genuine, out-of-tolerance findings only, submitting them individually rather than as a batch.\n\nReport each out-of-tolerance anomaly as its own line exactly `FLAG: <kind> <label|staged>:<line_id>` (e.g. `FLAG: duplicate_line label:12345678`). Never flag a measurement that is within tolerance — describe it in prose instead. If nothing is out of tolerance, output no FLAG lines and say so."
   },
   {
    "id": "reconciliation-007#p1",
@@ -4634,5 +4634,5 @@
   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111111111",
   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111111111"
  ],
- "corpus_hash": "f4dd3b1ed3c97b42a3c4b295e2984a2321e7c6bc9e6f3cca4c2bd942270780dc"
+ "corpus_hash": "d9ad2e36e78c09b35e0bb62b457a04dd41d68799d7c161ebeaa48b3af1f00d41"
 }
