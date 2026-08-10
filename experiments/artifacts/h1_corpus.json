@@ -3,8 +3,8 @@
  "stage": "complete",
  "provenance": {
   "produced_by": "experiments/h1/build.py",
-  "generated_at": "2026-08-10T21:37:31+00:00",
-  "headroom_commit": "f5de1d777e836ded3223f4669cd4c2a638d1ee90",
+  "generated_at": "2026-08-10T21:41:16+00:00",
+  "headroom_commit": "d57aa3377cb75d44197e179b697ef369bc914e75",
   "inputs": {
    "suite_hash": "6eef41c6706f309a",
    "backline_commit": "9053bec4f98cc8d8bc1b1e0790fe44ec7d79a113",
@@ -1818,24 +1818,24 @@
    "source": "contract_terms-004",
    "category": "contract_terms",
    "answer_kind": "percent",
-   "body": "Which royalty rate governs Paloma & The Effigy's digital streaming revenue as of 2026-06-30, and what clause establishes it?",
-   "prompt": "Which royalty rate governs Paloma & The Effigy's digital streaming revenue as of 2026-06-30, and what clause establishes it?\n\nEnd your reply with a line exactly `ANSWER: <rate>%`."
+   "body": "What royalty rate, effective 2026-06-30, governs Paloma & The Effigy's digital streaming revenue, and which clause establishes it?",
+   "prompt": "What royalty rate, effective 2026-06-30, governs Paloma & The Effigy's digital streaming revenue, and which clause establishes it?\n\nEnd your reply with a line exactly `ANSWER: <rate>%`."
   },
   {
    "id": "contract_terms-004#p2",
    "source": "contract_terms-004",
    "category": "contract_terms",
    "answer_kind": "percent",
-   "body": "Identify the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.",
-   "prompt": "Identify the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.\n\nEnd your reply with a line exactly `ANSWER: <rate>%`."
+   "body": "Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.",
+   "prompt": "Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate as of 2026-06-30.\n\nEnd your reply with a line exactly `ANSWER: <rate>%`."
   },
   {
    "id": "contract_terms-004#p3",
    "source": "contract_terms-004",
    "category": "contract_terms",
    "answer_kind": "percent",
-   "body": "What clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?",
-   "prompt": "What clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?\n\nEnd your reply with a line exactly `ANSWER: <rate>%`."
+   "body": "Which governing clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?",
+   "prompt": "Which governing clause specifies the royalty rate applicable to Paloma & The Effigy's digital streaming revenue on 2026-06-30?\n\nEnd your reply with a line exactly `ANSWER: <rate>%`."
   },
   {
    "id": "contract_terms-005#p1",
@@ -4634,5 +4634,5 @@
   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111111111",
   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111111111"
  ],
- "corpus_hash": "bf6be1a46f30d2ddb20212b27aea6b07a0b65715f1ebc01db2679adf368b67f3"
+ "corpus_hash": "35c90705351236ad218b2e071c8ec4002d7a0206aed6c5bcf3d8f8f2d94db3f2"
 }
