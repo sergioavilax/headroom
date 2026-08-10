@@ -4153,3 +4153,570 @@ no Postgres, no DynamoDB, and no `embed` extra anywhere in the job. Phase 6 adde
 provider to the shipped routing config and a startup dialect check on top of it, and the
 gateway still boots with nothing reachable — which is what Phase 9's container needs before
 its secrets arrive.
+
+---
+
+## Phase 7 — The dashboard (2026-08-09)
+
+Branch `claude/p7-dashboard`, GitHub #9. BUILD_PLAN §P7's words are the spec: *"Next.js,
+the operator's design language — true black `#000000`, cool zinc surfaces, mono for
+numbers … Surfaces: **Overview** … **Requests** … **Tenants & Keys** … **Limits** …"*
+
+**Shipped**
+
+- **The console** (`ui/`) — Next.js 16 App Router, TypeScript, dark only, true black on
+  cool zinc with mono numerals. Seven views, and every admin surface built in P2–P6 has
+  one: **Overview**, **Live traffic**, **Requests**, **Tenants & keys**, **Limits &
+  budgets**, **Cache**, **Providers**.
+- **It is a client of `/admin/*` and nothing else** (**H-054**). No `DATABASE_URL`, no
+  DynamoDB endpoint, no client for either; the `ui` service's whole compose environment is
+  one URL. A view that needed a number the API did not publish caused the API to publish
+  it — three times, all reads of columns that already existed — rather than causing a
+  query. `usage_ledger` has thirty-nine columns and five `cost_status` values whose
+  distinctions are the point of Phase 3, and a second reader would re-decide all of them
+  silently.
+- **The admin API additions, tested on both store implementations:**
+  - **`GET /admin/usage/series`** — the ledger in `minute`/`hour`/`day` buckets, oldest
+    first, for the charts. `date_trunc` is applied *in UTC* on both sides (`started_at AT
+    TIME ZONE 'UTC'`, then back) so the grain does not depend on a Postgres session
+    setting nothing in this repo controls. `limit` keeps the **newest** buckets — a chart
+    that dropped its newest point would be worse than one missing its oldest — and empty
+    buckets are absent rather than zero, because gap-filling belongs to whoever knows the
+    x-domain being drawn.
+  - **Eight counters on `/admin/usage/totals`** — the five cache dispositions, the avoided
+    cost, **the hits it could not price**, and the failover count. On the existing
+    aggregate rather than in a new endpoint: the Overview asks one question and four round
+    trips would let the four answers disagree under live traffic.
+  - **Three cache fields on a ledger row** — `cache_avoided_usd`, `cache_similarity`,
+    `cache_source_request_id`. The last turns "this was a semantic hit" into "…and here is
+    the request whose answer you were served", which is the only way a human audits a
+    similarity score after the fact — the same provenance §P8.H1 measures silent wrong
+    answers with.
+- **`cache_avoided_unknown`, and why it exists.** Skipping a NULL and adding it as zero
+  produce the *identical* sum, always — zero is the additive identity — so the savings sum
+  alone can never say a saving was left out. Only a count can. Without it the console's
+  "avoided" tile is a confident understatement the moment one unpriced model enters a
+  tenant's traffic. This is H-025's rule (*a total says how much of the picture it is
+  missing*) applied to Phase 5's column, and it exists because a sabotage run **failed to
+  fire** and the reason turned out to be that the property as first written was not one.
+- **The admin token is typed in, never deployed** (**H-055**). The operator enters the root
+  token in a sign-in screen; the console's server probes it against `GET /admin/tenants`,
+  distinguishes 200 / 401 / 503-because-the-gateway's-own-token-is-unset, and exchanges it
+  for an `httpOnly`, `SameSite=Strict` session cookie. `lib/session.ts` and `lib/admin.ts`
+  import `server-only`, so touching them from client code is a **build error** — invariant
+  3 enforced by the compiler rather than by a reviewer. The `ui` service therefore holds no
+  secret at all, not even by reference: nothing to rotate, nothing to leak from a `docker
+  inspect`, nothing to scrub from a bundle.
+- **It polls; it does not stream** (**H-056**). 2 s on the live view and provider health,
+  5 s on the overview and the meters, 15 s on the control-plane tables. A hidden tab does
+  not poll at all. Refetch never flashes a skeleton — including across a filter change.
+  And `fetchedAt` is the clock: every window a view draws ends when the data was *read*,
+  never at `Date.now()` during render, which keeps rendering pure and stops a chart drawing
+  a four-second gap that looks like an outage.
+- **The charts are hand-rolled inline SVG** (**H-057**) — five forms in one file, to the
+  mark spec: bars capped at 24 px with a 4 px rounded *data* end and a square baseline, a
+  2 px surface **gap** between touching fills rather than a stroke, solid hairline
+  gridlines one step off the surface, no number on every point, text in ink tokens rather
+  than the series colour. The palette is **computed, not chosen**: five validated dark
+  categorical steps checked against this console's own surface (`#131417`) — worst-pair
+  CVD ΔE 8.4, worst-pair normal-vision ΔE 19.3, all ≥ 3:1 — and a colour follows the
+  **entity**, so a provider going silent mid-kill never repaints the one that took over.
+- **The channel strip**, the one flourish §P7 licenses, and the metaphor is load-bearing:
+  settled spend and live reservations stack from the bottom like signal, the hairline
+  across the top is the cap, and the gap between them is headroom. That is BUILD_PLAN §0.2
+  rule 5 drawn — the gate compares **committed** spend, landed *plus* reserved, and a
+  dashboard rendering only the landed bar would be D-019 with a nicer font.
+- **`make seed`** (`scripts/seed_demo.py`) — four tenants with genuinely different
+  profiles and ~74 requests, so every view has something real to show. **It writes no
+  SQL**: it configures through `/admin/*` and generates traffic through `/v1/*` against the
+  MockProvider, so every figure on screen is a figure the gateway really computed. Costs
+  $0.00. Re-runnable: it resets each tenant's cache, buckets, and budget first, through the
+  incident-response routes the admin API already ships, so the second run looks like the
+  first.
+- **The `ui` service joins `docker-compose.yml`** — the service §0.5 has said "later the
+  ui" about since Phase 0 — on port **3001** (Backline holds 3000; H-006's argument one
+  service along), gated on the gateway being healthy, with a liveness-only healthcheck of
+  its own that deliberately does *not* probe its upstream.
+- **Tests: 1092 keyless Python** (1056 → 1092) plus **28 console unit tests and 7 browser
+  tests**. The console's unit tests run on **`node --test` with native TypeScript
+  stripping** — zero test dependencies, no transform, no config — and the browser smoke
+  runs against a Node stub of `/admin/*` and against the **standalone server the image
+  actually ships**, not `next start` (**H-058**).
+- **CI gains two jobs and a second image smoke**, all keyless: `ui` (eslint, `tsc
+  --noEmit`, unit tests, `next build`) and `ui-e2e` (Chromium against the stub). `next
+  build` reaches no gateway, no database, and no network, which is what lets those jobs
+  need no services and no secrets.
+- **Docs**: H-054 … H-058 in `docs/DECISIONS.md`; `docs/evidence/p7-dashboard/` with the
+  capture list for the watched kill demo; `ui/README.md`; a *The console* section in the
+  README; `.env.example` documents `UI_PORT` and `HEADROOM_GATEWAY_URL` **and states that
+  there is deliberately no admin-token variable for the console**.
+
+**Deferred**
+
+- **The watched kill demo itself** — the hero GIF. Everything it needs is in place and
+  verified: the console ships in compose, `make seed` fills it, the P6 chain is untouched.
+  The `docker kill` is the operator's, because it takes down a container that spends
+  minutes reloading a 27B checkpoint. The commands, in order, with what correct output
+  looks like at each step, are in *The watched kill demo* below;
+  `docs/evidence/p7-dashboard/` is waiting with a capture list.
+- **Screenshots of the seven views against the seeded stack.** The console was verified
+  rendering by the Playwright harness against the stub (which carries a failover, a
+  semantic hit, a budget at 83%, and an open breaker), and its figures were cross-checked
+  against `psql` on the seeded stack below. What has not happened is a human looking at the
+  seeded stack in a browser — the session that built this deliberately did not sign in as
+  the operator, and the screenshots belong with the demo.
+- **A live/streaming transport**, deliberately never (H-056), not deferred.
+- **Visual-regression snapshots.** Genuinely useful for a design this specific, and a
+  stream of false failures from font rendering across machines. The operator's screenshots
+  are the visual record instead.
+- **Concurrency limits, per-key budgets, prompt-cache tier pricing, latency-based
+  breaker tripping** — still deferred from Phases 4, 4b, 3, and 6; untouched here.
+
+**Deviations**
+
+1. **Two new top-level directories: `ui/` and `scripts/`.** `ui/` is in §0.5's repo map and
+   is simply arriving; **`scripts/` is not**, and is an amendment. `make seed` had to live
+   somewhere, and the honest shape for a thing that drives the *public HTTP API* is a
+   client script rather than a module inside the gateway package — putting it in
+   `headroom/` would have implied it was part of the service. §0.5's map is amended in this
+   PR to list both.
+2. **`migrations/` is untouched.** Every figure this phase publishes is a read of a column
+   that already existed. That is worth stating because the four previous phases each added
+   columns and each had to explain why (H-024's closing remark, argued with four times);
+   this one had nothing to add.
+3. **The `LedgerStore` interface gained an abstract method** (`series`). Additive to the
+   interface, and therefore a required change in three places — both implementations and
+   the `BrokenStore` double in `tests/test_ledger_writer.py` — which is H-021's intended
+   friction working as designed.
+4. **`TotalsView` and `LedgerRowView` grew fields.** Additive to a response model: existing
+   clients see everything they saw before. No existing test changed.
+5. **The plan's "SSE-fed live tiles where it's cheap" is not built** (H-056). The console
+   polls. Argued in full in the entry rather than skipped: what a push channel would buy
+   here is under two seconds on a figure a human is watching, and what it would cost is a
+   second transport, a fan-out story for Phase 9's several tasks, and a reconnect path only
+   exercised when something is already wrong.
+6. **The `frontend-design` skill `CLAUDE.md` mandates is not present in this session's
+   skill set.** Stated rather than quietly skipped. What was used instead: the operator's
+   design language as BUILD_PLAN §P7 and `CLAUDE.md` state it (true black, cool zinc, mono
+   numerals, restrained accent, no gradients-for-decoration), and the `dataviz` skill for
+   the chart layer — which is where its palette validator, mark specs, and anti-pattern
+   catalogue come from. The palette was **run through the validator** rather than eyeballed;
+   the numbers are in H-057.
+7. **Node 24 and npm are new build-time dependencies** — for the console only. Neither the
+   gateway image nor `make test` acquires them: `make ui-check` and `make ui-e2e` run in
+   containers built from `ui/`, so a contributor with no host Node can still run every
+   check in this repo.
+8. **Additions the plan's Phase 7 text does not enumerate**, all additive: the **Live
+   traffic** view (the brief's addition, and what makes the kill demo legible on screen);
+   the **Cache** and **Providers** views (the brief's, reading the P5 and P6 admin
+   surfaces); `make seed`, `make ui-check`, `make ui-e2e`; and `cache_avoided_unknown`,
+   which a sabotage run demanded.
+
+---
+
+**Gate** — *dashboard renders a seeded compose environment truthfully (numbers
+cross-checked against psql); Playwright smoke; the P6 kill demo re-run once watching the
+dashboard.* Plus the session brief's additions: reads through the real admin API only,
+admin-token handling decided and logged, the ui in compose, keyless CI, and a seed target.
+
+### THE CROSS-CHECK — "truthfully", checked rather than asserted
+
+`make up && make seed`, then the figures the Overview renders beside the same aggregates
+computed by the database. The console's numbers come from `GET /admin/usage/totals`; the
+comparison numbers come from `psql`, which has never heard of the API.
+
+```
+$ curl -sS localhost:8080/admin/usage/totals -H "Authorization: Bearer $HEADROOM_ADMIN_TOKEN"
+tenant      reqs          usd_cost  hit_e  hit_s           avoided  f/o  err
+90495565      25    0.000276000000      0      0                 0    2    1
+acd3dea2      27    0.000184000000      9      0    0.000103500000    0    2
+976a8303      13    0.000092000000      0      0                 0    4    5
+cb9b4be4       9    0.000034500000      0      0                 0    0    6
+
+$ docker compose exec -T db psql -U headroom -d headroom -f - < crosscheck.sql
+      name      | requests |    usd_cost    | hits_exact | hits_semantic |    avoided     | failed_over | errored
+----------------+----------+----------------+------------+---------------+----------------+-------------+---------
+ backline       |       25 | 0.000276000000 |          0 |             0 |              0 |           2 |       0
+ atlas-research |       27 | 0.000184000000 |          9 |             0 | 0.000103500000 |           0 |       2
+ probe          |       13 | 0.000092000000 |          0 |             0 |              0 |           4 |       5
+ nightshift     |        9 | 0.000034500000 |          0 |             0 |              0 |           0 |       6
+(4 rows)
+```
+
+Every column agrees, to the last picodollar. The series endpoint agrees with `date_trunc`
+too — same buckets, same counts, same sums:
+
+```
+$ curl -sS "localhost:8080/admin/usage/series?bucket=minute&limit=10" …
+2026-08-10T04:36:00Z    74 requests    0.000517500000    7 hits    5 f/o
+series total: 74 requests
+
+$ psql -c "SELECT date_trunc('minute', started_at AT TIME ZONE 'UTC'), count(*), sum(usd_cost) …"
+       bucket        | count |      sum
+---------------------+-------+----------------
+ 2026-08-10 04:36:00 |    74 | 0.000517500000
+(1 row)
+```
+
+And the seed leaves an outcome mix worth looking at — which is the other half of
+"truthfully", because a dashboard that only ever renders `ok` has not been tested:
+
+```
+$ psql -c "SELECT outcome, count(*) FROM usage_ledger GROUP BY 1 ORDER BY 2 DESC"
+       outcome       | count
+---------------------+-------
+ ok                  |    60
+ rate_limited        |     6      <- nightshift, 3/min, hammering
+ upstream_error      |     3
+ budget_exceeded     |     2      <- atlas-research, at its cap
+ upstream_stream_cut |     2
+ upstream_timeout    |     1
+(6 rows)
+```
+
+### THE BROWSER SMOKE
+
+Seven tests, Chromium, against a Node stub of `/admin/*` and the standalone server the
+image ships. No compose stack, no Postgres, no DynamoDB, no provider, no key.
+
+```
+$ make ui-e2e
+docker build --target e2e -t headroom-ui-e2e ./ui
+docker run --rm headroom-ui-e2e npm run e2e
+
+Running 7 tests using 7 workers
+  ✓ an unauthenticated visitor is asked for the token and shown nothing else
+  ✓ a wrong token is refused and does not sign anybody in
+  ✓ the session cookie is httpOnly, so the page cannot read the token back
+  ✓ the overview renders the numbers the admin API reported
+  ✓ the live view names the upstream that served each request, and the hop
+  ✓ a request's detail shows what it cost, what the budget held, and what failed over
+  ✓ signing out clears the session
+  7 passed (1.6s)
+```
+
+The first one is the one that matters. A console whose views rendered before a session
+existed would be an unauthenticated tenant-and-key CRUD on any deployment that published
+its port — H-019's failure mode, one layer up.
+
+### THE SABOTAGE RUNS — five, and two of them found real gaps
+
+Green on the first attempt is when a suite deserves the most suspicion. Each claim was
+tested by breaking the thing it protects. **Two sabotages did not fire, and both were
+tests that could not have caught their bug** — the fixes are in *Shipped* above.
+
+*Sabotage A — the series keeps the OLDEST buckets when it has to choose.* A chart that
+silently drops its newest point, which is the wrong end to lose:
+
+```
+2 failed, 64 passed
+FAILED tests/test_ledger_store.py::test_a_series_keeps_the_newest_buckets_when_it_has_to_choose[memory]
+FAILED tests/test_ledger_store.py::test_a_series_keeps_the_newest_buckets_when_it_has_to_choose[postgres]
+```
+
+*Sabotage B — an unknown avoided cost is summed as zero rather than skipped.* **It did not
+fire: 95 passed.** And it cannot, ever — zero is the additive identity, so the two
+behaviours produce the identical sum by arithmetic. The test as first written asserted a
+property that was not one. The fix is `cache_avoided_unknown`: a *count* beside the sum,
+because a count is the only thing that can say a saving was left out. Re-run against the
+counter (**B2 — the total stops reporting the savings it could not add up**):
+
+```
+2 failed, 64 passed
+FAILED tests/test_ledger_store.py::test_a_total_counts_the_savings_it_could_not_add_up[memory]
+FAILED tests/test_ledger_store.py::test_a_total_counts_the_savings_it_could_not_add_up[postgres]
+```
+
+*Sabotage C — the console parses money with `parseFloat` instead of picodollars.* D-017 in
+the last mile, and **it did not fire either: 27 passed.** The reason is worth keeping:
+`Math.round(parseFloat(x) * 1e12)` lands on the right integer for every value under about
+$9,007 — 2^53 picodollars — so a suite full of $0.0000115 assertions cannot see it. Above
+that the double has fewer bits than the number needs. One assertion at budget scale closes
+it, and re-running the same sabotage:
+
+```
+28 tests, 1 fail
+✖ a budget-sized amount stays exact past the point a double stops being one
+```
+
+*Sabotage D — the admin proxy forwards any `/admin` path*, turning the console from a
+client of seven surfaces into a general-purpose authenticated relay:
+
+```
+28 tests, 1 fail
+✖ a prefix nobody allow-listed is refused
+```
+
+*Sabotage E — a series colour follows its rank instead of its entity.* Recolour-on-filter:
+the reader who learned "vllm_a is blue" is now misled, at the exact moment they are
+watching a provider die:
+
+```
+28 tests, 1 fail
+✖ a sixth series does not invent a hue
+```
+
+All five were applied by script and restored **from file copies, not from `git`** — the
+first attempt used `git checkout --`, which reverted an hour of uncommitted work in `ui/`
+along with the sabotage, because `ui/` was not tracked yet. Recorded because it is a
+mistake worth not repeating. Every file was diffed against its pre-sabotage copy
+afterwards:
+
+```
+=== every file identical to its pre-sabotage copy? ===
+  identical  headroom/db/memory.py
+  identical  headroom/db/ledger.py
+  identical  ui/lib/format.ts
+  identical  ui/lib/proxy.ts
+  identical  ui/lib/series.ts
+```
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+142 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 141 source files
+
+$ make test
+================ 1092 passed, 2 deselected, 1 warning in 18.05s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1094 tests collected (1092 deselected) in 0.17s
+```
+
+**1056 → 1092.** The 36 are `tests/test_ledger_store.py` (42 → 66: the series contract and
+the new counters, over both implementations) and `tests/test_admin_usage.py` (17 → 29: the
+series route, the cache fields on a row, the disposition counters). `test_ledger_writer.py`
+is unchanged in count; its `BrokenStore` grew the new abstract method.
+
+The console's own checks, in a container so no host Node is needed:
+
+```
+$ make ui-check
+docker build --target check -t headroom-ui-check ./ui
+docker run --rm headroom-ui-check npm run check
+
+> headroom-ui@0.1.0 lint
+> eslint .
+
+> headroom-ui@0.1.0 typecheck
+> tsc --noEmit
+
+> headroom-ui@0.1.0 test
+> node --test "tests/unit/*.test.ts"
+ℹ tests 28
+ℹ pass 28
+ℹ fail 0
+ℹ duration_ms 109.671566
+```
+
+**H-012 still holds with the new tests.** A fresh clone with no stack up runs a smaller
+suite *loudly*, and a stated-but-unreachable endpoint fails rather than skips:
+
+```
+$ docker compose stop db dynamodb
+$ uv run pytest -q                          # endpoints unset — inferred
+949 passed, 143 skipped, 2 deselected, 1 warning in 3.27s
+
+$ DATABASE_URL=postgresql://…:5433/headroom uv run pytest -q tests/test_ledger_store.py
+31 passed, 35 errors in 0.88s
+```
+
+### End to end through the real containers
+
+```
+$ make up
+ Container headroom-db-1 Healthy
+ Container headroom-dynamodb-1 Healthy
+ Container headroom-gateway-1 Healthy
+ Container headroom-ui-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+migrations: up to date, nothing to apply
+
+NAME                  IMAGE              SERVICE    STATUS                  PORTS
+headroom-gateway-1    headroom-gateway   gateway    Up 11 seconds (healthy) 0.0.0.0:8080->8000/tcp
+headroom-ui-1         headroom-ui        ui         Up 5 seconds (healthy)  0.0.0.0:3001->3000/tcp
+
+### the console is alive, and its health is its own
+$ curl -sS localhost:3001/api/healthz
+{"status":"ok"}
+
+### and it will not proxy anything without a session
+$ curl -sS localhost:3001/api/admin/usage/totals
+{"error":{"type":"no_session","message":"sign in with the root admin token"},
+ "headroom":{"reason":"no_session","source":"console"}}
+
+$ make seed
+seeding http://localhost:8080 — 4 tenants, ~74 requests
+
+  backline         the sibling project's agents — tool-heavy, so nothing caches
+  atlas-research   a read-heavy analytics workload — repeats itself, so the cache pays
+  nightshift       a batch job that does not know when to stop — rate limited
+  probe            synthetic monitoring — small, uncapped, and unlucky
+
+74 requests in 0.5s
+```
+
+Two things in that output are the phase in miniature. The console's healthcheck answers
+without touching the gateway — compose already waits for the gateway to be healthy, and a
+console that reported its upstream's health as its own would take a working container down
+during a restart. And an unauthenticated call to its admin proxy is refused *by the
+console*, before any credential exists to attach: the session is the gate, and it is
+checked in the root server layout so a route added by a later phase is behind it by
+construction.
+
+### The watched kill demo — the operator's, with the exact commands
+
+This is the third clause of the gate and the one that needs two 4090s. It is the P6 demo
+(PHASE_LOG → Phase 6 → *The live demo*) with the console on screen; the capture list is
+`docs/evidence/p7-dashboard/README.md`.
+
+**Pre-flight (A6), unchanged from P6.** Both instances answering, one per card:
+
+```bash
+nvidia-smi --query-gpu=index,uuid,name,memory.used --format=csv
+for p in 8010 8011; do curl -sS "http://localhost:$p/v1/models" | head -c 80; echo; done
+```
+
+**Setup — the gateway on the host, the console pointed at it.** The gateway must run on
+the host so `localhost:8010/8011` mean the two instances; the console then needs the
+host's address rather than the compose service name:
+
+```bash
+cd ~/code/headroom
+make up                                    # postgres + dynamodb + migrations
+export HEADROOM_ADMIN_TOKEN=…              # leading space, per invariant 3
+uv run uvicorn headroom.api.main:app --port 8090 > /tmp/gateway.log 2>&1 &
+
+# point the console at the host gateway and restart just that service
+HEADROOM_GATEWAY_URL=http://host.docker.internal:8090 docker compose up -d ui
+
+# a tenant, a key, and enough traffic that the views are not empty
+HEADROOM_GATEWAY_URL=http://localhost:8090 make seed
+```
+
+Open **http://localhost:3001**, sign in with `$HEADROOM_ADMIN_TOKEN`, and go to **Live
+traffic**.
+
+**(a) Steady state — the shot before the kill.** Drive the two GPUs with a slow loop, in a
+second terminal:
+
+```bash
+GW=http://localhost:8090
+KEY=…                                       # the seed prints one, or mint one
+MODEL=cyankiwi/Qwen3.6-27B-AWQ-INT4
+while true; do
+  curl -sS -o /dev/null -X POST $GW/v1/chat/completions \
+    -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+    -d "{\"model\":\"$MODEL\",\"max_tokens\":32,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+  sleep 2
+done
+```
+
+**Watch here:** the *Requests by upstream* chart fills with bars in one colour —
+`vllm_a`'s. Both provider tiles read `closed`. `Failed over` reads **0**.
+→ `01-preflight.png`
+
+**(b) Kill the primary.**
+
+```bash
+date -u +%FT%TZ | tee -a /tmp/kill.txt      # bracket the screenshots
+docker kill vllm-a                          # or: docker kill $(docker ps -q --filter publish=8010)
+```
+
+**Watch here — this is the hero shot.** Within one poll (2 s) the stack changes colour:
+new bars arrive in `vllm_b`'s. `Failed over` starts climbing. **`Caller-visible 5xx` stays
+at 0** — that is the claim, on screen, while a GPU is dead. Rows in *Recent requests* gain
+a badge reading `← vllm_a · upstream_unavailable`.
+→ `03-shift.png`, and the GIF should span from here back through (a).
+
+**(c) The breaker trips.** After four or five failures, **Providers** shows `vllm_a` as
+`open` with `probes in 9.8s` counting down, its last error `upstream_unavailable`, and the
+chain `openai:* → vllm_a → vllm_b` beside it. From here the rows read
+`failover_error: breaker_open` rather than `upstream_unavailable` — the two stay
+distinguishable, which is why a breaker-skipped candidate still counts as a hop.
+→ `04-breaker-open.png`, `05-failover-rows.png`
+
+**(d) One request's whole story.** In **Requests**, click a failed-over row. The drawer
+shows what it cost *and the rates it was billed at*, what the budget held and what the hold
+settled at, what the cache did, and the hop — six phases on one screen.
+→ `06-request-detail.png`
+
+**(e) Bring it back.** Restart instance A exactly as `docs/vllm.md` documents it, wait out
+the cooldown (or `DELETE /admin/providers/vllm_a/health` from the **Providers** view's
+*Clear health* button), and watch the tile go `closed` and the stack return to `vllm_a`'s
+colour.
+→ `07-recovered.png`
+
+**(f) The cross-check.** With the demo still on screen, run the psql comparison above and
+capture it beside the Overview. → `08-psql-crosscheck.txt`
+
+**Capture everything before the next `make test`** — the Postgres contract suite truncates
+the control plane and `usage_ledger` references it, so the rows behind every screenshot go
+with them (H-029's caveat, unchanged).
+
+**Cost: $0.00.** Both models are the operator's own, on the operator's own cards.
+
+**Assumed-facts register (§0.4)** — nothing was due at this gate, and none of A1–A7 was
+touched. One adjacent fact was established in passing and is worth the register's
+discipline: **`next build` needs no gateway, no database, and no network**, which is what
+lets CI build and smoke the console image with no services and no secrets — the same
+property H-021's lazy pool gives the gateway, one language over.
+
+**Spend** — $0.00. Every request in this phase went to the MockProvider; the console talks
+to nothing but the gateway, and the browser smoke talks to nothing but a Node stub.
+
+### CI
+
+CI on PR-7 ([run 31356382482](https://github.com/sergioavilax/headroom/actions/runs/31356382482)),
+all **five** jobs green on the first run, no annotations:
+
+```
+$ gh run view 31356382482 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+ui lint + typecheck + unit tests + build: success
+ui browser smoke (chromium, stub gateway): success
+gateway and ui images build and serve: success
+
+lint + typecheck | All checks passed!
+lint + typecheck | 142 files already formatted
+lint + typecheck | Success: no issues found in 141 source files
+pytest (…service containers) | ===== 1092 passed, 2 deselected, 1 warning in 30.23s =====
+Migrations apply, twice is a no-op | migrations: up to date, nothing to apply
+ui lint + typecheck + unit tests + build | ℹ tests 28
+ui lint + typecheck + unit tests + build | ℹ pass 28
+ui lint + typecheck + unit tests + build | ℹ fail 0
+ui lint + typecheck + unit tests + build | ✓ Compiled successfully in 5.7s
+ui browser smoke (chromium, stub gateway) | ✓ Compiled successfully in 5.8s
+ui browser smoke (chromium, stub gateway) |   7 passed (4.4s)
+gateway and ui images build and serve | gateway healthy
+gateway and ui images build and serve | console healthy
+```
+
+**1092 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of all four contract suites executed against the service
+containers rather than skipping (H-012). The `series` contract and the new disposition
+counters therefore ran against **real SQL** as well as against the dict, which is the whole
+point of testing them there: a `count(*) FILTER` and a Python `sum(1 for …)` are two
+sentences about one rule.
+
+**Two of the five jobs are new and neither reads a secret.** `ui` runs eslint, `tsc
+--noEmit`, the 28 unit tests, and `next build`; `ui-e2e` runs the browser smoke against a
+Node stub. That `next build` succeeds at all in a job with **no gateway, no database, and
+no network** is the property that makes them cheap — a console that had quietly grown a
+build-time dependency on a running backend would fail here rather than on somebody else's
+machine.
+
+The `image` job now builds and smokes **both** runtime images. `console healthy` is the
+console answering `/api/healthz` with no gateway anywhere in the job — which is what makes
+it safe for compose to gate on, and the same liveness-only rule the gateway's own
+`/healthz` has followed since H-000.

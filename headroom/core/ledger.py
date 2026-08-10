@@ -31,7 +31,21 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
-__all__ = ["LedgerEntry", "LedgerQuery", "LedgerStore", "UsageTotals", "format_usd"]
+__all__ = [
+    "SERIES_BUCKETS",
+    "LedgerEntry",
+    "LedgerQuery",
+    "LedgerStore",
+    "UsageBucket",
+    "UsageTotals",
+    "format_usd",
+]
+
+#: The grains a time series may be asked for. Three, not an arbitrary interval: each
+#: one is a ``date_trunc`` unit Postgres already knows, so the SQL and the in-memory
+#: implementation truncate identically rather than agreeing by arithmetic coincidence.
+#: ``minute`` is the kill demo's grain, ``hour`` the working day's, ``day`` the month's.
+SERIES_BUCKETS = ("minute", "hour", "day")
 
 
 def format_usd(value: Decimal | None) -> str | None:
@@ -179,6 +193,13 @@ class UsageTotals:
     ``usd_cost`` sums only the rows that have one. ``unpriced_requests`` counts the
     rows it could not include, so the total is never quietly understated: a caller can
     always see how much of the picture is missing, which a bare sum would hide.
+
+    The counters below ``errored_requests`` are Phase 7's, and they are counters of
+    *rows* rather than of anything new: every one of them is a ``count(*) FILTER`` over
+    a column the ledger has carried since the phase that wrote it. They live here rather
+    than in a second endpoint because the dashboard's Overview asks one question — *what
+    has this tenant been doing* — and answering it with four round trips would make the
+    four answers disagree with each other under live traffic.
     """
 
     tenant_id: str
@@ -190,6 +211,55 @@ class UsageTotals:
     usd_cost: Decimal = field(default_factory=lambda: Decimal(0))
     unpriced_requests: int = 0
     errored_requests: int = 0
+
+    # --- what the cache did (Phase 5's columns, counted) -----------------------------
+    cache_hits_exact: int = 0
+    cache_hits_semantic: int = 0
+    cache_misses: int = 0
+    #: Eligible-but-refused (``cache_bypass``) and switched-off (``cache_disabled``) are
+    #: kept apart for the reason Phase 5's deviation 1 gives: they have completely
+    #: different fixes, and collapsing them hides the more common one.
+    cache_bypasses: int = 0
+    cache_disabled: int = 0
+    #: What the hits saved, summed from the entries' own recorded costs.
+    cache_avoided_usd: Decimal = field(default_factory=lambda: Decimal(0))
+    #: Hits whose avoided cost was never known — an unpriced model, a stream nobody could
+    #: meter — and which the sum above therefore does not include.
+    #:
+    #: This is ``unpriced_requests`` for the savings column, and it exists for the same
+    #: reason: **a total says how much of the picture it is missing.** Skipping a NULL and
+    #: adding it as zero produce the identical sum, so the sum alone cannot tell anyone
+    #: that a saving was left out; only a count can, and without one the console's
+    #: "avoided" figure would be a confident understatement (H-025's rule, H-045's column).
+    cache_avoided_unknown: int = 0
+
+    # --- what failover did (Phase 6's columns, counted) ------------------------------
+    #: Rows whose primary did not serve them. Zero is the overwhelmingly common answer,
+    #: which is exactly why a non-zero one belongs on the Overview.
+    failover_requests: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class UsageBucket:
+    """One time bucket of the ledger — a point on the dashboard's cost-over-time chart.
+
+    **A bucket with no requests is absent, not zero.** Gap-filling belongs to whoever
+    knows the x-domain being drawn: a chart of "the last 60 minutes" fills its own gaps
+    trivially, while a store that invented rows would have to be told which range to
+    invent them over, and would then be answering a question nobody asked when the range
+    was wrong.
+    """
+
+    bucket_start: datetime
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    usd_cost: Decimal = field(default_factory=lambda: Decimal(0))
+    cache_avoided_usd: Decimal = field(default_factory=lambda: Decimal(0))
+    cache_hits: int = 0
+    errored_requests: int = 0
+    unpriced_requests: int = 0
+    failover_requests: int = 0
 
 
 class LedgerStore(ABC):
@@ -218,6 +288,21 @@ class LedgerStore(ABC):
     @abstractmethod
     async def totals(self, query: LedgerQuery, *, by_model: bool = False) -> list[UsageTotals]:
         """Aggregate matching rows per tenant, or per tenant and model."""
+
+    @abstractmethod
+    async def series(self, query: LedgerQuery, *, bucket: str = "hour") -> list[UsageBucket]:
+        """Matching rows aggregated into time buckets, **oldest first**.
+
+        ``bucket`` is one of :data:`SERIES_BUCKETS` and truncates ``started_at`` in UTC —
+        the request's own arrival time, the same instant every other window in this
+        project is resolved against (H-023, H-033).
+
+        ``query.limit`` bounds the number of buckets and keeps the **most recent** ones,
+        because a chart that silently dropped the newest point would be worse than one
+        that dropped the oldest. ``query.offset`` is ignored: paging a time series is not
+        a thing anybody wants, and pretending to support it would invite a caller to page
+        a moving window.
+        """
 
     @abstractmethod
     async def get(self, request_id: str) -> LedgerEntry | None:

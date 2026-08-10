@@ -75,6 +75,7 @@ headroom/
   config/routing.yaml  # providers + model-prefix routes, per dialect (Phase 1; H-014)
   config/models.yaml   # model ids, dialects, context windows, DATED prices (D-017 pattern)
   ui/                  # Next.js dashboard — true black #000, cool zinc surfaces, the operator's design language (read the frontend-design skill before touching it)
+  scripts/             # operator tools that drive the *public* API — `make seed` (Phase 7; H-054)
   experiments/         # P8: paraphrase corpus (golden, hashed), runners, results/
   deploy/aws/          # P9 Terraform root module (Backline's file-per-concern layout)
   deploy/k8s/          # P10 Helm chart + EKS runbook

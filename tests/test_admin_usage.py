@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
+from headroom.api.usage import MAX_BUCKETS
 from headroom.providers.mock import MockScript
 from headroom.providers.mock_scripts import REASONING_MODEL, openai_reasoning_stream_chunks
 
-from .support.fixtures import anthropic_request, openai_request
+from .support.corpus import load_corpus
+from .support.fixtures import ANTHROPIC_TOOLS, anthropic_request, openai_request
 from .support.harness import GatewayHarness
 
 
@@ -222,3 +224,185 @@ async def test_the_response_is_json_a_dashboard_can_parse(gateway: GatewayHarnes
 
     assert response.headers["content-type"].startswith("application/json")
     assert isinstance(json.loads(response.content), list)
+
+
+# --- what the dashboard needed (Phase 7) --------------------------------------------------
+#
+# Three additions, and all three are reads of columns that already existed. The rule the
+# phase held itself to is in the module docstring above: the console is a client of
+# `/admin/*` and nothing else, so a view that needs a number either finds it here or the
+# number gets published here properly — never fetched from the database behind the API's
+# back (H-054).
+
+
+async def test_a_hits_row_carries_what_it_saved_and_where_it_came_from(
+    gateway: GatewayHarness,
+) -> None:
+    """The three Phase 5 columns the explorer's detail panel reads.
+
+    ``cache_source_request_id`` is the one that matters: it is what turns "this was a
+    semantic hit" into "…and here is the request whose answer you were served", which is
+    the only way a human can audit a similarity score after the fact.
+    """
+    await gateway.set_cache("exact")
+    gateway.book.set("ok", MockScript.anthropic_message("hi"))
+    first = await gateway.post("/v1/messages", anthropic_request(), script="ok")
+    await gateway.post("/v1/messages", anthropic_request(), script="ok")
+    await gateway.writer.drain()
+
+    rows = (await gateway.admin("GET", "/admin/usage")).json()
+    hit = rows[0]
+
+    assert hit["cache_disposition"] == "cache_hit_exact"
+    assert hit["cache_avoided_usd"] == "0.000011500000"
+    assert hit["cache_source_request_id"] == first.headers["x-headroom-request-id"]
+    # Not a JSON number, for `usd_cost`'s reason: §P8.H1 sweeps thresholds off this column.
+    assert hit["cache_similarity"] is None, "an exact hit has no similarity to report"
+
+
+async def test_a_semantic_hits_similarity_leaves_as_a_string(gateway: GatewayHarness) -> None:
+    """Against the committed corpus, so the number is one the real model produced."""
+    corpus = load_corpus()
+    question = corpus.question("streaming_revenue:radiohead")
+    paraphrase = next(row for row in corpus.probes if row.source == question.id)
+    answer = question.answer or ""
+
+    await gateway.set_cache("semantic")
+    gateway.book.set(answer, MockScript.anthropic_message(answer))
+    await gateway.post("/v1/messages", anthropic_request(text=question.text), script=answer)
+    await gateway.post("/v1/messages", anthropic_request(text=paraphrase.text), script=answer)
+    await gateway.writer.drain()
+
+    hit = (await gateway.admin("GET", "/admin/usage")).json()[0]
+
+    assert hit["cache_disposition"] == "cache_hit_semantic"
+    assert isinstance(hit["cache_similarity"], str)
+    assert 0.9 <= float(hit["cache_similarity"]) <= 1.0
+
+
+async def test_totals_count_every_cache_disposition_and_the_savings(
+    gateway: GatewayHarness,
+) -> None:
+    """The Overview's savings counter and the Cache view's breakdown, in one call."""
+    await gateway.set_cache("exact")
+    gateway.book.set("ok", MockScript.anthropic_message("hi"))
+    await gateway.post("/v1/messages", anthropic_request(), script="ok")  # miss
+    await gateway.post("/v1/messages", anthropic_request(), script="ok")  # hit
+    await gateway.post(  # bypass: a request that merely declares tools is ineligible
+        "/v1/messages", anthropic_request(tools=ANTHROPIC_TOOLS), script="ok"
+    )
+    await gateway.writer.drain()
+
+    totals = (await gateway.admin("GET", "/admin/usage/totals")).json()[0]
+
+    assert totals["cache_misses"] == 1
+    assert totals["cache_hits_exact"] == 1
+    assert totals["cache_hits_semantic"] == 0
+    assert totals["cache_bypasses"] == 1
+    assert totals["cache_disabled"] == 0
+    assert totals["cache_avoided_usd"] == "0.000011500000"
+
+
+async def test_totals_count_the_requests_that_failed_over(gateway: GatewayHarness) -> None:
+    """The number the kill demo makes move, published where the Overview can read it."""
+    await seed(gateway, count=2)
+
+    totals = (await gateway.admin("GET", "/admin/usage/totals")).json()[0]
+
+    assert totals["failover_requests"] == 0
+
+
+async def test_a_disabled_tenants_requests_are_counted_as_such(
+    gateway: GatewayHarness,
+) -> None:
+    """ "Off" and "on but never applicable" are different rows, not one merged number."""
+    await seed(gateway, count=2)
+
+    totals = (await gateway.admin("GET", "/admin/usage/totals")).json()[0]
+
+    assert totals["cache_disabled"] == 2
+    assert totals["cache_misses"] == 0
+    assert totals["cache_avoided_usd"] == "0"
+
+
+# --- the series ----------------------------------------------------------------------------
+
+
+async def test_the_series_needs_the_root_admin_token(gateway: GatewayHarness) -> None:
+    response = await gateway.admin("GET", "/admin/usage/series", authenticate=False)
+
+    assert response.status_code == 401
+
+
+async def test_the_series_route_is_not_shadowed_by_the_request_id_route(
+    gateway: GatewayHarness,
+) -> None:
+    """A literal path declared after a parameterised one is a route that never runs.
+
+    Without the declaration order in ``usage.py`` this would be a 404 for a ledger row
+    whose request id happened to be ``series`` — which is to say, always.
+    """
+    response = await gateway.admin("GET", "/admin/usage/series")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_the_series_buckets_traffic_over_time(gateway: GatewayHarness) -> None:
+    await seed(gateway, count=3)
+
+    points = (await gateway.admin("GET", "/admin/usage/series", params={"bucket": "minute"})).json()
+
+    assert len(points) >= 1
+    assert sum(point["requests"] for point in points) == 3
+    assert Decimal(points[-1]["usd_cost"]) > 0
+    assert points == sorted(points, key=lambda point: point["bucket_start"])
+
+
+async def test_the_series_speaks_money_as_a_string_too(gateway: GatewayHarness) -> None:
+    await seed(gateway)
+
+    point = (await gateway.admin("GET", "/admin/usage/series")).json()[0]
+
+    assert point["usd_cost"] == "0.000011500000"
+    assert point["cache_avoided_usd"] == "0"
+
+
+async def test_an_unknown_bucket_is_a_422_naming_the_ones_that_work(
+    gateway: GatewayHarness,
+) -> None:
+    response = await gateway.admin("GET", "/admin/usage/series", params={"bucket": "week"})
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["headroom"]["reason"] == "unknown_bucket"
+    assert "minute, hour, day" in body["error"]["message"]
+
+
+async def test_the_series_bucket_count_is_bounded(gateway: GatewayHarness) -> None:
+    """A `?bucket=minute` over a year must not ask for half a million groups."""
+    response = await gateway.admin(
+        "GET", "/admin/usage/series", params={"limit": str(MAX_BUCKETS + 1)}
+    )
+
+    assert response.status_code == 422
+
+
+async def test_the_series_filters_by_tenant_like_everything_else(
+    gateway: GatewayHarness,
+) -> None:
+    await seed(gateway, count=2)
+
+    mine = (
+        await gateway.admin("GET", "/admin/usage/series", params={"tenant_id": gateway.tenant.id})
+    ).json()
+    someone_else = (
+        await gateway.admin(
+            "GET",
+            "/admin/usage/series",
+            params={"tenant_id": "00000000-0000-4000-8000-000000000009"},
+        )
+    ).json()
+
+    assert sum(point["requests"] for point in mine) == 2
+    assert someone_else == []

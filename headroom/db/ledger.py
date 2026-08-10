@@ -25,7 +25,14 @@ from uuid import UUID
 
 import asyncpg
 
-from headroom.core.ledger import LedgerEntry, LedgerQuery, LedgerStore, UsageTotals
+from headroom.core.ledger import (
+    SERIES_BUCKETS,
+    LedgerEntry,
+    LedgerQuery,
+    LedgerStore,
+    UsageBucket,
+    UsageTotals,
+)
 from headroom.db.pool import DatabasePool
 
 __all__ = ["PostgresLedgerStore"]
@@ -153,6 +160,30 @@ def _uuid_or_none(value: str | None) -> str | None:
 #: universe. Used so a malformed filter matches zero rows rather than erroring.
 _IMPOSSIBLE_UUID = "00000000-0000-0000-0000-000000000000"
 
+#: The Phase 5 and 6 counters, as aggregate expressions. Written once and shared by
+#: `totals` and `series` so the two can never disagree about what a "hit" is.
+_DISPOSITIONS = """
+    count(*) FILTER (WHERE cache_disposition = 'cache_hit_exact')    AS cache_hits_exact,
+    count(*) FILTER (WHERE cache_disposition = 'cache_hit_semantic') AS cache_hits_semantic,
+    count(*) FILTER (WHERE cache_disposition = 'cache_miss')         AS cache_misses,
+    count(*) FILTER (WHERE cache_disposition = 'cache_bypass')       AS cache_bypasses,
+    count(*) FILTER (WHERE cache_disposition = 'cache_disabled')     AS cache_disabled,
+    coalesce(sum(cache_avoided_usd), 0)                              AS cache_avoided_usd,
+    -- Scoped to hits: a miss has a NULL avoided cost too, and counting those would make
+    -- "savings we could not price" a synonym for "requests that were not hits".
+    count(*) FILTER (
+        WHERE cache_disposition IN ('cache_hit_exact', 'cache_hit_semantic')
+          AND cache_avoided_usd IS NULL
+    )                                                                AS cache_avoided_unknown,
+    count(*) FILTER (WHERE failover_hops > 0)                        AS failover_requests
+"""
+
+#: `date_trunc` on a `timestamptz` truncates in the *session's* timezone, so an hour
+#: bucket would start at a different instant depending on a server setting nothing in
+#: this repo controls. Converting to UTC first, truncating, and converting back makes
+#: the grain deterministic — and identical to what `InMemoryLedgerStore` computes.
+_BUCKET_START = "(date_trunc($8::text, started_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')"
+
 
 class PostgresLedgerStore(LedgerStore):
     """The ledger table, behind the interface the meter and the admin API use."""
@@ -243,7 +274,8 @@ class PostgresLedgerStore(LedgerStore):
                        -- counted beside it so the total is never quietly understated.
                        coalesce(sum(usd_cost), 0)                    AS usd_cost,
                        count(*) FILTER (WHERE usd_cost IS NULL)      AS unpriced_requests,
-                       count(*) FILTER (WHERE outcome <> 'ok')       AS errored_requests
+                       count(*) FILTER (WHERE outcome <> 'ok')       AS errored_requests,
+                       {_DISPOSITIONS}
                   FROM usage_ledger
                 {_WHERE}
               GROUP BY {grouping}
@@ -262,6 +294,60 @@ class PostgresLedgerStore(LedgerStore):
                 usd_cost=row["usd_cost"],
                 unpriced_requests=row["unpriced_requests"],
                 errored_requests=row["errored_requests"],
+                cache_hits_exact=row["cache_hits_exact"],
+                cache_hits_semantic=row["cache_hits_semantic"],
+                cache_misses=row["cache_misses"],
+                cache_bypasses=row["cache_bypasses"],
+                cache_disabled=row["cache_disabled"],
+                cache_avoided_usd=row["cache_avoided_usd"],
+                cache_avoided_unknown=row["cache_avoided_unknown"],
+                failover_requests=row["failover_requests"],
+            )
+            for row in rows
+        ]
+
+    async def series(self, query: LedgerQuery, *, bucket: str = "hour") -> list[UsageBucket]:
+        if bucket not in SERIES_BUCKETS:
+            raise ValueError(f"bucket must be one of {', '.join(SERIES_BUCKETS)}, got {bucket!r}")
+        async with self.pool.connection() as conn:
+            rows = await conn.fetch(
+                f"""
+                -- The most recent `limit` buckets, chosen by ordering DESC in the inner
+                -- query and re-ordering ASC outside it. A LIMIT on an ascending series
+                -- would keep the oldest, which is the wrong end of a chart.
+                SELECT * FROM (
+                    SELECT {_BUCKET_START}                             AS bucket_start,
+                           count(*)                                    AS requests,
+                           coalesce(sum(input_tokens), 0)              AS input_tokens,
+                           coalesce(sum(output_tokens), 0)             AS output_tokens,
+                           coalesce(sum(usd_cost), 0)                  AS usd_cost,
+                           count(*) FILTER (WHERE usd_cost IS NULL)    AS unpriced_requests,
+                           count(*) FILTER (WHERE outcome <> 'ok')     AS errored_requests,
+                           {_DISPOSITIONS}
+                      FROM usage_ledger
+                    {_WHERE}
+                  GROUP BY bucket_start
+                  ORDER BY bucket_start DESC
+                     LIMIT $9
+                ) recent
+              ORDER BY bucket_start ASC
+                """,
+                *_filters(query),
+                bucket,
+                query.limit,
+            )
+        return [
+            UsageBucket(
+                bucket_start=row["bucket_start"],
+                requests=row["requests"],
+                input_tokens=row["input_tokens"],
+                output_tokens=row["output_tokens"],
+                usd_cost=row["usd_cost"],
+                cache_avoided_usd=row["cache_avoided_usd"],
+                cache_hits=row["cache_hits_exact"] + row["cache_hits_semantic"],
+                errored_requests=row["errored_requests"],
+                unpriced_requests=row["unpriced_requests"],
+                failover_requests=row["failover_requests"],
             )
             for row in rows
         ]
