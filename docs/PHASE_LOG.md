@@ -5201,3 +5201,76 @@ uv run ruff format --check . 163 files already formatted
 uv run mypy                  Success: no issues found in 162 source files
 uv run pytest                1175 passed, 2 deselected, 1 warning in 17.23s
 ```
+
+---
+
+## Phase 8 — two pre-measurement corrections: the compound ask, and `--only`
+
+**Date**: 2026-08-10 · **Branch**: `claude/p8-experiments` · **Decision**: H-069
+
+Both fixes land under risk register item 3 — the corpus is corrected *before* a measurement
+reads it. No sweep has consumed the current corpus, no H1 number changed, and neither fix
+touches the sweep's arithmetic.
+
+**Shipped**
+
+- **The compound-ask check** (`experiments/h1/checks.py`). A body whose ask has two parts —
+  an interrogative *plus* a separate sentence opening with a request verb — now requires both
+  parts to survive in a candidate, on the same footing as an entity. The shape is extracted
+  from the body, not listed: `compound_ask()` finds **25 questions across three categories**,
+  and the words `clause` and `rate` appear nowhere in the module. A candidate passes when the
+  two demands land in two different asks, where `ask_segments()` splits on the three things
+  English uses to join demands — a coordinator, a sentence break, a participial adjunct.
+- **`--only` is a redo** (`experiments/h1/generate.py`). `--help` had documented "ids to
+  (re)do" while the implementation skipped anything already complete; forcing the operator's
+  redraw had cost hand-deleting a JSON entry. `select()` is now one function shared by the
+  projection and the run, an unknown id is an error rather than a silent no-op, and the entry
+  being replaced is dropped only once its first call is paid for.
+- **16 tests**, including the operator's rejected draw and both redraw failures verbatim, the
+  four faithful forms that must keep passing, and the invariant that every compound body
+  satisfies its own rule.
+
+**Findings**
+
+- **The exposure was wider than one id.** Auditing the accepted batch found **25 collapsed
+  candidates across 17 of the 25 compound questions** — a 1-in-3 rate. The probe the operator
+  caught had a collapsed neighbour in its own batch that the seeded sample of 20 never showed
+  him.
+- **The rubric was deliberately not strengthened**, argued in H-069: bumping `RUBRIC_VERSION`
+  forces a redraw of all 130 and a fresh spot-check of all 390 probes, and 50 of 75
+  compound-ask candidates already pass — this is a retry, not H-068's rule that admitted no
+  correct answer. The lever is recorded for the operator with its cost, should redraws thrash.
+
+**Deferred to the operator (invariant: Claude Code never runs spend)**
+
+The 17 need redrawing. The command is in `experiments/RUNBOOK.md` §1b; `--dry-run` projects
+`worst case $0.045754` for one round each, ceiling ~$0.14 at three rounds, against the
+unchanged `$1.00` stop. `build.py` refuses the corpus until they are clean. Only two probes in
+the seeded spot-check sample belong to those 17 — `contract_terms-002#p1` and
+`contract_terms-004#p3` — so the re-check after the rebuild is two sentences, not twenty.
+
+**Pre-existing red, not introduced here, and not papered over**
+
+`test_the_committed_curve_is_the_one_this_corpus_produces` fails, and it has failed since
+`d57aa33`. `experiments/results/h1_curve.json` carries `stage: family_b_only` and the corpus
+hash of the pre-paraphrase artifact; the corpus was rebuilt to `stage: complete` at `d57aa33`
+and again at `71afa0e` without the sweep being re-run. The test is doing its job — REPORT.md's
+H1 numbers no longer follow from the committed corpus.
+
+It was **left red on purpose**. Clearing it means running the sweep, and the only corpus
+available to sweep is the one this session has just proven carries 25 collapsed probes;
+publishing Family A numbers off it is exactly the "plausible corpus, unexplainable curve"
+failure the checks exist to prevent. The order is: redraw the 17 → rebuild → spot-check →
+sweep → figure. The red test is the marker for that outstanding work, and it clears when the
+sweep runs on a corpus that deserves it.
+
+**Gate**
+
+```
+uv run ruff check .          All checks passed!
+uv run ruff format --check . 163 files already formatted
+uv run mypy                  Success: no issues found in 162 source files
+uv run pytest                1 failed, 1190 passed, 2 deselected, 1 warning in 18.77s
+                             (the failure is the pre-existing stale-curve pin above;
+                              1174 passed / 1 failed on this branch before this session)
+```

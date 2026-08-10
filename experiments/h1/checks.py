@@ -43,6 +43,38 @@ Three amendments, each narrow, and the reasoning for each is in H-068:
 literal. The asymmetry is load-bearing: were the sentence-initial rule applied to the
 candidate too, a paraphrase that opened with ``Voltage has …`` would have its own real name
 exempted out of the present set and be failed for losing it.
+
+**Amended a second time, still before any measurement (H-069): a two-part ask must stay two
+parts.** The operator's spot-check rejected a paraphrase every token rule passed. The body
+asked two things — *"what royalty rate applies …? Cite the governing clause."* — and the
+candidate asked one, the citation, with the rate demoted to a modifier inside it. A forced
+redraw reproduced the same collapse in 2 of 3 fresh candidates, so this is not a bad draw:
+`claude-haiku-4-5` systematically compresses *answer-plus-citation* into *citation*. Every
+entity, period and figure survives the compression, which is exactly why the token rules
+cannot see it.
+
+:func:`compound_ask` finds the shape and :meth:`CompoundAsk.satisfied_by` requires it to
+survive, on the same footing as an entity. Two things make it a rule about structure rather
+than about one question's wording:
+
+* **The shape is read off the body, never hardcoded.** A compound ask is an interrogative
+  sentence *plus* a separate sentence opening with a request verb (:data:`REQUEST_VERBS`).
+  The two demands are the head nouns of what each part asks for — extracted, not listed. In
+  this suite that finds 25 questions across three categories; ``clause`` and ``rate`` appear
+  nowhere in this module.
+* **Two demands must sit in two asks.** English joins two demands with a coordinator, a
+  sentence break, or a participial adjunct (``…, citing the controlling clause``), and
+  :func:`ask_segments` splits on exactly those. Both demands inside one segment is the
+  collapse: *"Cite the clause that sets X's royalty rate"* mentions the rate but does not
+  ask for it.
+
+**What this check does not do**, stated plainly because the spot-check is the other half of
+the QA chain and needs to know what is left to it: it catches a compound ask *collapsing to
+one*, not every way a paraphrase can drift. A candidate that keeps two separate demands but
+swaps one for something the body never asked would pass here. And the rule fires only on
+*question + instruction*; a body whose parts are all instructions (the reconciliation runs)
+is out of its scope, deliberately — no collapse has been observed there, and widening a rule
+to a shape without evidence is how H-068's stuck generator happened.
 """
 
 from __future__ import annotations
@@ -55,12 +87,18 @@ __all__ = [
     "COMMON_WORDS",
     "MAX_LENGTH_RATIO",
     "MIN_LENGTH_RATIO",
+    "REQUEST_PARTICIPLES",
+    "REQUEST_VERBS",
     "STOPWORDS",
+    "WH_WORDS",
     "AliasGroup",
     "CheckResult",
+    "CompoundAsk",
     "Requirements",
+    "ask_segments",
     "check_batch",
     "check_paraphrase",
+    "compound_ask",
     "required_tokens",
     "salient_tokens",
 ]
@@ -476,6 +514,296 @@ def required_tokens(text: str) -> Requirements:
     return Requirements(tokens=tokens, groups=tuple(groups))
 
 
+# --- the compound ask (H-069) --------------------------------------------------------------
+
+#: Verbs that open an explicit instruction to produce something *besides* the answer. A
+#: sentence is an instruction only when one of these opens it, which is also what keeps
+#: ``Do not submit a batch.`` out: a prohibition adds no second demand, and ``do`` is not
+#: here. Kept short and literal — a verb added here makes a body compound, and a body wrongly
+#: called compound costs regenerations on every one of its candidates.
+REQUEST_VERBS: Final = frozenset(
+    {
+        "cite",
+        "explain",
+        "give",
+        "identify",
+        "indicate",
+        "list",
+        "name",
+        "provide",
+        "quote",
+        "report",
+        "show",
+        "specify",
+        "state",
+        "tell",
+    }
+)
+
+#: The same requests written as adjuncts: ``…, citing the controlling clause``. Spelled out
+#: rather than derived, because deriving them means guessing at English morphology
+#: (``specify`` → ``specifying``, ``give`` → ``giving``) in a module whose whole argument is
+#: that explicit beats clever. These are segment *boundaries*, not sentence openers: a
+#: paraphrase that appends its second demand this way has kept it, and must not be failed.
+REQUEST_PARTICIPLES: Final = frozenset(
+    {
+        "citing",
+        "explaining",
+        "giving",
+        "identifying",
+        "indicating",
+        "listing",
+        "naming",
+        "providing",
+        "quoting",
+        "reporting",
+        "showing",
+        "specifying",
+        "stating",
+        "telling",
+    }
+)
+
+#: What makes a segment a question when the body's own question has no head noun to demand —
+#: a polar question (``is Japan (JP) inside the licensed territory?``) asks for a yes or a no,
+#: not for a thing.
+WH_WORDS: Final = frozenset(
+    {"how", "what", "when", "where", "which", "who", "whom", "whose", "why"}
+)
+
+#: Auxiliaries that open a polar question by inversion.
+_POLAR_OPENERS: Final = frozenset(
+    {"are", "can", "could", "did", "do", "does", "has", "have", "is", "should", "was", "were"}
+)
+
+#: Words that introduce or close a demand phrase without naming what is demanded. Skipped
+#: while nothing has been collected (``Cite **the governing** clause``) and terminal once
+#: something has (``the rate clause **you** applied``).
+_PHRASE_STOP: Final = frozenset(
+    {
+        "a",
+        "all",
+        "an",
+        "and",
+        "any",
+        "are",
+        "as",
+        "at",
+        "by",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "each",
+        "every",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "his",
+        "i",
+        "in",
+        "is",
+        "it",
+        "its",
+        "may",
+        "must",
+        "my",
+        "of",
+        "on",
+        "or",
+        "our",
+        "she",
+        "should",
+        "that",
+        "the",
+        "their",
+        "these",
+        "they",
+        "this",
+        "those",
+        "to",
+        "under",
+        "was",
+        "we",
+        "were",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+    }
+)
+
+#: Adverbs a directive may open with before its verb: ``Please cite …``, ``Then list …``.
+_DIRECTIVE_LEAD: Final = frozenset(
+    {"additionally", "also", "finally", "lastly", "next", "please", "then"}
+)
+
+#: A demand phrase is a noun phrase, not a clause. Four words is longer than any in this
+#: suite (``the rate clause``, ``the governing clause``, ``royalty rate``) and short enough
+#: that a runaway match cannot swallow the sentence.
+_MAX_PHRASE_WORDS: Final = 4
+
+#: How far past ``start`` to look while collecting those four: the leading function words a
+#: phrase is allowed to open with (``what is the new download rate`` skips three) are stepped
+#: over, not collected, so the scan window has to be wider than the phrase itself.
+_MAX_SCAN_WORDS: Final = 8
+
+#: Once a word has been collected, an inflected form is the verb the phrase attaches to:
+#: ``the royalty rate **applies** to``, ``the clause **governing** X``.
+_INFLECTED: Final = ("ed", "ing", "s")
+
+_WORD: Final = re.compile(r"[A-Za-z][A-Za-z'-]*")
+
+#: A sentence ends at ``.``/``?``/``!`` — unless that full stop belongs to a single-letter
+#: initial, which is what keeps ``U.S. royalty`` one span rather than two.
+_SENTENCE_BREAK: Final = re.compile(r"(?<=[.?!])(?<![A-Z]\.)\s+")
+
+#: Where a second demand may legitimately begin: a sentence break, a coordinator, or a comma
+#: introducing a participial request. Splitting here is the whole test — two demands on
+#: opposite sides of one of these are two asks; two demands with none between them are one.
+_ASK_BREAK: Final = re.compile(
+    r"(?<=[.?!;:])(?<![A-Z]\.)\s+"
+    r"|\s*,?\s+(?:and|or|plus|as\s+well\s+as)\s+"
+    r"|\s*,\s+(?=(?:" + "|".join(sorted(REQUEST_PARTICIPLES)) + r")\b)",
+    re.IGNORECASE,
+)
+
+
+def _words(text: str) -> list[str]:
+    return [word.casefold() for word in _WORD.findall(text)]
+
+
+def _demand_phrase(words: list[str], start: int) -> str | None:
+    """The head noun of the noun phrase beginning at ``start``, or ``None``.
+
+    Leading function words are stepped over; the phrase ends at the first function word or
+    inflected form after it has begun. The *last* word collected is the head, which is where
+    English puts it: ``the governing clause`` → ``clause``, ``royalty rate`` → ``rate``.
+    """
+    collected: list[str] = []
+    for word in words[start : start + _MAX_SCAN_WORDS]:
+        if word in _PHRASE_STOP:
+            if collected:
+                break
+            continue
+        if collected and word.endswith(_INFLECTED):
+            break
+        collected.append(word)
+        if len(collected) >= _MAX_PHRASE_WORDS:
+            break
+    return collected[-1] if collected else None
+
+
+def _instruction_demand(sentence: str) -> str | None:
+    """What an instruction sentence asks for, or ``None`` if it is not an instruction."""
+    words = _words(sentence)
+    index = 0
+    while index < len(words) and words[index] in _DIRECTIVE_LEAD:
+        index += 1
+    if index >= len(words) or words[index] not in REQUEST_VERBS:
+        return None
+    return _demand_phrase(words, index + 1)
+
+
+def _question_demand(sentence: str) -> str | None:
+    """What an interrogative asks for — the head of its wh-phrase, or ``None`` if polar."""
+    words = _words(sentence)
+    for index, word in enumerate(words):
+        if word in WH_WORDS:
+            return _demand_phrase(words, index + 1)
+    return None
+
+
+def _carries(segment: str, noun: str) -> bool:
+    """Is ``noun`` named in ``segment``? Singular and plural count as the same demand."""
+    return re.search(rf"\b{re.escape(noun)}s?\b", segment, re.IGNORECASE) is not None
+
+
+def _is_interrogative(segment: str) -> bool:
+    words = _words(segment)
+    return (
+        segment.rstrip().endswith("?")
+        or bool(WH_WORDS.intersection(words[:6]))
+        or (bool(words) and words[0] in _POLAR_OPENERS)
+    )
+
+
+def ask_segments(text: str) -> tuple[str, ...]:
+    """``text`` split wherever a fresh demand may begin (see :data:`_ASK_BREAK`)."""
+    return tuple(part.strip() for part in _ASK_BREAK.split(text) if part and part.strip())
+
+
+@dataclass(frozen=True, slots=True)
+class CompoundAsk:
+    """A body that asks for two things: a question, and an instruction standing beside it.
+
+    ``instruction`` is what the instruction demands (``clause``). ``question`` is what the
+    interrogative demands (``rate``), or ``None`` when it demands no thing — a polar question
+    wants a yes or a no, and then any second interrogative segment satisfies it.
+    """
+
+    instruction: str
+    question: str | None
+
+    def satisfied_by(self, text: str) -> bool:
+        """Do the two demands land in two different asks?
+
+        Any pair of segments will do, in either order. A faithful paraphrase may lead with
+        the citation (*"which clause sets the rate, and what is that rate?"*) and it may name
+        a demand more than once; what it may not do is name both only inside one ask.
+        """
+        segments = ask_segments(text)
+        for index, segment in enumerate(segments):
+            if not _carries(segment, self.instruction):
+                continue
+            for other, candidate in enumerate(segments):
+                if other == index:
+                    continue
+                if (
+                    _carries(candidate, self.question)
+                    if self.question
+                    else _is_interrogative(candidate)
+                ):
+                    return True
+        return False
+
+    def describe(self) -> str:
+        asked = f"'{self.question}'" if self.question else "the question"
+        return f"{asked} and '{self.instruction}'"
+
+
+def compound_ask(body: str) -> CompoundAsk | None:
+    """The two-part ask in ``body``, or ``None`` if it asks for one thing.
+
+    Compound means an interrogative sentence *and* a separate instruction sentence. Where a
+    body has several of each, the last of each is taken: the trailing instruction is the one
+    a rewrite folds into the question, and taking the last is deterministic. A body whose
+    instruction demands the same noun as its question (nothing in this suite) reduces to the
+    polar case rather than to a demand that compares against itself.
+    """
+    questions: list[str] = []
+    instructions: list[str] = []
+    for sentence in _SENTENCE_BREAK.split(body):
+        stripped = sentence.strip()
+        if not stripped:
+            continue
+        if stripped.endswith("?"):
+            questions.append(stripped)
+        elif (demand := _instruction_demand(stripped)) is not None:
+            instructions.append(demand)
+    if not questions or not instructions:
+        return None
+    instruction = instructions[-1]
+    focus = _question_demand(questions[-1])
+    return CompoundAsk(instruction=instruction, question=None if focus == instruction else focus)
+
+
 @dataclass(frozen=True, slots=True)
 class CheckResult:
     """Whether a candidate may enter the corpus, and if not, precisely why."""
@@ -520,6 +848,13 @@ def check_paraphrase(*, body: str, candidate: str) -> CheckResult:
             failures.append(
                 f"lost entity: neither {group.name!r} nor its code {group.code} survives"
             )
+
+    ask = compound_ask(body)
+    if ask is not None and not ask.satisfied_by(stripped):
+        failures.append(
+            f"collapsed the compound ask: {ask.describe()} are asked for separately in the "
+            f"question and are folded into one here"
+        )
 
     return CheckResult(not failures, tuple(failures))
 
