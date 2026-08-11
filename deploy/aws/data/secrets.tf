@@ -53,6 +53,12 @@ resource "aws_secretsmanager_secret" "database_url" {
 # The root admin token (H-019). Unset means the admin API is **off**, not open — so a
 # deployment that forgot this secret answers 503 on every `/admin` route and the console
 # says so, rather than publishing tenant-and-key CRUD behind an IP allow-list.
+#
+# This description and the next read like a dropped em dash because that is what they are:
+# the charset strip (H-082) ran after the secrets existed, and re-wording them now would
+# put two in-place updates back into a data layer whose plan is `No changes`. Frozen until
+# the layer is destroyed at the end of Phase 10 — the wrinkle, and the reason, are in the
+# phase log rather than smoothed over here.
 resource "aws_secretsmanager_secret" "admin_token" {
   name                    = local.secret_names.admin_token
   description             = "HEADROOM_ADMIN_TOKEN the root credential for /admin/*"

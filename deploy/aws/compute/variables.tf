@@ -31,13 +31,13 @@ variable "home_cidr" {
 }
 
 variable "region" {
-  description = "AWS region. Must match the data layers."
+  description = "AWS region. Must match the region the data layer was applied in."
   type        = string
   default     = "us-east-1"
 }
 
 variable "project" {
-  description = "Name prefix and the Project cost-allocation tag. Must match the data layers."
+  description = "Name prefix and the Project cost-allocation tag. Must match the value the data layer uses."
   type        = string
   default     = "headroom"
 }
@@ -130,13 +130,13 @@ variable "ui_desired_count" {
 # --- listeners ------------------------------------------------------------------------
 
 variable "gateway_port" {
-  description = "ALB listener port for the gateway. 8080 to match the compose stacks host port (H-006)."
+  description = "ALB listener port for the gateway. 8080 to match the host port compose publishes (H-006)."
   type        = number
   default     = 8080
 }
 
 variable "ui_port" {
-  description = "ALB listener port for the console. 3001, matching compose, matching Backlines 3000 being taken."
+  description = "ALB listener port for the console. 3001, matching compose, because Backline took 3000."
   type        = number
   default     = 3001
 }

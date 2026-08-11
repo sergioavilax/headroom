@@ -27,7 +27,10 @@ asserted is that two strings are the same string.
 from __future__ import annotations
 
 import re
+import string
+import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -190,11 +193,28 @@ def test_no_credential_shaped_string_is_committed_under_deploy(pattern: str) -> 
 
 def test_the_only_tfvars_git_keeps_is_the_example() -> None:
     """`.gitignore` keeps `*.tfvars.example` and drops the rest — the file the operator's
-    home address goes in is never a file git has heard of."""
+    home address goes in is never a file git has heard of.
+
+    Asked of *git* rather than of the filesystem, and the operator's run is why: this
+    assertion used to read `not list(DEPLOY.rglob("terraform.tfvars"))`, which is only
+    true on a machine where nobody has ever run the runbook. Step 6 writes that file, so
+    the suite went red on the one machine that had done the thing the suite is about —
+    a green CI and a red laptop, which is the wrong way round.
+    """
     gitignore = (REPO / ".gitignore").read_text(encoding="utf-8")
     assert "*.tfvars" in gitignore
     assert "!*.tfvars.example" in gitignore
-    assert not list(DEPLOY.rglob("terraform.tfvars"))
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "deploy/aws/**/terraform.tfvars"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if tracked.returncode != 0:
+        pytest.skip("not a git work tree, or git is not installed")
+    assert not tracked.stdout.strip(), f"git is tracking a real tfvars: {tracked.stdout}"
 
 
 def test_the_task_definition_puts_no_secret_in_plain_environment() -> None:
@@ -420,3 +440,107 @@ def test_the_runbook_states_a_cost_before_every_paid_step() -> None:
     for line in ("ALB", "RDS", "Fargate", "endpoint"):
         assert line in RUNBOOK
     assert "$" in RUNBOOK and "per day" in RUNBOOK
+
+
+def test_the_runbook_names_the_region_the_secrets_commands_need() -> None:
+    """The operator's run lost §4 to a CLI profile that still defaulted to `us-west-2`
+    from another project: every `put-secret-value` answered `ResourceNotFoundException`,
+    naming a secret that exists — in the other region. A runbook whose prerequisites do
+    not pin the region is a runbook that debugs as a missing secret (H-083)."""
+    prerequisites = RUNBOOK.split("### What it costs")[0]
+    assert "AWS_DEFAULT_REGION" in prerequisites, "the prerequisites never pin the region"
+    assert "ResourceNotFoundException" in prerequisites, "the failure signature is not named"
+
+
+# --- the charset AWS enforces on a description ------------------------------------------------
+#
+# Two applies died on this in the operator's run, five hours apart: an apostrophe in a
+# security-group description stopped the *first* data apply, and an em dash in an alarm
+# description stopped the compute plan after the strip that fixed the apostrophes missed it.
+# Neither `terraform validate` nor `terraform plan` can see it — the string is legal HCL and
+# the rejection comes from the API, halfway through an apply, with resources already
+# created. H-082: this is the test that moves it to CI.
+
+#: AWS's documented set for a security-group description, quoted from the API reference:
+#: ``[0-9A-Za-z_ .:/()#,@[]+=&;{}!$*-]``. Note what is *absent* — the apostrophe, the double
+#: quote, the backtick, `%`, `?`, and every dash that is not U+002D. The same set is applied
+#: to every description in both roots rather than only to the security groups: which of
+#: these strings AWS will eventually see is not a distinction a reader makes at a glance,
+#: and a string moved from an output into a resource should not be able to smuggle a
+#: character in with it.
+AWS_DESCRIPTION_CHARSET = frozenset(string.ascii_letters + string.digits + "_ .:/()#,@[]+=&;{}!$*-")
+
+
+class Description(NamedTuple):
+    """One `description =` (or `alarm_description =`) assignment, and where it came from."""
+
+    path: Path
+    line: int
+    block: str
+    value: str
+    heredoc: bool
+
+
+#: A quoted single-line description, or a heredoc one. Crude on purpose, in this file's
+#: house style: the thing being asserted is which characters are in a string.
+_DESCRIPTION = re.compile(
+    r'^\s*(?:alarm_)?description\s*=\s*(?:"((?:[^"\\]|\\.)*)"|<<-?EOT\n(.*?)\n\s*EOT)',
+    re.MULTILINE | re.DOTALL,
+)
+#: A top-level HCL block opener. `terraform fmt -check` runs in CI, so column zero is safe.
+_BLOCK = re.compile(r"^(\w+)[\s\"]", re.MULTILINE)
+
+
+def descriptions(root: Path) -> list[Description]:
+    """Every description in a root, tagged with the kind of block it sits in."""
+    found: list[Description] = []
+    for path in sorted(root.glob("*.tf")):
+        text = path.read_text(encoding="utf-8")
+        openers = [(match.start(), match.group(1)) for match in _BLOCK.finditer(text)]
+        for match in _DESCRIPTION.finditer(text):
+            quoted, heredoc = match.group(1), match.group(2)
+            block = "?"
+            for start, kind in openers:
+                if start < match.start():
+                    block = kind
+            found.append(
+                Description(
+                    path=path,
+                    line=text[: match.start()].count("\n") + 1,
+                    block=block,
+                    value=quoted if quoted is not None else (heredoc or ""),
+                    heredoc=quoted is None,
+                )
+            )
+    assert len(found) > 15, f"{root.name}: parsed {len(found)} descriptions — did the regex break?"
+    return found
+
+
+@pytest.mark.parametrize("root", [DATA, COMPUTE], ids=["data", "compute"])
+def test_every_single_line_description_is_a_string_aws_would_accept(root: Path) -> None:
+    """The test that would have caught both failed applies, keylessly, in seconds.
+
+    Heredoc descriptions are exempt and the test below is what makes that sound: they are
+    `variable` and `output` prose — markdown, argued at length, never sent to an API — and
+    no resource is allowed to use one.
+    """
+    for description in descriptions(root):
+        if description.heredoc:
+            continue
+        illegal = sorted(set(description.value) - AWS_DESCRIPTION_CHARSET)
+        assert not illegal, (
+            f"{description.path.name}:{description.line} has {illegal} in a description; "
+            f"AWS rejects the whole apply with an InvalidParameterValue naming the string: "
+            f"{description.value!r}"
+        )
+
+
+@pytest.mark.parametrize("root", [DATA, COMPUTE], ids=["data", "compute"])
+def test_no_resource_description_is_a_heredoc(root: Path) -> None:
+    """The escape hatch, closed. A heredoc on an `aws_security_group` would be exempt from
+    the charset check above *and* would carry a newline, which AWS rejects on its own."""
+    for description in descriptions(root):
+        assert not (description.heredoc and description.block == "resource"), (
+            f"{description.path.name}:{description.line} is an AWS-facing description in a "
+            "heredoc: it skips the charset check and cannot contain a newline anyway"
+        )
