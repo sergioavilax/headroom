@@ -33,6 +33,7 @@ from decimal import Decimal
 
 __all__ = [
     "SERIES_BUCKETS",
+    "DailyRollup",
     "LedgerEntry",
     "LedgerQuery",
     "LedgerStore",
@@ -262,6 +263,52 @@ class UsageBucket:
     failover_requests: int = 0
 
 
+#: How many days of history one call may ask for. 366 is a year plus a leap day — the
+#: widest window the console's history view offers, and a bound so a caller cannot ask
+#: for every day this deployment has ever had in one array.
+MAX_ROLLUP_DAYS = 366
+
+
+@dataclass(frozen=True, slots=True)
+class DailyRollup:
+    """One UTC day of one tenant's ledger, aggregated (Phase 9).
+
+    **Derived, and only ever derived.** Every field is recomputable from
+    ``usage_ledger`` alone, which is what makes the nightly rollup safe to re-run: the
+    writer replaces a day wholesale rather than accumulating into it, so firing the
+    Lambda twice for the same day is a no-op rather than a doubling. Nothing on the
+    request path writes here.
+
+    Field names deliberately match :class:`UsageTotals` term for term. The history view
+    and the Overview are asking the same question over different windows, and two
+    vocabularies for one aggregate is how a dashboard ends up quietly comparing
+    different things.
+    """
+
+    day: date
+    tenant_id: str
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_tokens: int = 0
+    #: Sums only the rows that had a cost. See :attr:`unpriced_requests`.
+    usd_cost: Decimal = field(default_factory=lambda: Decimal(0))
+    unpriced_requests: int = 0
+    errored_requests: int = 0
+    cache_hits_exact: int = 0
+    cache_hits_semantic: int = 0
+    cache_misses: int = 0
+    cache_bypasses: int = 0
+    cache_disabled: int = 0
+    cache_avoided_usd: Decimal = field(default_factory=lambda: Decimal(0))
+    cache_avoided_unknown: int = 0
+    failover_requests: int = 0
+    #: When the rollup was computed. ``None`` until the store has written it — the gap
+    #: between this and ``day`` is how late the schedule ran, and a stale stamp is how a
+    #: schedule that stopped firing announces itself.
+    computed_at: datetime | None = None
+
+
 class LedgerStore(ABC):
     """Where priced requests go, and how they come back.
 
@@ -307,6 +354,57 @@ class LedgerStore(ABC):
     @abstractmethod
     async def get(self, request_id: str) -> LedgerEntry | None:
         """One row by request id — the path from a caller's screenshot to its cost."""
+
+    # --- the nightly rollup (Phase 9) ------------------------------------------------
+    #
+    # Aggregation lives here, in the store, for the reason H-054 gives about the
+    # dashboard: `usage_ledger` has forty columns and five `cost_status` values whose
+    # distinctions are the whole point of Phase 3, and a second reader — a Lambda with
+    # its own `GROUP BY`, say — re-decides every one of them silently. So the Lambda is
+    # a thin wrapper around this method, both implementations are asserted by the same
+    # contract suite (H-021), and the rule the SQL and the dict must agree on is written
+    # once, above them.
+
+    @abstractmethod
+    async def write_daily_rollup(self, day: date) -> list[DailyRollup]:
+        """Aggregate one **UTC day** of the ledger into ``daily_rollups``; return the rows.
+
+        ``day`` selects on ``started_at`` — the request's own arrival time, half-open
+        ``[day 00:00Z, day+1 00:00Z)`` — never on ``created_at``. A row drained from the
+        writer's queue after midnight belongs to the day the request happened.
+
+        **The day is replaced, not accumulated into.** Re-running is therefore a no-op
+        on an unchanged ledger and a correction on a changed one, which is what makes it
+        safe to fire by hand (the Phase 9 gate does) and safe to retry after a failed
+        schedule. It is also the only behaviour under which the table can be trusted
+        after a ledger truncation, which this repo's own Postgres test fixture performs.
+
+        A tenant with no rows on that day gets no rollup row — the
+        :class:`UsageBucket` rule, one table over: an absent day and a zero day are
+        different claims, and only the store that knows the x-domain may invent one.
+        """
+
+    @abstractmethod
+    async def list_rollups(
+        self,
+        *,
+        tenant_id: str | None = None,
+        since: date | None = None,
+        until: date | None = None,
+        limit: int = 90,
+    ) -> list[DailyRollup]:
+        """Committed rollups, **oldest day first**.
+
+        ``since``/``until`` are half-open on the day (``since <= day < until``), matching
+        :class:`LedgerQuery`'s window so adjacent ranges neither overlap nor drop a day.
+
+        ``limit`` bounds **distinct days**, not rows, and keeps the most recent ones. Not
+        rows, because a day is several rows when several tenants were busy, and a caller
+        asking for ninety days of history would otherwise get twenty-two days and four
+        tenants without being told which it got. Most recent, for :meth:`series`' reason:
+        a history chart that silently dropped its newest point would be worse than one
+        that dropped its oldest.
+        """
 
     async def aclose(self) -> None:
         """Release resources. A no-op for stores that hold none."""

@@ -169,6 +169,10 @@ const TOTALS = [
     cache_bypasses: 0,
     cache_disabled: 0,
     cache_avoided_usd: "0.000011500000",
+    // Phase 7 added this counter to `TotalsView` and this fixture never grew it — found
+    // while adding the rollup fixture below, and fixed here rather than left as a shape
+    // the stub claims to reproduce and does not (H-058's stated maintenance cost, paid).
+    cache_avoided_unknown: 0,
     failover_requests: 1,
   },
   {
@@ -187,8 +191,55 @@ const TOTALS = [
     cache_bypasses: 0,
     cache_disabled: 1,
     cache_avoided_usd: "0",
+    cache_avoided_unknown: 0,
     failover_requests: 0,
   },
+];
+
+// Phase 9's `daily_rollups`, as the nightly Lambda leaves them: three consecutive UTC
+// days, two tenants, and a `computed_at` that is *recent* — the history view's freshness
+// tile reads exactly that field to say whether the schedule is still firing, so a fixture
+// with a fixed date would smoke a tile permanently reading "9 months ago".
+const utcDay = (back) =>
+  new Date(Math.floor(now / 86_400_000) * 86_400_000 - back * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+const rollup = (over) => ({
+  day: utcDay(0),
+  tenant_id: TENANT_A,
+  requests: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  reasoning_tokens: 0,
+  usd_cost: "0",
+  unpriced_requests: 0,
+  errored_requests: 0,
+  cache_hits_exact: 0,
+  cache_hits_semantic: 0,
+  cache_misses: 0,
+  cache_bypasses: 0,
+  cache_disabled: 0,
+  cache_avoided_usd: "0",
+  cache_avoided_unknown: 0,
+  failover_requests: 0,
+  computed_at: iso(600_000),
+  ...over,
+});
+
+// Oldest day first, matching `list_rollups`.
+const ROLLUPS = [
+  rollup({ day: utcDay(2), requests: 412, usd_cost: "0.004738000000", errored_requests: 3 }),
+  rollup({
+    day: utcDay(1),
+    requests: 903,
+    usd_cost: "0.010384500000",
+    cache_hits_semantic: 61,
+    cache_avoided_usd: "0.000701500000",
+    failover_requests: 12,
+  }),
+  rollup({ day: utcDay(1), tenant_id: TENANT_B, requests: 74, usd_cost: "0.000851000000" }),
+  rollup({ day: utcDay(0), requests: 118, usd_cost: "0.001357000000", cache_hits_exact: 9 }),
 ];
 
 const SERIES = [0, 1, 2].map((back) => ({
@@ -301,6 +352,7 @@ const ROUTES = new Map([
   ["/admin/usage", () => ROWS],
   ["/admin/usage/totals", () => TOTALS],
   ["/admin/usage/series", () => SERIES],
+  ["/admin/usage/rollups", () => ROLLUPS],
   ["/admin/budgets", () => BUDGETS],
   ["/admin/limits", () => LIMITS],
   ["/admin/cache", () => CACHE],

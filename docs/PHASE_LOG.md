@@ -5688,3 +5688,913 @@ corpus, and they did not before.
 Run with the compose stack up (`make up`), so nothing skips — 143 of these tests skip loudly
 on a missing store endpoint rather than inventing a fallback, and a gate reported with them
 skipped is not this repo's gate.
+
+---
+
+## Phase 9 — AWS: the playbook, second run (2026-08-11)
+
+Branch `claude/p9-aws`, GitHub #11. BUILD_PLAN §P9's words are the spec: *"ECS Fargate
+(gateway + ui) behind a two-listener ALB locked to the home /32, RDS Postgres 16 +
+pgvector, **real DynamoDB** (on-demand, pennies — the A1 code path unchanged), **one
+Lambda**: the nightly cost-rollup … plus CloudWatch alarms that would actually page.
+Terraform file-per-concern, all the destroy flags from day one, secrets out of state,
+**cost-allocation tags activated in Billing before the first apply**, evidence in the repo
+not in a bucket."*
+
+**Dated in UTC**, which is what every artifact in this entry stamps; the session ran on the
+operator's local evening of 2026-08-10.
+
+**Nothing in this PR has been applied to an AWS account.** Invariant 2 gives every
+`terraform apply`, every `destroy`, and every AWS mutation to the human. What Claude Code
+ran is `terraform fmt`, `init -backend=false`, and `validate`; everything else in the
+verification below is the compose stack, a container on the operator's own machine, and the
+Lambda's own packaged artifact.
+
+**Shipped**
+
+- **`deploy/aws/`, two Terraform roots split by lifetime** (**H-074**) — `data` (VPC, RDS,
+  both DynamoDB tables, both ECR repositories, three secret containers) and `compute` (ALB,
+  both Fargate services, the rollup Lambda, four alarms, the log groups, one interface
+  endpoint). File-per-concern, twenty-three `.tf` files, both `validate` clean.
+  `compute` reads `data` through `terraform_remote_state`; `data` names nothing in
+  `compute`, so `destroy compute` is a plan somebody reads rather than a `-target` flag
+  somebody types. §P10 reuses the data layer, and the runbook's step 10 checks that by
+  running `terraform -chdir=../data plan` and expecting `No changes.`
+- **All the destroy flags, from day one**: `skip_final_snapshot`, `deletion_protection = false`,
+  `backup_retention_period = 0` and `delete_automated_backups` on RDS; `force_delete` on both
+  ECR repositories; `deletion_protection_enabled = false` on both tables;
+  `enable_deletion_protection = false` on the load balancer; and
+  **`recovery_window_in_days = 0`** on all three secrets — the one that is not obvious, because
+  the 30-day default keeps a deleted secret's *name* reserved and turns this phase's own
+  teardown-and-rebuild into a `ValidationException` four weeks later.
+- **No secret in the repo, in a tfvars file, or in Terraform state** (**H-077**). Terraform
+  creates three empty `aws_secretsmanager_secret` resources and **no version**; the values go
+  in by hand with a leading space (runbook §4). RDS generates its own master password
+  (`manage_master_user_password = true`), so even that never passes through a plan — the
+  alternatives, a `password` argument and `random_password`, both write it to state. What
+  state *does* hold is identifiers and ARNs, listed in H-077 rather than left to be
+  discovered, and an ARN names a secret without being one.
+- **No NAT gateway** (**H-075**), which is $1.08/day — forty percent of the bill — removed by
+  running the Fargate tasks in public subnets with no inbound rule except the load balancer's,
+  and DynamoDB through a *free* gateway endpoint. RDS and the Lambda stay in private subnets
+  with no default route. The one endpoint that is not free (~$0.48/day, Secrets Manager, for
+  the Lambda) is in the **compute** root, so it is not charged while only the data layer
+  stands — and the runbook says plainly that a scheduled ECS task would have cost nothing and
+  that it is a Lambda because Lambda is one of the two gaps this project exists to close.
+- **The console reaches the gateway by service discovery**, not through the load balancer, so
+  the ALB's security group stays at exactly one source address — §P9's "locked to the
+  operator's home /32", kept literally true rather than widened to "…and also anything in
+  this VPC".
+- **`migrations/0007_daily_rollups.sql`** — the first **derived** table in this schema, and
+  `LedgerStore.write_daily_rollup` / `list_rollups` on both implementations, asserted by the
+  same contract suite as `totals` and `series` (**H-073**). A day is **replaced**, not
+  accumulated into: `DELETE` then `INSERT … SELECT` in one transaction, which is what makes
+  the schedule safe to retry and safe to fire by hand at a gate.
+- **`headroom/rollup/`** — `resolve_days`, `run_rollup`, the Lambda handler, and
+  `python -m headroom.rollup`. The handler is a wrapper: it resolves which days, calls the
+  store method, closes the pool in a `finally`, and prints one line of JSON in the same shape
+  every request the gateway serves is logged in. The scheduled run covers **today and
+  yesterday** (**H-078**), because the ledger writer is fire-and-forget and a request that
+  arrived at 23:59:59 can land its row after midnight.
+- **`GET /admin/usage/rollups`**, read-only, declared above `/{request_id}` — and there is
+  deliberately **no route that fires the rollup**. `ui/lib/proxy.ts` named "a Phase 9 rollup
+  trigger" as its example of what the console must never relay; the route it must not relay
+  does not exist.
+- **The console's eighth view: History.** Days rather than minutes, read from the rollups —
+  a ninety-day chart is one indexed query rather than a scan of every request ever served.
+  Still a client of `/admin/*` and nothing else (H-054). Its *Last rollup* tile is the
+  operational one: an absent day is ambiguous ("no traffic" or "nobody rolled it up") and
+  `computed_at` is the only thing on screen that tells them apart.
+- **Four CloudWatch alarms** (**H-079**), three of them metric filters over the structured
+  request log the gateway has emitted since Phase 1 — **no gateway code was added, changed,
+  or removed to be observed.** A 5xx *rate* (≥5% over five minutes, not evaluated below
+  twenty requests, because one failure out of one request is a 100% error rate and not an
+  incident); provider-down (≥3 in five minutes, a number that comes from H-052's breaker
+  constants); a budget-gate refusal (≥1, deliberately the most sensitive); and a lost ledger
+  row — H-027's own request from Phase 3, honoured six phases later.
+- **The deploy image bakes `bge-small-en-v1.5`'s weights** (BUILD_PLAN L6) behind
+  `--build-arg WITH_EMBED=1` on the *same* Dockerfile (**H-076**). Built and verified on the
+  operator's machine: 3.81 GB unpacked, **810 MiB compressed**, serves `/healthz`, and
+  `LazyEmbedder().resolve()` returns the model at 384 dimensions **with `HF_HUB_OFFLINE=1`**
+  — the only check that distinguishes a baked image from one that would have downloaded on
+  first use.
+- **`scripts/chaos_smoke.py`** (**H-081**) — the gate's *"chaos test's keyless subset against
+  the deployed stack"* as a command rather than a paragraph. Nine checks over HTTP, every
+  fault injected into the MockProvider, $0.00, and **run against the compose stack before it
+  was handed over**.
+- **`deploy/aws/README.md`** — the runbook: twelve steps, every command in dependency order,
+  the expected output under each, and the cost stated before every paid one. Plus the
+  chicken-and-egg §P9's own instruction does not mention (**H-080**): AWS will not let a tag
+  key be activated until it has seen it on a resource, so step 1 creates the two *free* ECR
+  repositories, activates, and only then applies anything charged by the hour.
+- **`docs/evidence/p9-aws/README.md`** — an eighteen-item capture list with provenance
+  discipline, per P6/P7/P8.
+- **Tests: 1324 → 1329 keyless** (1250 at the start of the phase), 2 live-marked and
+  deselected. `test_ledger_store` 66 → 90 (the rollup contract over both stores),
+  `test_admin_usage` 29 → 34, and two new files: `test_rollup` (16) and `test_deploy_aws`
+  (34). **No existing test changed** except `test_ledger_writer`'s `BrokenStore`, which grew
+  the two new abstract methods — H-021's intended friction.
+- **CI gains a sixth job**, keyless: `terraform fmt`/`validate` over both roots and
+  `make lambda-build`. Neither touches an account.
+
+**Deferred**
+
+- **The apply itself, and everything downstream of it** — invariant 2. The runbook is
+  written, the plan validates, the images build, and the Lambda package assembles; what has
+  not happened is `terraform apply`, the live streamed request, the chaos smoke against the
+  ALB, the manual rollup invocation, the screenshots, the destroy, and the empty checks.
+  Those are the operator's, in order, in `deploy/aws/README.md`.
+- **An alarm on `expired_releases`** — H-032 named it for this phase and it is the one
+  signal that is *not* in the gateway's log. It is an in-process counter reported by `GET
+  /admin/budgets/{tenant}` and nothing else, so alarming on it needs the gateway to start
+  emitting a line. That is a gateway change in a deploy phase; recorded here as follow-up
+  work rather than smuggled in, and the honest split is stated in H-079: **alarm on what the
+  process already says out loud; name what it does not.**
+- **HTTPS on the load balancer.** There is no domain, so there is no ACM certificate, and the
+  security control is the `/32` allow-list — which is what §P9 asks for. The cost is real and
+  is in the runbook rather than in a footnote: the root admin token crosses the operator's
+  own connection in the clear.
+- **A `provider_open_at` timing mark** — still deferred from Phase 8 (H-065), which named it
+  as "the right first change of Phase 9 or 11". It is not Phase 9's: this phase deploys the
+  gateway it measured, and adding a mark here would mean the AWS run and the H2 run measured
+  different code.
+- **Per-key budgets, concurrency limits, prompt-cache tier pricing, latency-based breaker
+  tripping** — still deferred from Phases 4, 4b, 3, and 6; untouched.
+
+**Deviations**
+
+1. **`WITH_EMBED` is a build argument on the root `Dockerfile`, not a second file in
+   `docker/`.** H-000 anticipated Phase 9 introducing `docker/` "when there is a second thing
+   to name"; it turned out not to be a second thing. The deploy image differs by an extra and
+   a download, and a second Dockerfile would duplicate the base image, the layer order, the
+   `COPY` set, and the entrypoint — four things that must not drift. **H-076.**
+2. **CI does not build the deploy image.** `WITH_EMBED=1` is a multi-gigabyte download per
+   run for a variant only `docker push` uses. The verification is a hand-run recorded in this
+   entry, and `.github/workflows/ci.yml` says so beside the build it does run.
+3. **`migrations/0007` adds a table rather than columns**, which every phase since 0002 has
+   had to explain. This one does not extend `usage_ledger`: it is *derived* data with a
+   different lifetime and a different writer, and putting a rollup's columns on a per-request
+   row would have been the actual mistake. `0002` is untouched (H-003).
+4. **`headroom/` gained a package (`rollup/`), a store method pair, and one admin route** —
+   the first gateway code since Phase 7. All three are required by the gate's own wording:
+   *"one Lambda rollup fired manually and verified visible in the dashboard's history view"*
+   needs a table, a writer, a reader, and a view. Nothing else in `headroom/` changed;
+   `git diff --stat` on the pre-existing modules is `core/ledger.py`, `db/ledger.py`,
+   `db/memory.py`, and `api/usage.py`, all additive.
+5. **`scripts/` gained a second file** (`chaos_smoke.py`), under the same rule as the first
+   (H-054's): it drives the public HTTP API and writes no SQL.
+6. **The stub gateway was missing `cache_avoided_unknown`** on its `/admin/usage/totals`
+   fixture — a field Phase 7 added to `TotalsView` and the fixture never grew. Found while
+   adding the rollup fixture beside it, and fixed: H-058 states that keeping the stub in step
+   with the API's shapes is a real maintenance cost, and this is the first instalment.
+7. **Additions the plan's Phase 9 text does not enumerate**, all additive: the History view
+   and `GET /admin/usage/rollups`; `scripts/chaos_smoke.py`; `make lambda-build`,
+   `make tf-check`, `make rollup`, `make chaos-smoke`; the fourth alarm (H-027's); Cloud Map
+   service discovery (H-075); and `deploy/aws/lambda/build.py`, which exists because
+   Terraform's `archive_file` zips a directory and this repo has no `zip` binary in its
+   toolchain.
+
+---
+
+**Gate** — *human applies; smoke = a live streamed request through the ALB + the chaos
+test's keyless subset against the deployed stack + one Lambda rollup fired manually and
+verified in the dashboard; screenshots; **destroy the same day**; per-service empty checks.*
+
+**That gate is the operator's and is not claimed here.** What follows is everything that
+could be verified without an AWS account — which is the whole of the mechanism the gate
+exercises, with the account swapped for the compose stack.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+171 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 168 source files
+
+$ make test
+================ 1329 passed, 2 deselected, 1 warning in 21.22s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1331 tests collected (1329 deselected) in 0.21s
+
+$ uv run pytest -q -v | grep -c SKIPPED
+0
+```
+
+Per-file counts for the new and changed files:
+
+```
+90 tests/test_ledger_store.py (was 66)     16 tests/test_rollup.py
+34 tests/test_deploy_aws.py                 8 tests/test_ledger_writer.py
+34 tests/test_admin_usage.py (was 29)
+```
+
+```
+$ make tf-check
+terraform fmt -check -recursive deploy/
+terraform -chdir=deploy/aws/data init -backend=false -input=false -no-color >/dev/null
+terraform -chdir=deploy/aws/data validate -no-color
+Success! The configuration is valid.
+
+terraform -chdir=deploy/aws/compute init -backend=false -input=false -no-color >/dev/null
+terraform -chdir=deploy/aws/compute validate -no-color
+Success! The configuration is valid.
+```
+
+The console's own checks, unchanged in shape and larger by four:
+
+```
+$ make ui-check
+ℹ tests 31        (was 28)
+ℹ pass 31
+ℹ fail 0
+
+$ make ui-e2e
+Running 8 tests using 8 workers
+  ✓ the history view renders the days the rollup Lambda wrote
+  8 passed (1.6s)
+```
+
+### THE LAMBDA, END TO END — from its own packaged artifact
+
+Not the repo's `headroom` on `sys.path`: the directory Terraform's `archive_file` zips,
+imported from outside the repo, connected to the compose Postgres.
+
+```
+$ make lambda-build
+built deploy/aws/lambda/build: asyncpg, headroom
+13.0 MiB unzipped · handler headroom.rollup.handler.handler
+
+$ cd /tmp && PYTHONPATH=…/deploy/aws/lambda/build …/.venv/bin/python -c \
+    "import headroom.rollup.handler as h, asyncpg; print(h.__file__); print(asyncpg.__file__)"
+…/deploy/aws/lambda/build/headroom/rollup/handler.py
+…/deploy/aws/lambda/build/asyncpg/__init__.py
+```
+
+Then the rollup itself, against five real ledger rows the chaos smoke had just left behind:
+
+```
+### ledger rows the chaos smoke left behind
+ok|4|0.000046000000
+upstream_stream_cut|1|0
+
+### the rollup, run exactly as the Lambda runs it (packaged artifact, not the repo)
+{
+    "event": "daily_rollup",
+    "days": [
+        {"day": "2026-08-10", "tenants": 0, "requests": 0, "usd_cost": "0"},
+        {"day": "2026-08-11", "tenants": 1, "requests": 5, "usd_cost": "0.000046000000"}
+    ],
+    "requests": 5,
+    "duration_ms": 18.725
+}
+
+### what the table holds
+    day     | requests |    usd_cost    | errored_requests | failover_requests |          computed_at
+------------+----------+----------------+------------------+-------------------+-------------------------------
+ 2026-08-11 |        5 | 0.000046000000 |                1 |                 3 | 2026-08-11 01:32:06.654608+00
+
+### and the same numbers through the admin API the console reads
+[
+    {
+        "day": "2026-08-11", "tenant_id": "2f0e41a8-…", "requests": 5,
+        "input_tokens": 55, "output_tokens": 28,
+        "usd_cost": "0.000046000000", "unpriced_requests": 1, "errored_requests": 1,
+        "cache_disabled": 5, "cache_avoided_usd": "0.000000000000",
+        "cache_avoided_unknown": 0, "failover_requests": 3,
+        "computed_at": "2026-08-11T01:32:06.654608Z"
+    }
+]
+
+### idempotence: firing it twice is a no-op, not a doubling
+1|5
+```
+
+Three things in that output are the phase in miniature. **`unpriced_requests: 1`** — the
+mid-stream cut's cost is NULL, so the sum excludes it and a *count* says so; a rollup that
+folded NULL into zero would understate a day nobody can re-check once the window has passed
+(H-073). **`failover_requests: 3`** — the three pre-first-token faults, aggregated. And
+`1|5` after a second run: one row, five requests, because a day is replaced rather than
+added to.
+
+### THE CHAOS SUBSET — the gate step, run before it was handed over
+
+`scripts/chaos_smoke.py` against the compose gateway over HTTP. The identical command runs
+against the ALB in runbook §8c.
+
+```
+$ uv run python scripts/chaos_smoke.py --base-url http://localhost:8080 --key hk_…
+chaos smoke against http://localhost:8080
+ok    no fault: 200, and no failover headers at all (a request the primary served has no story to tell)
+ok    fault-529@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-timeout@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-connect@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-cut: the stream ends in a terminal error event
+ok    fault-cut: the reason is upstream_stream_cut, not a generic api_error
+ok    fault-cut: no message_stop — a cut answer never claims to have finished
+ok    fault-cut: exactly one message_start (saw 1)
+ok    fault-cut: HTTP 200 — the status line was spent before the fault
+{"checks": 9, "failed": 0}
+```
+
+`exactly one message_start` is H-048's splice test from the outside: two would mean two
+providers wrote one answer, and it is the property worth asserting on a *deployed* stack
+because a load balancer, a proxy, or a retry policy in between could break it.
+
+### THE DEPLOY IMAGE — L6's baked weights, measured
+
+```
+$ docker build --build-arg WITH_EMBED=1 -t headroom:aws-test .
+… DONE 55.0s      EXIT=0
+
+$ docker images | grep headroom:aws-test
+headroom:aws-test 3.81GB
+
+$ docker save headroom:aws-test | gzip -6 | wc -c
+849752197                                        # 810 MiB — the actual ECR push
+
+$ docker run --rm -e HF_HUB_OFFLINE=1 headroom:aws-test /app/.venv/bin/python -c \
+    "from sentence_transformers import SentenceTransformer; \
+     print('embedded:', SentenceTransformer('BAAI/bge-small-en-v1.5').encode(['headroom']).shape)"
+Loading weights: 100%|██████████| 199/199 [00:00<00:00, 3759.56it/s]
+embedded: (1, 384)
+
+$ (running container) healthz: {"status":"ok"}
+$ (running container) LazyEmbedder().resolve()  ->  BAAI/bge-small-en-v1.5 384 dims
+$ (running container) discover_migrations()     ->  0001 … 0007, all seven
+```
+
+`HF_HUB_OFFLINE=1` is the whole of that check. Without it the model would load from
+HuggingFace and prove nothing about the layer.
+
+### THE SABOTAGE RUNS — six, each reverted from a file copy
+
+Green on the first attempt is when a suite deserves the most suspicion, and this phase's
+new tests protect against failures that are *silent by construction*: renaming a log field
+does not break an alarm, it stops it firing. So each was tested by breaking the thing it
+protects. All six were restored from pre-sabotage copies — never with `git checkout --`,
+which ate an hour of uncommitted work in Phase 7 — and every file was diffed afterwards.
+
+*Sabotage A — a log field is renamed, and the alarm quietly stops matching* (`budget_status`
+→ `budget_state` in `RequestContext.as_log_fields`):
+
+```
+FAILED tests/test_deploy_aws.py::test_every_field_an_alarm_filters_on_is_a_field_the_gateway_logs
+1 failed, 33 passed
+```
+
+*Sabotage B — the budgets table is renamed under the task definition* (`DEFAULT_BUDGETS_TABLE`),
+which in production means the gateway creates its own empty table beside Terraform's and the
+budget gate starts from zero:
+
+```
+FAILED tests/test_deploy_aws.py::test_the_dynamodb_tables_are_the_names_the_gateway_defaults_to
+1 failed, 33 passed
+```
+
+*Sabotage C — a destroy flag goes missing* (`skip_final_snapshot = false`):
+
+```
+FAILED tests/test_deploy_aws.py::test_the_database_carries_every_destroy_flag[skip_final_snapshot     = true-…]
+1 failed, 33 passed
+```
+
+*Sabotage D — the Lambda reads a variable Terraform does not set* (`DATABASE_URL_SECRET_ARN_ENV`
+renamed), which falls through to a compose-shaped default in a VPC where nothing is
+listening on it, once a night:
+
+```
+FAILED tests/test_deploy_aws.py::test_the_rollup_lambda_is_given_the_secret_arn_the_handler_reads
+1 failed, 33 passed
+```
+
+*Sabotage E — an alarm matches a value the gateway never emits* (`breaker_open` →
+`circuit_open`). Well-formed, applies cleanly, matches nothing forever:
+
+```
+FAILED tests/test_deploy_aws.py::test_every_value_an_alarm_matches_is_a_value_the_gateway_can_produce
+1 failed, 33 passed
+```
+
+*Sabotage F — `/admin/usage/rollups` is declared **below** `/{request_id}`.* FastAPI matches
+in declaration order, so the literal route never runs and `rollups` is read as a request id
+nobody has — a 404 from the ledger, which is exactly the wrong place to go looking:
+
+```
+FAILED tests/test_admin_usage.py::test_the_rollups_route_is_not_swallowed_by_the_request_id_route
+FAILED tests/test_admin_usage.py::test_a_rollup_row_is_a_days_total_with_the_stamp_that_says_how_fresh_it_is
+FAILED tests/test_admin_usage.py::test_a_rollup_window_bounded_beyond_a_year_is_refused
+3 failed, 31 passed
+```
+
+```
+=== every file identical to its pre-sabotage copy? ===
+  identical  headroom/core/context.py
+  identical  headroom/db/dynamo.py
+  identical  deploy/aws/data/rds.tf
+  identical  headroom/rollup/handler.py
+  identical  deploy/aws/compute/alarms.tf
+  identical  headroom/api/usage.py
+```
+
+### What the operator still has to run
+
+`deploy/aws/README.md`, steps 1–11, in order. The clauses of §P9's gate map to it as:
+
+| Gate clause | Runbook |
+|---|---|
+| human applies (data, then compute) | §1–§2, §6 |
+| a live streamed request through the ALB | §8b — the only paid step, ~$0.001 |
+| the chaos test's keyless subset against the deployed stack | §8c — `make chaos-smoke`, $0.00 |
+| one Lambda rollup fired manually and verified in the dashboard | §8d — invoke, read back through the API, then the **History** view |
+| screenshots | §9, against `docs/evidence/p9-aws/README.md`'s capture list |
+| destroy the same day | §10, and `terraform -chdir=../data plan` → `No changes.` |
+| per-service empty checks (not the tag scan) | §11, twelve queries, one per service |
+
+**Assumed-facts register (§0.4)**
+
+- **A1 — the second half is the operator's, and the code is arranged so it is the same
+  code.** *"…then identically against real DynamoDB in P9."* Nothing in `headroom/db/{dynamo,
+  budgets,buckets}.py` changed for this phase, and nothing in the Terraform is shaped to
+  make it easier: the key names, the billing mode, and the TTL attribute are the ones the
+  code already writes. The only difference between the two environments is one line the task
+  definition **does not have** — `DYNAMODB_ENDPOINT_URL` — which is what makes
+  `headroom/db/dynamo.py` resolve the regional endpoint and sign with the task role instead
+  of the emulator's dummy credential. `test_the_deployed_gateway_is_not_told_about_an_emulator`
+  asserts that absence, and `test_the_dynamodb_tables_are_the_names_the_gateway_defaults_to`
+  asserts the tables are the ones the code would otherwise create for itself. The
+  verification is the first conditional write against real DynamoDB, at runbook §8.
+- **A7 — moved, not verified.** *"EKS + Helm on 2 small nodes for 3 days lands ≈ $20–25 …
+  and yes, cost-allocation tags get **activated in Billing at P9 day one** this time."* The
+  activation is now a runbook step with the chicken-and-egg solved (H-080) rather than an
+  instruction that cannot be followed literally, and the data layer carries `Layer=data` so
+  Cost Explorer can answer "what did the data layer cost during P10's window" — which is the
+  number A7's estimate-versus-actual table needs. The estimate itself is Phase 10's.
+- **H-001's promise comes due at runbook §7.** *"The Phase 9 RDS instance must be Postgres 16
+  with the `vector` extension enabled from the RDS-supported list, which it is."*
+  `migrations/0005` runs `CREATE EXTENSION vector`; locally that extension comes from the
+  `pgvector/pgvector:pg16` image, and RDS is the first place it has to come from AWS's own
+  list. It is the one step in the runbook that says "if it fails, stop and paste the error".
+- **A2, A3, A4, A5, A6** — not due at this gate, none touched. A4 and A5 stay VERIFIED: this
+  phase changed no byte of the passthrough, and all 1329 tests that prove them are green.
+
+**Spend — $0.00 in this session.** No AWS resource was created, no provider API was called,
+and the deploy image was built from a local cache and a public index. Against §0.6's **$5–8**
+for P9 infrastructure: the runbook projects **$3–4** from list price for one day of the full
+stack, with the data layer then running at **~$0.53/day** until Phase 10 destroys it. The
+actual figure goes in this entry after the operator's run, whichever way it lands.
+
+### CI
+
+CI on PR-9 ([run 31450971052](https://github.com/sergioavilax/headroom/actions/runs/31450971052)),
+all **six** jobs green on the first run:
+
+```
+$ gh run view 31450971052 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+ui lint + typecheck + unit tests + build: success
+ui browser smoke (chromium, stub gateway): success
+terraform validates, and the Lambda package builds: success
+gateway and ui images build and serve: success
+```
+
+**The sixth job is new and is the whole of what CI can honestly say about a deployment it
+will never perform.** `terraform fmt -check`, `init -backend=false`, and `validate` over
+both roots, plus `make lambda-build` — no AWS credential is read anywhere in the workflow
+(`grep -c AWS_ACCESS` over the log returns `0`), the providers come from the registry, and
+`validate` reads no data source. Everything *else* about the deployment is asserted by
+`tests/test_deploy_aws.py` in the `test` job, which holds the `.tf` files to the constants
+the gateway actually uses. Invariant 2 gives the apply to the human; this is the part a
+machine can check.
+
+Building the Lambda package here is not ceremony either: a handler that grew an import of
+`fastapi`, or an `asyncpg` with no wheel for the runtime, now fails on the pull request
+rather than at the apply.
+
+**One annotation, fixed in-branch.** The first run carried a deprecation notice —
+`hashicorp/setup-terraform@v3` targets Node 20 and the runner forces it onto 24. Bumped to
+`v4.0.1`, which is the same class of fix Phase 0 applied to `checkout` and `setup-uv`, and
+for the same reason: an annotation nobody acts on is an annotation nobody reads. Confirmed
+rather than assumed on the branch head
+([run 31451242728](https://github.com/sergioavilax/headroom/actions/runs/31451242728), six
+jobs green): the only remaining `deprecat` line in the whole log is the
+`StarletteDeprecationWarning` from `fastapi.testclient` that Phase 0 deliberately left
+visible.
+
+**And one real defect the first run did not catch, fixed in the same push.**
+`aws_security_group.service` carried an inline `egress` block *and* three standalone
+`aws_vpc_security_group_ingress_rule` resources. Both `validate` and `plan` accept that;
+the AWS provider is explicit that it does not survive contact with a second apply, because
+an inline rule set is authoritative and revokes what it does not know about. The group now
+has **no** inline rules at all — the self-referencing ingress (the console reaching the
+gateway) is what forced standalone rules in the first place, and mixing the two styles on
+one group is a rule that vanishes silently on the apply after the one that worked. Every
+other group in both roots is pure-inline; this one is pure-standalone, and the file says
+why.
+
+The `image` job continues to build the **default** gateway image, not the deploy variant:
+`WITH_EMBED=1` is a multi-gigabyte download per run for a build only `docker push` uses,
+and its verification is the hand-run recorded above.
+
+---
+
+## Phase 9 — closed: the operator ran it on AWS, and five things fell out (2026-08-11)
+
+The entry above ends with *"Nothing in this PR has been applied to an AWS account."* That
+is no longer true. The operator ran `deploy/aws/README.md` end to end on the evening of
+2026-08-10 (UTC stamps throughout, so the artifacts read 08-10/08-11): data apply, both
+images pushed, three secrets placed by hand, compute apply, all seven migrations on RDS
+including `0005`'s `CREATE EXTENSION vector`, the whole of §8's smoke, the evidence
+captured, compute destroyed the same day, and the data layer's plan afterwards reading
+`No changes.`
+
+**Invariant 2 held throughout.** Every `apply`, every `destroy`, every AWS mutation was the
+human's; this session read what came back, cross-checked it, and wrote the four documents
+and one test below. Nothing in this entry was executed by Claude Code against an account.
+
+### The evidence, cross-checked rather than filed
+
+Sixteen artifacts in `docs/evidence/p9-aws/`. Every number in them was re-derived here
+before this entry was written, because a capture list nobody recomputes is a filing cabinet:
+
+- **The live row's arithmetic.** 15 input tokens at $1.00/MTok and 7 output at $5.00/MTok
+  is `0.000015 + 0.000035 = 0.000050`, and `06-live-ledger-row.json` carries
+  `"usd_cost": "0.000050000000"` beside the two rates it was billed at. That is H-024's
+  guarantee — *the row says what it was priced at, not what a price table says today* — on
+  AWS, with an Anthropic request id (`req_011CdvDQhev8amkduqtVeUKr`) behind it.
+  `05-live-request-headers.txt` has the 200, the `x-headroom-request-id`, and **no**
+  `x-headroom-failover-*` header of any kind.
+- **The whole day reconciles to the dollar.** The rollup's `2026-08-11` is 6 requests and
+  `$0.000096`: one live request at `$0.000050` plus the chaos smoke's five at `$0.000046`,
+  and `$0.000046` is the *same* figure the compose-stack rehearsal produced in the entry
+  above, because it is the same five deterministic mock requests. `unpriced_requests: 1`
+  and `errored_requests: 1` are the mid-stream cut, whose cost is NULL and stays NULL.
+  `failover_requests: 3` are `fault-529`, `fault-timeout`, and `fault-connect`.
+  `cache_disabled: 6` is all of them.
+- **And the console's larger numbers are the same numbers.** `11-console-overview.png`
+  reads 11 requests / `$0.000142` / 6 failed over / 2 unpriced against the rollup's 6 /
+  `$0.000096` / 3 / 1 — because the operator ran the chaos smoke a second time after firing
+  the rollup. `0.000096 + 0.000046 = 0.000142` exactly, and 3 + 3 = 6. The two artifacts are
+  ten minutes and one deliberate re-run apart, not in conflict.
+- **`07-chaos-smoke.txt`: nine `ok` lines, `{"checks": 9, "failed": 0}`**, against
+  `http://headroom-1115834826.us-east-1.elb.amazonaws.com:8080` — the ALB, not localhost.
+  Including `exactly one message_start (saw 1)`, which is H-048's splice test asserted from
+  outside a load balancer for the first time.
+- **The rollup is idempotent where it counts.** `08-rollup-invoke.json` (the function's own
+  return) and `09-rollup-api.json` (the same day back through `GET /admin/usage/rollups`,
+  after the second invoke) agree exactly: 6 requests, `0.000096000000`. A day is replaced,
+  not accumulated into (H-073). `10-console-history.png`'s *Last rollup* tile stamps
+  `computed_at 2026-08-11T03:04:12Z`, which is `09`'s value to the second.
+- **`15-destroy.txt`: `Destroy complete! Resources: 43 destroyed.`** and the file contains
+  exactly 43 `Destruction complete` lines — the count is not a header the tail of the log
+  contradicts.
+- **`16-data-plan-after-destroy.txt`: `No changes. Your infrastructure matches the
+  configuration.`** with all 27 data-layer resources refreshed above it. That line is the
+  two-root split (H-074) paying for itself, and it is what Phase 10 starts from.
+- **`17-empty-checks.txt`: every per-service query empty, and the survivors are exactly the
+  right five** — `headroom-db`, `headroom_buckets`, `headroom_budgets`, `headroom/gateway`,
+  `headroom/ui`. No clusters, services, load balancers, target groups, functions, rules, log
+  groups, alarms, or topics. Two cosmetic blemishes in the capture (a missing closing brace
+  on the ECS block, an interface-endpoint query that printed nothing rather than an empty
+  table) are noted in the evidence README rather than tidied away.
+- **`12-alarms.json`**: four alarms, each with `arn:aws:sns:us-east-1:…:headroom-alarms` as
+  both its `alarm_actions` and its `ok_actions`.
+
+**Shipped this session** — the four documents and one test the run's findings earned:
+
+- **`test_every_single_line_description_is_a_string_aws_would_accept`** and
+  **`test_no_resource_description_is_a_heredoc`** (**H-082**) — the charset that killed two
+  applies, as a keyless test over every description string in both roots, plus the test
+  that keeps the heredoc exemption honest. Both sabotage-checked (below).
+- **The runbook's Prerequisites now pin `AWS_DEFAULT_REGION`** (**H-083**), quote the
+  `ResourceNotFoundException` that means it is unpinned, and say that a new terminal starts
+  without it. `test_the_runbook_names_the_region_the_secrets_commands_need` holds both
+  halves in place.
+- **H-080, amended after contact** — activation is apply-then-**retry-until-discovered**,
+  possibly next-day, and never a gate. Runbook §1 rewritten to match, with the
+  `ValidationException: tag key missing` quoted and a check that the keys are at least *on*
+  the resources, which is the half that cannot be retrofitted.
+- **The evidence README records the substitution** at item 13 and argues why the
+  unstaged alarm is the stronger capture (**H-084**), and marks `02` and `18` as open with
+  the reason.
+- **The mangled prose is repaired as English** — `"from the home CIDR only"`, `"the gateway
+  container port"`, and the one that was not cosmetic: `"More than 5 percent of requests"`,
+  which the strip had reduced to `"More than 5 of requests"` by eating the `%`.
+
+**Deferred**
+
+- **`02-cost-allocation-tags.png` and `18-billing.png`.** Both blocked on Billing's tag-key
+  discovery, which had not offered `Layer`, `Phase`, or `ManagedBy` for activation by the
+  end of the session. `18` lands when Cost Explorer does; `02` lands with it, because a
+  screenshot of three keys that are not there yet is a picture of an empty screen. The
+  retry belongs at the start of Phase 10's first session, before the cluster exists.
+- **Three description strings, frozen as applied** — `aws_security_group.workload`'s and the
+  two secret descriptions in the data root. A security group's description is immutable, so
+  re-wording it *replaces* a group RDS's own group references and that `No changes` depends
+  on; the secrets would re-introduce the drift wrinkle below for prose. They go when the
+  data layer does, at the end of Phase 10, and each says so in a comment (H-082).
+- Everything the entry above defers — the `expired_releases` alarm, HTTPS on the ALB, the
+  `provider_open_at` mark, per-key budgets, concurrency limits, prompt-cache tier pricing —
+  is untouched.
+
+**Deviations**
+
+1. **Two applies died on a charset no local check enforces.** The first data apply stopped
+   with a VPC and subnets already created, on an **apostrophe** in a security-group
+   description; five hours later the compute plan stopped on an **em dash** in an alarm
+   description — a character the apostrophe fix had no reason to look at. `fmt`, `validate`,
+   `plan`, `make tf-check`, and CI's sixth job all pass on a configuration that cannot be
+   applied. Fixed by the operator with a strip, and closed as a class by the CI test above.
+   **H-082.**
+2. **§4 lost an evening to a region.** The operator's CLI profile still defaulted to
+   `us-west-2` from a previous project, so `terraform apply` went to `us-east-1` (it reads
+   `var.region`) and every `aws secretsmanager put-secret-value` went elsewhere, answering
+   `ResourceNotFoundException` for a secret that existed. `export
+   AWS_DEFAULT_REGION=us-east-1` fixed all three at once. **H-083.**
+3. **Tag activation lagged past the end of the session, so H-080's timing was wrong.** With
+   both ECR repositories applied and carrying all four keys, exactly one key activated —
+   `Project`, and only because another project had already made it known to Billing.
+   `Layer`, `Phase`, and `ManagedBy` each answered `ValidationException: tag key missing`
+   and had not surfaced in the console hours later. Amended in H-080 rather than papered
+   over: the resources are tagged from their first second, which is the half A7's lesson is
+   about; activation is grouping, and it can wait.
+4. **The alarm screenshot is not the alarm the list asked for.** Item 13 registered
+   `headroom-budget-refusals` in ALARM after a staged 402; what was captured is
+   **`headroom-provider-down` in ALARM, fired organically** by §8c's three faults inside one
+   five-minute window. Recorded as a substitution and argued as stronger evidence — a staged
+   402 tests the plumbing an operator built to drive it, while this is a fault injected three
+   steps earlier for another purpose, noticed by an alarm nobody was pointing at it, off a
+   log line no code was added to emit. **H-084.**
+5. **The charset fix left the data layer briefly dirty, and this is the honest version.**
+   The strip changed two *secret* descriptions after the secrets existed, so the first
+   post-destroy `terraform -chdir=deploy/aws/data plan` did **not** read `No changes.` — it
+   showed **two in-place updates**, both description-only. The operator reconciled with an
+   apply and re-ran the plan; `16-data-plan-after-destroy.txt` is that second, clean run.
+   The committed evidence is therefore true and is not the first thing the operator saw,
+   which is worth saying plainly: a description edited after an apply is drift like any
+   other, and the two-root split's promise is about *compute's destroy* not touching data —
+   not about the data root being immune to its own edits.
+6. **One existing test was wrong in a way only a real run could show.**
+   `test_the_only_tfvars_git_keeps_is_the_example` asserted
+   `not list(DEPLOY.rglob("terraform.tfvars"))` — true only on a machine where nobody has
+   ever run the runbook. Step 6 writes that file, so the suite went red on the one machine
+   that had done the thing the suite is about: green CI, red laptop, which is the wrong way
+   round. It now asks *git* (`git ls-files`) instead of the filesystem, which is what the
+   test's own name always claimed it was doing.
+7. **The charset test exempts heredoc descriptions, and the brief said every description
+   string.** Held literally, the rule would strip apostrophes, em dashes, and backticks out
+   of thirteen multi-paragraph `variable` descriptions that Terraform prints to a human and
+   never sends to an API — degrading the files to satisfy a rule about a field they are not.
+   So single-line descriptions are held to the charset everywhere, heredocs are exempt, and
+   `test_no_resource_description_is_a_heredoc` makes the exemption sound by forbidding a
+   `resource` from using one. Both applies that failed are caught. Recorded here because it
+   is a deliberate narrowing of an instruction, not an oversight.
+
+---
+
+**Gate** — *human applies; smoke = a live streamed request through the ALB + the chaos
+test's keyless subset against the deployed stack + one Lambda rollup fired manually and
+verified in the dashboard; screenshots; **destroy the same day**; per-service empty checks.*
+
+**Met.** Verbatim, from `docs/evidence/p9-aws/`:
+
+### The live streamed request, through the ALB (§8b)
+
+```
+HTTP/1.1 200 OK
+Content-Type: text/event-stream; charset=utf-8
+request-id: req_011CdvDQhev8amkduqtVeUKr
+x-headroom-request-id: hr_7277f657da9244659dee12225c08dcf5
+```
+
+no `x-headroom-failover-*` header of any kind, and the row that request wrote:
+
+```json
+{
+  "request_id": "hr_7277f657da9244659dee12225c08dcf5",
+  "model": "claude-haiku-4-5", "provider": "anthropic", "streamed": true,
+  "outcome": "ok", "status_code": 200, "stop_reason": "end_turn",
+  "input_tokens": 15, "output_tokens": 7,
+  "price_effective_from": "2026-08-08",
+  "usd_per_mtok_in": "1.0000000000", "usd_per_mtok_out": "5.0000000000",
+  "usd_cost": "0.000050000000", "cost_status": "priced",
+  "cache_disposition": "cache_disabled",
+  "ttft_ms": 1259.0451359999406, "passthrough_overhead_ms": 0.024925999923652853,
+  "failover_hops": 0, "started_at": "2026-08-11T03:00:42.585043Z"
+}
+```
+
+`15 / 1e6 × $1.00 + 7 / 1e6 × $5.00 = $0.000050`, and `passthrough_overhead_ms` is
+**25 microseconds** — through a load balancer, on Fargate.
+
+### The chaos subset, against the ALB (§8c)
+
+```
+chaos smoke against http://headroom-1115834826.us-east-1.elb.amazonaws.com:8080
+ok    no fault: 200, and no failover headers at all (a request the primary served has no story to tell)
+ok    fault-529@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-timeout@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-connect@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-cut: the stream ends in a terminal error event
+ok    fault-cut: the reason is upstream_stream_cut, not a generic api_error
+ok    fault-cut: no message_stop — a cut answer never claims to have finished
+ok    fault-cut: exactly one message_start (saw 1)
+ok    fault-cut: HTTP 200 — the status line was spent before the fault
+{"checks": 9, "failed": 0}
+```
+
+### The Lambda, fired by hand, and read back three ways (§8d)
+
+```json
+{"event": "daily_rollup",
+ "days": [{"day": "2026-08-10", "tenants": 0, "requests": 0, "usd_cost": "0"},
+          {"day": "2026-08-11", "tenants": 1, "requests": 6, "usd_cost": "0.000096000000"}],
+ "requests": 6, "duration_ms": 165.167}
+```
+
+```json
+[{"day": "2026-08-11", "requests": 6, "input_tokens": 70, "output_tokens": 35,
+  "usd_cost": "0.000096000000", "unpriced_requests": 1, "errored_requests": 1,
+  "cache_disabled": 6, "failover_requests": 3,
+  "computed_at": "2026-08-11T03:04:12.761377Z"}]
+```
+
+and the console's **History** view rendering the same day: `SPEND $0.000096`,
+`REQUESTS 6`, `1 request could not be priced · 1 did not end ok · 3 failed over`,
+`LAST ROLLUP 12m ago · covering 2026-08-11`. Fired twice; the numbers did not move.
+
+### Destroyed the same day (§10)
+
+```
+aws_service_discovery_private_dns_namespace.main: Destruction complete after 44s
+
+Destroy complete! Resources: 43 destroyed.
+```
+
+```
+No changes. Your infrastructure matches the configuration.
+
+Terraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.
+```
+
+### The per-service empty checks (§11)
+
+```
+== ECS ==            {"clusterArns": []}   {"serviceArns": []}
+== ALB / target groups ==      []   []
+== Lambda / EventBridge ==     []   []
+== Log groups ==               []
+== Alarms / SNS ==             []   []
+== What SHOULD remain ==
+["headroom-db"]
+{"TableNames": ["headroom_buckets", "headroom_budgets"]}
+["headroom/ui", "headroom/gateway"]
+```
+
+### The keyless gate, after this session's changes
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+171 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 168 source files
+
+$ make test
+================ 1334 passed, 2 deselected, 1 warning in 21.55s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1336 tests collected (1334 deselected) in 0.20s
+
+$ uv run pytest -q -v | grep -c SKIPPED
+0
+
+$ make tf-check
+terraform fmt -check -recursive deploy/
+terraform -chdir=deploy/aws/data validate -no-color
+Success! The configuration is valid.
+terraform -chdir=deploy/aws/compute validate -no-color
+Success! The configuration is valid.
+```
+
+**1329 → 1334**, all five in `tests/test_deploy_aws.py` (34 → 39): the charset check and the
+heredoc check over both roots, and the runbook's region prerequisite. No other test file
+changed; `test_the_only_tfvars_git_keeps_is_the_example` was repaired rather than added to.
+
+### The sabotage runs — two more, both from file copies
+
+The charset test protects against a failure that is invisible until an apply is half done,
+so it was checked by re-introducing exactly the two characters that stopped the two applies.
+
+*Sabotage G — an apostrophe goes back into a security-group description* (`"from the home
+CIDR only"` → `"from the operator's network only"`, the string that stopped the first data
+apply):
+
+```
+FAILED tests/test_deploy_aws.py::test_every_single_line_description_is_a_string_aws_would_accept[compute]
+AssertionError: security.tf:21 has ["'"] in a description; AWS rejects the whole apply
+with an InvalidParameterValue naming the string: "Gateway listener, from the operator's network only"
+```
+
+*Sabotage H — an em dash goes back into a secret description* (the second failure's
+character, in the other root, to prove the test is not one root's):
+
+```
+FAILED tests/test_deploy_aws.py::test_every_single_line_description_is_a_string_aws_would_accept[data]
+2 failed, 37 passed
+```
+
+Both restored from pre-sabotage copies — never `git checkout --`, which ate an hour of
+uncommitted work in Phase 7 — and both diffed afterwards:
+
+```
+=== every file identical to its pre-sabotage copy? ===
+  identical  deploy/aws/compute/security.tf
+  identical  deploy/aws/data/secrets.tf
+```
+
+**Assumed-facts register (§0.4)**
+
+- **A1 — VERIFIED.** *"…then identically against real DynamoDB in P9."* The deployed
+  gateway ran the whole of §8 against real DynamoDB with no `DYNAMODB_ENDPOINT_URL` in its
+  task definition: it resolved the regional endpoint, signed with the task role, and served
+  six requests including three failovers and a budget-gated path, with
+  `headroom/db/{dynamo,budgets,buckets}.py` unchanged from the emulator run. The code path
+  is the same code path, which is what the assumption claimed.
+- **A7 — half verified, half moved.** The tags are on every resource from the first apply
+  (`default_tags`, both roots), which is the half Backline's cost chase lacked. Activation
+  is the half that lagged, and it is now an amended H-080 with a retry that belongs at the
+  start of P10. The estimate-versus-actual table is Phase 10's and needs `Layer` active by
+  then.
+- **H-001 — cashed, at last.** *"The Phase 9 RDS instance must be Postgres 16 with the
+  `vector` extension enabled from the RDS-supported list, which it is."* `04-migrations.txt`
+  is `applied 7 migration(s): … 0005_response_cache …` from the one-off ECS task's own log:
+  `CREATE EXTENSION vector` against RDS, from AWS's list rather than from the
+  `pgvector/pgvector:pg16` image, first try.
+- **A2–A6** — not due at this gate, none touched.
+
+**Spend.** Projected **$3–4** for this phase from list price (`deploy/aws/README.md`'s
+table: ≈$2.77/day with compute up, ≈$0.53/day for the data layer alone), against §0.6's
+**$5–8** for P9 infrastructure. The compute layer stood for roughly six hours of one day
+and was destroyed the same day as the gate requires, so the projection should land at or
+under its low end; the data layer keeps accruing ≈$0.53/day until Phase 10 destroys it,
+which comes out of §0.6's P10 line. The live request itself cost **$0.000050** — the
+runbook budgeted ~$0.001 for it. **The actual figure is not in this entry yet**: Cost
+Explorer needs its tag keys activated and then up to 24 hours, and three of the four keys
+had not been offered for activation when the session ended. It lands with
+`docs/evidence/p9-aws/18-billing.png`, and this line gets the number then, whichever way it
+falls.
+
+### CI, on the closing head
+
+Checked on the branch head rather than assumed, the way the entry above's annotation fix
+was: [run 31456533329](https://github.com/sergioavilax/headroom/actions/runs/31456533329)
+on `8ef4d1a`, all **six** jobs green.
+
+```
+$ gh run view 31456533329 --json status,conclusion,jobs
+status=completed conclusion=success sha=8ef4d1a
+  success  lint + typecheck
+  success  pytest (postgres + dynamodb-local service containers)
+  success  terraform validates, and the Lambda package builds
+  success  ui lint + typecheck + unit tests + build
+  success  ui browser smoke (chromium, stub gateway)
+  success  gateway and ui images build and serve
+```
+
+```
+1334 passed, 2 deselected, 1 warning in 35.34s
+8 passed (6.0s)
+```
+
+Three things worth checking rather than inferring, and all three hold. The **new charset
+tests really ran on a runner** — both roots' parametrisations and the runbook's region
+check appear by name in the `pytest` job's log, which matters for a test whose whole
+purpose is to run somewhere the operator is not. **Zero annotations** across all six jobs
+(`check-runs/{id}/annotations` is empty for every one), so nothing about this push
+re-opened the deprecation the entry above closed. And the only `deprecat` line in 3,890
+lines of log is still the `StarletteDeprecationWarning` from `fastapi.testclient` that
+Phase 0 deliberately left visible.
+
+The sixth job is the one this phase's two failed applies argue about, and it is worth being
+precise about what it now does and does not catch. `terraform fmt -check`,
+`init -backend=false`, and `validate` over both roots still say nothing about whether AWS
+will accept the configuration — that is the gap H-082 exists for. What closes it is in the
+`test` job instead, keylessly, as an assertion about strings: an apostrophe or an em dash
+in a description now fails on the pull request, in milliseconds, rather than halfway
+through creating a VPC.
+
+---

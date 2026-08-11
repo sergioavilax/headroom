@@ -445,4 +445,57 @@ Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-048 … H-053.
 Running the local vLLM backends — including the two-instance topology this chain assumes:
 [docs/vllm.md](docs/vllm.md).
 
+## On AWS, and built to die
+
+The same gateway on ECS Fargate behind a two-listener ALB, with RDS Postgres 16, **real**
+DynamoDB, and one Lambda. Terraform in [`deploy/aws/`](deploy/aws/), the whole runbook —
+every command in order, with what it costs stated before it runs — in
+[`deploy/aws/README.md`](deploy/aws/README.md).
+
+**Two roots, split by lifetime.** `deploy/aws/data` holds the VPC, RDS, both DynamoDB
+tables, the container images and the secret containers; `deploy/aws/compute` holds the load
+balancer, both services, the Lambda, the alarms and the log groups. `terraform -chdir=deploy/aws/compute destroy`
+takes the second and leaves the first standing — after which `terraform -chdir=deploy/aws/data plan`
+says `No changes.`, which is a step in the runbook rather than a hope. That is what lets
+the compute layer die the same evening while the database it was pointed at carries the
+Kubernetes phase.
+
+**Nothing about the application changed to run there.** The image is the one the Dockerfile
+builds; the configuration is the environment variables compose already sets, with exactly
+one line *missing* — `DYNAMODB_ENDPOINT_URL` — which is how the gateway knows to resolve the
+regional endpoint and sign with its task role instead of the emulator's dummy credential.
+The conditional-write code path the budget gate and the token buckets rest on is byte for
+byte the one the stampede and the hammer race locally.
+
+**No secret is in the repo, in a tfvars file, or in Terraform state.** Terraform creates
+three empty Secrets Manager secrets and never a version; the values go in by hand with a
+leading space. RDS generates its own master password (`manage_master_user_password`), so
+even that never passes through a plan. What state does hold is identifiers and ARNs — an
+ARN names a secret without being one — and `tests/test_deploy_aws.py` asserts the rest.
+
+**Alarms that would actually page**, and three of the four read the structured request log
+the gateway has emitted since Phase 1 rather than a new metrics surface: a 5xx *rate* that
+does not evaluate below twenty requests, a provider-down filter that deliberately does not
+count an upstream 400 (a healthy provider refusing a bad request), a budget-gate refusal,
+and a ledger row lost by the fire-and-forget writer. Renaming a log field would silence one
+of them with nothing red anywhere — so the same tests parse every filter and hold each
+`$.field` and each literal to the code that produces it.
+
+**One Lambda, and it is the nightly cost rollup.** EventBridge → aggregate the day's ledger
+into `daily_rollups` → the console's **History** view reads it. The aggregation is a
+`LedgerStore` method asserted against both implementations, so the Lambda is a wrapper
+rather than a second `GROUP BY` with its own opinions about NULL; the same code runs from a
+terminal as `python -m headroom.rollup`. A day is *replaced* rather than accumulated into,
+which is what makes firing it by hand safe.
+
+```bash
+make lambda-build     # assemble the Lambda's package — Terraform zips it
+make tf-check         # fmt + validate both roots; no AWS credentials, no state
+make rollup           # the same rollup, against the compose stack
+make chaos-smoke BASE_URL=… KEY=…   # the P6 fault vocabulary at a running gateway, $0.00
+```
+
+Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-073 … H-081. Evidence, with its
+provenance discipline, in [docs/evidence/p9-aws/](docs/evidence/p9-aws/).
+
 MIT licensed.

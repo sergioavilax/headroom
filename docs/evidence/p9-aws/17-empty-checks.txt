@@ -1,0 +1,32 @@
+== ECS ==
+{
+    "clusterArns": []
+}
+{
+    "serviceArns": []
+== ALB / target groups ==
+[]
+[]
+== Lambda / EventBridge ==
+[]
+[]
+== Log groups ==
+[]
+== Alarms / SNS ==
+[]
+[]
+== Interface endpoints (the $0.48/day one) ==
+== What SHOULD remain ==
+[
+    "headroom-db"
+]
+{
+    "TableNames": [
+        "headroom_buckets",
+        "headroom_budgets"
+    ]
+}
+[
+    "headroom/ui",
+    "headroom/gateway"
+]

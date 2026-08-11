@@ -1,0 +1,33 @@
+[0m[1mdata.aws_availability_zones.available: Reading...[0m[0m
+[0m[1maws_secretsmanager_secret.admin_token: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/admin-token-tkigwq][0m
+[0m[1maws_secretsmanager_secret.database_url: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr][0m
+[0m[1maws_ecr_repository.ui: Refreshing state... [id=headroom/ui][0m
+[0m[1maws_vpc.main: Refreshing state... [id=vpc-00737af3912a09328][0m
+[0m[1maws_ecr_repository.gateway: Refreshing state... [id=headroom/gateway][0m
+[0m[1maws_secretsmanager_secret.anthropic_api_key: Refreshing state... [id=arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/anthropic-api-key-VuV8us][0m
+[0m[1maws_dynamodb_table.budgets: Refreshing state... [id=headroom_budgets][0m
+[0m[1maws_dynamodb_table.buckets: Refreshing state... [id=headroom_buckets][0m
+[0m[1mdata.aws_availability_zones.available: Read complete after 0s [id=us-east-1][0m
+[0m[1maws_ecr_lifecycle_policy.ui: Refreshing state... [id=headroom/ui][0m
+[0m[1maws_ecr_lifecycle_policy.gateway: Refreshing state... [id=headroom/gateway][0m
+[0m[1maws_route_table.private: Refreshing state... [id=rtb-0c51782835cb18e37][0m
+[0m[1maws_internet_gateway.main: Refreshing state... [id=igw-0b45bd3d9309e3776][0m
+[0m[1maws_security_group.workload: Refreshing state... [id=sg-089442c7421961a20][0m
+[0m[1maws_subnet.public[1]: Refreshing state... [id=subnet-0ece21329bbccc90c][0m
+[0m[1maws_subnet.public[0]: Refreshing state... [id=subnet-02b41a018f4124680][0m
+[0m[1maws_subnet.private[1]: Refreshing state... [id=subnet-026cacc21ec4916e3][0m
+[0m[1maws_subnet.private[0]: Refreshing state... [id=subnet-0583bf06f17cb4ac1][0m
+[0m[1maws_route_table.public: Refreshing state... [id=rtb-0671e40fb368bda3f][0m
+[0m[1maws_security_group.db: Refreshing state... [id=sg-0adb294feb2d558aa][0m
+[0m[1maws_route_table_association.public[1]: Refreshing state... [id=rtbassoc-0edbeec04102c32e5][0m
+[0m[1maws_route_table_association.public[0]: Refreshing state... [id=rtbassoc-0c1e7d85491041536][0m
+[0m[1maws_vpc_endpoint.dynamodb: Refreshing state... [id=vpce-0d9d104ad11faac40][0m
+[0m[1maws_route_table_association.private[0]: Refreshing state... [id=rtbassoc-0458e8300b1b4316b][0m
+[0m[1maws_db_subnet_group.main: Refreshing state... [id=headroom-db][0m
+[0m[1maws_route_table_association.private[1]: Refreshing state... [id=rtbassoc-08ec58f9cb5f8a97a][0m
+[0m[1maws_db_instance.main: Refreshing state... [id=db-3236PHOMVAPILPLVEB43SNU6QY][0m
+
+[0m[1m[32mNo changes.[0m[1m Your infrastructure matches the configuration.[0m
+
+[0mTerraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.

@@ -11,10 +11,11 @@ undercount, which is a cost meter's version of lying.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from headroom.core.ledger import (
+    DailyRollup,
     LedgerEntry,
     LedgerQuery,
     LedgerStore,
@@ -60,6 +61,19 @@ class BrokenStore(LedgerStore):
 
     async def get(self, request_id: str) -> LedgerEntry | None:
         return None
+
+    async def write_daily_rollup(self, day: date) -> list[DailyRollup]:
+        return []
+
+    async def list_rollups(
+        self,
+        *,
+        tenant_id: str | None = None,
+        since: date | None = None,
+        until: date | None = None,
+        limit: int = 90,
+    ) -> list[DailyRollup]:
+        return []
 
 
 class BlockedStore(InMemoryLedgerStore):

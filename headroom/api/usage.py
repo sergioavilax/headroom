@@ -25,7 +25,7 @@ one layer up.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
@@ -34,7 +34,9 @@ from pydantic import BaseModel, ConfigDict
 from headroom.api.admin import AdminAuth, AdminError
 from headroom.api.deps import GatewayDep
 from headroom.core.ledger import (
+    MAX_ROLLUP_DAYS,
     SERIES_BUCKETS,
+    DailyRollup,
     LedgerEntry,
     LedgerQuery,
     UsageBucket,
@@ -269,6 +271,63 @@ class SeriesPointView(BaseModel):
         )
 
 
+class RollupView(BaseModel):
+    """One day of one tenant's spend, as the nightly Lambda computed it (Phase 9).
+
+    Field-for-field :class:`TotalsView` minus the model split, plus the day and the
+    stamp — because it *is* a total, over a fixed window, computed once instead of on
+    every poll. Two vocabularies for one aggregate is how a console ends up comparing
+    two different things and calling both "spend".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    day: date
+    tenant_id: str
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    reasoning_tokens: int
+    usd_cost: str
+    unpriced_requests: int
+    errored_requests: int
+    cache_hits_exact: int
+    cache_hits_semantic: int
+    cache_misses: int
+    cache_bypasses: int
+    cache_disabled: int
+    cache_avoided_usd: str
+    cache_avoided_unknown: int
+    failover_requests: int
+    #: When the rollup ran. The gap between this and ``day`` is how late the schedule
+    #: was, and it is the field that says whether the newest row covers a whole day or
+    #: the part of one that had happened when the Lambda fired.
+    computed_at: datetime | None
+
+    @classmethod
+    def of(cls, rollup: DailyRollup) -> RollupView:
+        return cls(
+            day=rollup.day,
+            tenant_id=rollup.tenant_id,
+            requests=rollup.requests,
+            input_tokens=rollup.input_tokens,
+            output_tokens=rollup.output_tokens,
+            reasoning_tokens=rollup.reasoning_tokens,
+            usd_cost=format_usd(rollup.usd_cost) or "0",
+            unpriced_requests=rollup.unpriced_requests,
+            errored_requests=rollup.errored_requests,
+            cache_hits_exact=rollup.cache_hits_exact,
+            cache_hits_semantic=rollup.cache_hits_semantic,
+            cache_misses=rollup.cache_misses,
+            cache_bypasses=rollup.cache_bypasses,
+            cache_disabled=rollup.cache_disabled,
+            cache_avoided_usd=format_usd(rollup.cache_avoided_usd) or "0",
+            cache_avoided_unknown=rollup.cache_avoided_unknown,
+            failover_requests=rollup.failover_requests,
+            computed_at=rollup.computed_at,
+        )
+
+
 def _query(
     tenant_id: str | None,
     key_id: str | None,
@@ -364,6 +423,33 @@ async def usage_series(
         bucket=bucket,
     )
     return [SeriesPointView.of(point) for point in points]
+
+
+@router.get("/rollups", response_model=list[RollupView], dependencies=[AdminAuth])
+async def usage_rollups(
+    gateway: GatewayDep,
+    tenant_id: Annotated[str | None, Query(description="narrow to one tenant")] = None,
+    since: Annotated[date | None, Query(description="inclusive first day (UTC)")] = None,
+    until: Annotated[date | None, Query(description="exclusive last day (UTC)")] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_ROLLUP_DAYS, description="days, not rows")] = 90,
+) -> list[RollupView]:
+    """Committed daily rollups, oldest day first — the console's history view.
+
+    **Read-only, like everything else under ``/admin/usage``, and there is deliberately
+    no route that fires the rollup.** The schedule is EventBridge's and a manual run is
+    ``aws lambda invoke``; a POST here would be a way to make the gateway's own database
+    do arbitrary aggregate work from the internet side of an ALB, which is not a thing
+    an operator console should be able to ask for. (``ui/lib/proxy.ts`` says the same
+    from the other direction: the console proxies seven prefixes and a "Phase 9 rollup
+    trigger" is the example it gives of what it must not relay.)
+
+    Declared **above** ``/{request_id}`` — FastAPI matches in declaration order, and a
+    literal path that arrives after a parameterised one is a route that never runs.
+    """
+    rollups = await gateway.ledger.list_rollups(
+        tenant_id=tenant_id, since=since, until=until, limit=limit
+    )
+    return [RollupView.of(rollup) for rollup in rollups]
 
 
 @router.get("/{request_id}", response_model=LedgerRowView, dependencies=[AdminAuth])

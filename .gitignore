@@ -28,6 +28,13 @@ ui/next-env.d.ts
 !*.tfvars.example
 .terraform/
 .terraform.tfstate.lock.info
+
+# the rollup Lambda's artifact (Phase 9), assembled by `make lambda-build` from the
+# working tree plus a locked asyncpg wheel. Rebuilt in one command and platform-specific,
+# so it is a build output rather than a source file — and the zip's hash is what tells
+# Terraform to redeploy, which a committed copy would make a merge conflict.
+deploy/aws/lambda/build/
+deploy/aws/lambda/*.zip
 crash.log
 crash.*.log
 kubeconfig
@@ -38,3 +45,5 @@ kubeconfig
 .idea/
 .vscode/
 .DS_Store
+*.plan
+*.tfplan
