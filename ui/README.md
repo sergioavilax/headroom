@@ -54,10 +54,20 @@ server the shipped image runs, not `next start`. [`H-058`](../docs/DECISIONS.md)
 | `/` | What has the gateway cost, what is it serving, what did the cache save, is anything unwell |
 | `/live` | Requests arriving, **by the upstream that served each one** — the kill demo, on screen |
 | `/requests` | The ledger as an explorer: filters, and one request's whole story in a drawer |
+| `/history` | Days rather than minutes, out of `daily_rollups` — and *when* they were rolled up |
 | `/tenants` | Tenants and virtual keys. Revoke and deactivate; nothing is ever deleted |
 | `/limits` | Budgets as channel strips with headroom, rate limits as buckets |
 | `/cache` | Dispositions, savings, policy — and which question each semantic hit answered |
 | `/providers` | Health, breaker state, latency percentiles, and the chains each provider sits in |
+
+**`/history` is the only view that does not read `usage_ledger`.** That table grows by a
+row per request forever, and a ninety-day chart would scan every one of them on every poll;
+a scheduled Lambda aggregates each day once and this reads the result. It is still a client
+of `/admin/*` and nothing else (H-054) — the endpoint is `GET /admin/usage/rollups`, and the
+proxy's existing `usage` prefix already covers it, so nothing about the allow-list widened.
+The *Last rollup* tile is the operational one: an empty column means "no traffic that day"
+**or** "nobody rolled that day up", and `computed_at` is the only thing on screen that tells
+them apart.
 
 ## Layout
 

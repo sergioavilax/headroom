@@ -1,0 +1,30 @@
+admin_token_secret_arn = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/admin-token-tkigwq"
+anthropic_api_key_secret_arn = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/anthropic-api-key-VuV8us"
+buckets_table_arn = "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_buckets"
+buckets_table_name = "headroom_buckets"
+budgets_table_arn = "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_budgets"
+budgets_table_name = "headroom_budgets"
+database_url_secret_arn = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr"
+db_address = "headroom-db.cbdogcstcuxe.us-east-1.rds.amazonaws.com"
+db_endpoint = "headroom-db.cbdogcstcuxe.us-east-1.rds.amazonaws.com:5432"
+db_master_secret_arn = "arn:aws:secretsmanager:us-east-1:675362625117:secret:rds!db-79f3bae8-8a0d-4e0e-80d8-34ee55adf6ac-GvD7YG"
+db_name = "headroom"
+db_username = "headroom"
+gateway_repository_url = "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway"
+private_subnet_ids = [
+  "subnet-0583bf06f17cb4ac1",
+  "subnet-026cacc21ec4916e3",
+]
+public_subnet_ids = [
+  "subnet-02b41a018f4124680",
+  "subnet-0ece21329bbccc90c",
+]
+region = "us-east-1"
+secret_names = {
+  "admin_token" = "headroom/admin-token"
+  "anthropic_api_key" = "headroom/anthropic-api-key"
+  "database_url" = "headroom/database-url"
+}
+ui_repository_url = "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/ui"
+vpc_id = "vpc-00737af3912a09328"
+workload_security_group_id = "sg-089442c7421961a20"

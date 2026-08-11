@@ -18,6 +18,10 @@ const NAV = [
   { href: "/", label: "Overview" },
   { href: "/live", label: "Live traffic" },
   { href: "/requests", label: "Requests" },
+  // Phase 9. The one view that does not read `usage_ledger`: it reads the rollups a
+  // scheduled Lambda writes, because ninety days of history is not a question to ask a
+  // per-request table every fifteen seconds.
+  { href: "/history", label: "History" },
   { href: "/tenants", label: "Tenants & keys" },
   { href: "/limits", label: "Limits & budgets" },
   { href: "/cache", label: "Cache" },

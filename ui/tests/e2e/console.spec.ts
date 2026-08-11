@@ -99,6 +99,24 @@ test("a request's detail shows what it cost, what the budget held, and what fail
   await expect(drawer.getByText(/\$0\.25 in · \$1\.25 out/)).toBeVisible();
 });
 
+test("the history view renders the days the rollup Lambda wrote", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("link", { name: "History" }).click();
+
+  await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+  // 0.004738 + 0.0103845 + 0.000851 + 0.001357 = $0.0173305, summed in picodollars across
+  // four rollup rows and two tenants and rendered at the four places `moneyFromPicos`
+  // gives an amount this size — the same arithmetic and the same formatter the Overview
+  // uses over totals, on a different window and a different table.
+  await expect(page.getByText("$0.0173").first()).toBeVisible();
+  await expect(page.getByRole("img", { name: /Requests per day/ })).toBeVisible();
+  // The tile the schedule is watched through: a rollup that stopped firing shows here as
+  // an ageing stamp, which is the only thing on screen that can tell "no traffic that day"
+  // from "nobody rolled that day up".
+  await expect(page.getByText("Last rollup")).toBeVisible();
+  await expect(page.getByText(/covering \d{4}-\d{2}-\d{2}/)).toBeVisible();
+});
+
 test("signing out clears the session", async ({ page, context }) => {
   await signIn(page);
   await page.getByRole("button", { name: "Sign out" }).click();
