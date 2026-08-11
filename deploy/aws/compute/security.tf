@@ -119,7 +119,7 @@ resource "aws_security_group" "endpoints" {
   vpc_id      = local.data.vpc_id
 
   ingress {
-    description     = "HTTPS from anything wearing the workload group — in practice, the Lambda"
+    description     = "HTTPS from anything wearing the workload group in practice, the Lambda"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"

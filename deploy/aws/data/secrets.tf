@@ -55,7 +55,7 @@ resource "aws_secretsmanager_secret" "database_url" {
 # says so, rather than publishing tenant-and-key CRUD behind an IP allow-list.
 resource "aws_secretsmanager_secret" "admin_token" {
   name                    = local.secret_names.admin_token
-  description             = "HEADROOM_ADMIN_TOKEN — the root credential for /admin/*"
+  description             = "HEADROOM_ADMIN_TOKEN the root credential for /admin/*"
   recovery_window_in_days = 0
 
   tags = { Name = local.secret_names.admin_token }
@@ -66,7 +66,7 @@ resource "aws_secretsmanager_secret" "admin_token" {
 # the ALB can come up healthy before this value exists.
 resource "aws_secretsmanager_secret" "anthropic_api_key" {
   name                    = local.secret_names.anthropic_api_key
-  description             = "ANTHROPIC_API_KEY for the deployed gateway's live smoke"
+  description             = "ANTHROPIC_API_KEY for the deployed gateways live smoke"
   recovery_window_in_days = 0
 
   tags = { Name = local.secret_names.anthropic_api_key }

@@ -2,7 +2,7 @@
 # `run-task` commands take. Everything else is in the console.
 
 output "gateway_url" {
-  description = "The gateway, reachable only from the CIDR in `home_cidr`."
+  description = "The gateway, reachable only from the CIDR in home_cidr."
   value       = "http://${aws_lb.main.dns_name}:${var.gateway_port}"
 }
 
@@ -29,7 +29,7 @@ output "gateway_log_group" {
 }
 
 output "rollup_function_name" {
-  description = "`aws lambda invoke --function-name <this>` fires the rollup by hand."
+  description = "aws lambda invoke --function-name this fires the rollup by hand."
   value       = aws_lambda_function.rollup.function_name
 }
 
@@ -46,7 +46,7 @@ output "alarm_topic_arn" {
 # produces a task that starts, cannot reach anything, and times out — so it is an output
 # rather than an instruction to go and look.
 output "run_task_network_configuration" {
-  description = "Paste into `aws ecs run-task --network-configuration`."
+  description = "Paste into aws ecs run-task --network-configuration."
   value = jsonencode({
     awsvpcConfiguration = {
       subnets        = local.data.public_subnet_ids
@@ -57,6 +57,6 @@ output "run_task_network_configuration" {
 }
 
 output "account_id" {
-  description = "For the `docker login` line, so the runbook never asks anyone to remember it."
+  description = "For the docker login line, so the runbook never asks anyone to remember it."
   value       = data.aws_caller_identity.current.account_id
 }
