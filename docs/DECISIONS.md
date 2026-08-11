@@ -6138,3 +6138,166 @@ files. A7's table reports the rate as well as the total, and says which of the t
 pre-registered question.
 
 ---
+
+## H-097 — A README claim is pinned in one of three ways, and the weakest one is labelled (Phase 11)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P11 asks for *"a README whose claims are **pinned by tests** recomputing every number
+from committed artifacts"*. Most of the README's numbers can be recomputed exactly — the H1 curve
+is a JSON file, the parity verdict is a JSON file, a live request's overhead is a field on a
+committed ledger row. Some cannot. The console mid-kill is a **PNG**: "104 requests, 66 served by a
+fallback, `CALLER-VISIBLE 5XX: 0`" is a fact about pixels. The drain reproduction's six lines are
+terminal output from a laptop rig that ran once. The Phase 9 Cost Explorer read is a number an
+operator saw on a web page. Held literally, "recompute every number" would mean deleting those
+claims or building an OCR step, and both are worse than the problem.
+
+**Decision.** Three tiers, and `tests/test_docs.py` says at each site which one is in use.
+
+1. **Recomputed** — the number is derived, in the test, from the artifact that produced it. The
+   whole H1 threshold table is rebuilt row by row out of `h1_curve.json`; every overhead figure is
+   read off the one ledger row it was measured on and formatted to the precision the README quotes;
+   the mock unit cost is `usd_for_tokens` over the committed `config/models.yaml`, so a
+   fat-fingered rate in the price book fails the README rather than the other way round.
+2. **Held to a constant in the code** — the cache's default threshold, `AUTH_CACHE_TTL_S`, and
+   `BackoffPolicy.worst_case_s(2)`. These describe behaviour rather than a measurement, and the
+   code is their source of truth.
+3. **Held to another committed document** — where the primary source no longer exists, the claim is
+   asserted to appear in *both* the README and the document that recorded it (`docs/PHASE_LOG.md`,
+   the evidence READMEs, `REPORT.md`). This proves consistency, not truth. It is the weak tier and
+   it is named as the weak tier in the module docstring, because a reader who cannot tell tier 3
+   from tier 1 will over-trust tier 3.
+
+Two structural checks sit beside the numbers and will fire far more often in ordinary work: **every
+relative link in the README resolves to a path that exists**, and **every `H-NNN` it cites is a real
+heading in this file**. A dead link to an artifact and a missing artifact are the same failure.
+
+**The one number with no artifact is the test count**, so it is taken from the session's own
+collection (`len(request.session.items)`) rather than from a file. That check **skips loudly** when
+the run is not the whole keyless suite — a path argument, a `-k`, or a non-default `-m` — because
+`pytest tests/test_docs.py` legitimately collects one file and the README is not about one file.
+Comparing collected *file names* was tried first and is wrong: `tests/test_live_smoke.py`
+contributes nothing to a keyless collection, and that is invariant 4 working rather than a partial
+run.
+
+**A test that tightens itself.** The cloud-cost table's actual column reads `pending`, because Cost
+Explorer lags and three of four cost-allocation tag keys were still not activated when the cluster
+came down (H-080 as amended).
+`test_the_cloud_cost_table_says_pending_until_the_billing_capture_lands` branches on whether
+`docs/evidence/p10-eks/23-billing.png` exists: while it does not, the README **must** say pending
+and the evidence list must agree; the moment it does, the test **fails** until the number replaces
+the word. The follow-up is therefore enforced by the suite rather than remembered.
+
+**Alternatives considered.** *Recompute everything or claim nothing* — would have cost the kill
+demo's console captures and the drain reproduction, which are two of the most useful things in the
+repo. *Generate the README from the artifacts* — a templated front door is unreadable, and the
+prose is most of the value; the numbers are the part that drifts. *Assert on rendered numbers only,
+by regex* — a pretty parser lets a claim survive being re-worded into something the parser no
+longer recognises, which is the failure mode rather than a nicety, so the assertions are crude
+substring checks in `tests/test_deploy_aws.py`'s house style.
+
+**Consequences.** Re-wording a sentence that carries a number now breaks the build, deliberately:
+the README's figures are as immovable as the artifacts behind them, and moving one is an edit to
+both. `tests/test_docs.py` reads fourteen committed artifacts at import time, so deleting an
+evidence file fails collection rather than a single test — which is the right blast radius for
+invariant 9. The tier-3 pins will drift silently if both documents are edited together; that is
+stated in the docstring and is the residual this design accepts.
+
+---
+
+## H-098 — `make demo` is a checked tour, and the token is generated rather than skipped (Phase 11)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P11's gate: *"a stranger's cold clone reaches a working keyless demo in one
+command"*. Phase 1 had that — `make up` plus one curl. Phase 2 took it away and said so in its own
+deviation 2: every `/v1/*` request needs a virtual key, keys are minted through an admin API, and
+the admin API needs a root token, so the demo became four steps. That PR deliberately refused the
+obvious repair — a "dev mode" that lets an unauthenticated request through — on the grounds that a
+gateway with an off switch for authentication is a gateway that ships with it off (H-019).
+
+**Decision.** `make demo`, which does the four steps rather than removing them.
+
+- **The root token is generated into the gitignored `.env`** if there is not one there, with
+  `/dev/urandom` and `od`, so the step needs nothing installed. `.env` rather than an exported
+  variable because compose reads that file and the gateway has to be *started* with the token it
+  will later be asked for.
+- **`make up` runs unchanged**, so the demo is the documented path rather than a parallel one.
+- **`scripts/demo.py` provisions a tenant and a key through `/admin/*`** — the same four steps the
+  README then shows by hand — and drives seven acts through `/v1/*`.
+- **Every line is an assertion with its expected value beside it, and the exit code is 1 if any of
+  them fails.** A tour that prints whatever happened and exits 0 tells a stranger nothing about
+  whether their clone works, which is the only question `make demo` exists to answer.
+- **It reads the token from `.env` itself** rather than taking it on the command line, so no
+  credential appears in `ps` output or in shell history — invariant 3's habit, at demo scale.
+
+Three details are decisions rather than mechanics. The script **resets the tenant to the shipped
+defaults on the way in** (purge the cache, empty the buckets, drop the budget — all three are the
+admin API's own incident-response routes), so the second run looks like the first; without it, act
+2's "the first ask is a miss" would be a hit. It **clears the rate limit and the budget on the way
+out**, because those two would otherwise refuse the next thing the operator did. And it **clears
+the breaker on `mock` after the failover act**, because three faults in eight requests is a ratio
+the breaker is entitled to act on, and a demo whose later acts are quietly served by the fallback
+reports a failover count nobody can explain.
+
+**The budget act counts rather than predicts.** An admission reserves the request's worst case, so
+how many requests fit under a cap depends on the length of the sentence the script sends. The act
+fires twenty and asserts `served >= 1 and refused >= 1`, printing both — a hard-coded "8 served"
+would be a fixture pinned to a prompt's character count.
+
+**Alternatives considered.** *A `HEADROOM_DEV_NO_AUTH=1` escape hatch* — refused for the second
+time, on Phase 2's reasoning. *Running the demo inside the gateway container* so the only
+dependency is Docker — attractive, and it would have meant adding `scripts/` to the deploy image
+for the sake of a demo; the repo already requires `uv` for `make test`, `make seed`, and
+`make chaos-smoke`, so the prerequisite is not new. *Making `make demo` a wrapper around
+`make seed` plus `make chaos-smoke`* — those two exist for different jobs (filling the console;
+asserting the fault vocabulary against a *deployed* stack) and neither prices a request, shows a
+cache hit, or refuses one.
+
+**Consequences.** `make demo` writes to `.env` and to the `demo` tenant's state, which is stated in
+the Makefile comment and in the script's docstring. It is a fifth file in `scripts/` under the same
+rule as the other four (H-054's): it drives the public HTTP API, writes no SQL, and spends nothing.
+It is **not** in the pytest gate — it needs a running stack — so `tests/test_docs.py` asserts only
+that the target exists and runs the script the README quotes; the behaviour it checks is covered
+keylessly elsewhere, which is why a demo can be an assertion rather than a second test suite.
+
+---
+
+## H-099 — The launch kit is committed, and the portfolio SQL states its own assumption (Phase 11)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P11 lists an X thread, a LinkedIn post, portfolio SQL, a recruiter template and an
+optional blog post as deliverables. None of them is code, none is executed by anything, and all of
+them quote numbers that live in the README.
+
+**Decision.** `docs/launch/`, in the repo, with one rule stated at the top of its index: **every
+number in the kit is a number in the README**, and a draft that needs a figure the README does not
+carry adds it to the README with its artifact rather than typing it here. That keeps the copy
+inside the blast radius of `tests/test_docs.py` at one remove, which is the most that can honestly
+be claimed for prose nobody runs.
+
+Each file carries what the operator would otherwise have to reconstruct at the keyboard: the reason
+a hook is the hook, the replies to expect and the honest answer to each, and — in the index — a
+**"what not to claim"** section naming the four overstatements this material is one careless edit
+away from ("semantic caching is broken", "faster than Go", "production-ready", "parity *win*").
+
+**The portfolio SQL states its schema as an assumption.** The portfolio site's `projects` table is
+not in this repo and is not referenced by any document in it, so the column list is a guess with
+`\d projects` written above it and an `ON CONFLICT (slug) DO UPDATE` so a corrected re-run updates
+rather than duplicates. Writing a confident `INSERT` against a schema nobody here can see would be
+the one kind of dishonesty this repo has spent eleven phases avoiding, in the one file where it
+would be least visible.
+
+**Alternatives considered.** *Keep the kit out of the repo* — it is work product, it took judgment,
+and a reviewer reading the repo learns something from seeing the claims stated for a non-technical
+audience *and* the guard rails around them. *Generate the posts from the README* — the hook is the
+part that cannot be generated. *Publish anything automatically* — nothing here posts, and nothing
+here should; the repo has no credentials for any of those surfaces and will not acquire them.
+
+**Consequences.** `docs/launch/` is not covered by the doc tests beyond its links resolving, so its
+figures can drift if the README's are corrected and the kit is not. The index says so. The blog
+draft's closing section characterises two earlier posts from BUILD_PLAN's shorthand rather than
+from having read them, and is flagged in the draft as the one paragraph the operator must rewrite.
+
+---
