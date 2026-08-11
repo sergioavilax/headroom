@@ -1,0 +1,51 @@
+Headroom {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Gateway   {{ .Values.gateway.replicaCount }} replica(s), image {{ .Values.image.repository }}:{{ .Values.image.tag }}
+Console   {{ if .Values.ui.enabled }}enabled, image {{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}{{ else }}disabled{{ end }}
+vLLM      {{ if .Values.vllm.enabled }}tailscale egress to {{ .Values.vllm.targetIP }} on {{ .Values.vllm.ports.a }}/{{ .Values.vllm.ports.b }}{{ else }}not reachable from this cluster (vllm.enabled=false){{ end }}
+HPA       {{ if .Values.autoscaling.enabled }}on, {{ .Values.autoscaling.minReplicas }}-{{ .Values.autoscaling.maxReplicas }} — needs metrics-server{{ else }}off{{ end }}
+
+1. Wait for the rollout, and for the migration hook that ran before it:
+
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "headroom.fullname" . }}-gateway
+     kubectl -n {{ .Release.Namespace }} logs job/{{ include "headroom.fullname" . }}-migrate
+
+   The migration log should end in "applied 7 migration(s)" on a fresh database, or
+   "up to date" against the schema Phase 9 already put on RDS.
+
+{{- if eq .Values.gateway.service.type "LoadBalancer" }}
+
+2. The gateway's address. AWS takes a minute or two to hand one back:
+
+     kubectl -n {{ .Release.Namespace }} get svc {{ include "headroom.fullname" . }}-gateway -w
+
+     export GATEWAY="http://$(kubectl -n {{ .Release.Namespace }} get svc {{ include "headroom.fullname" . }}-gateway \
+       -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'):{{ .Values.gateway.service.port }}"
+     curl -sS "$GATEWAY/healthz"
+
+   Reachable only from {{ join ", " .Values.gateway.service.loadBalancerSourceRanges }}.
+   If EXTERNAL-IP stays <pending>, read deploy/k8s/README.md section 4 before doing
+   anything else — the two usual causes are subnet tags and a missing controller, and
+   both have a check there.
+{{- else }}
+
+2. The gateway is on a ClusterIP service, so reach it from your machine with:
+
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "headroom.fullname" . }}-gateway {{ .Values.gateway.service.port }}:{{ .Values.gateway.service.port }}
+     curl -sS http://localhost:{{ .Values.gateway.service.port }}/healthz
+{{- end }}
+{{- if .Values.ui.enabled }}
+
+3. The console, over kubectl rather than over a second load balancer:
+
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "headroom.fullname" . }}-ui {{ .Values.ui.service.port }}:{{ .Values.ui.service.port }}
+
+   then open http://localhost:{{ .Values.ui.service.port }} and sign in with the root admin
+   token — the value in the "{{ .Values.secrets.existingSecret }}" secret under
+   "{{ .Values.secrets.keys.adminToken }}". The console is handed no secret at all; you type it.
+{{- end }}
+
+Teardown is `helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}` FIRST, then
+`eksctl delete cluster`. That order matters: deleting the cluster while a LoadBalancer
+Service still exists orphans the load balancer, and an orphaned NLB bills forever with
+nothing left to point at it. deploy/k8s/README.md section 12.

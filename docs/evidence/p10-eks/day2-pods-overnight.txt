@@ -1,0 +1,6 @@
+NAME                                READY   STATUS      RESTARTS   AGE   IP             NODE                          NOMINATED NODE   READINESS GATES
+headroom-gateway-7dd9b5cf44-chfl4   1/1     Running     0          10h   10.42.10.180   ip-10-42-4-212.ec2.internal   <none>           <none>
+headroom-gateway-7dd9b5cf44-zdsxj   1/1     Running     0          10h   10.42.30.241   ip-10-42-22-43.ec2.internal   <none>           <none>
+headroom-migrate-hprps              0/1     Completed   0          10h   10.42.11.90    ip-10-42-4-212.ec2.internal   <none>           <none>
+headroom-ui-6fcf68bcb5-f5mxh        1/1     Running     0          10h   10.42.15.210   ip-10-42-4-212.ec2.internal   <none>           <none>
+headroom-vllm-f944dd56b-4x5vz       1/1     Running     0          10h   10.42.7.46     ip-10-42-4-212.ec2.internal   <none>           <none>

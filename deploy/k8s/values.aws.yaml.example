@@ -1,0 +1,48 @@
+# What `make k8s-config` writes to `deploy/k8s/values.aws.yaml`, with the machine-specific
+# facts replaced by placeholders. Committed so a reader can see the shape without the
+# operator's addresses in it; the real file is gitignored, exactly as
+# `deploy/aws/compute/terraform.tfvars` is and for the same reason.
+#
+#     make k8s-config HOME_CIDR="$(curl -s https://checkip.amazonaws.com)/32" \
+#                     VLLM_TARGET_IP=100.x.y.z
+#
+# Everything here except the last two values is read out of `deploy/aws/data`'s Terraform
+# outputs, so hand-editing it means hand-maintaining a coupling a script already keeps.
+#
+# **There is no credential in this file and there is nowhere to put one.** The chart
+# declares no Secret and `values.schema.json` refuses a key it does not know, so invariant
+# 3 holds structurally rather than by convention. The three secrets go in by hand -
+# deploy/k8s/README.md section 3.
+
+image:
+  repository: 000000000000.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway
+  tag: latest
+
+aws:
+  region: us-east-1
+  budgetsTable: headroom_budgets
+  bucketsTable: headroom_buckets
+
+gateway:
+  service:
+    type: LoadBalancer
+    port: 8080
+    loadBalancerSourceRanges:
+      # The operator's home address, and the only one the cluster answers. There is no
+      # default anywhere for this: the chart refuses to render a LoadBalancer without it.
+      - 203.0.113.7/32
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+ui:
+  image:
+    repository: 000000000000.dkr.ecr.us-east-1.amazonaws.com/headroom/ui
+    tag: latest
+
+vllm:
+  # false renders a cluster with no path home, which is a perfectly good gateway - it
+  # serves `claude-*` and `mock-*` and answers `upstream_unavailable` for the vLLM chain,
+  # honestly. true needs a tailnet address and an auth key Secret.
+  enabled: true
+  targetIP: "100.64.0.1"

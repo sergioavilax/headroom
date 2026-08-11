@@ -1,0 +1,106 @@
+{
+  "label": "vllm-failover",
+  "model": "cyankiwi/Qwen3.6-27B-AWQ-INT4",
+  "dialect": "openai",
+  "duration_s": 422.45,
+  "requests": 81,
+  "ok": 67,
+  "shed": 0,
+  "dropped": 14,
+  "by_status": {
+    "200": 67,
+    "transport": 14
+  },
+  "latency_ms": {
+    "p50": 7598.68,
+    "p95": 15111.77,
+    "p99": 15123.09
+  },
+  "max_gap_ms": 48057.9,
+  "incidents": [
+    {
+      "t_s": 15.136,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 15.136,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 31.26,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 31.26,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 197.784,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 197.784,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 213.898,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 213.898,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 245.846,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 245.846,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 261.958,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 261.959,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 284.946,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    },
+    {
+      "t_s": 301.047,
+      "kind": "dropped",
+      "status": null,
+      "detail": "ReadTimeout: "
+    }
+  ]
+}

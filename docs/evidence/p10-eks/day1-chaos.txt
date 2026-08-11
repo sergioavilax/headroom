@@ -1,0 +1,12 @@
+uv run python scripts/chaos_smoke.py --base-url http://aa8fc98273d32468d83f461cd7d4f975-18ea5f65f4c1ed02.elb.us-east-1.amazonaws.com:8080 --key hk_l4hjiJYs3mTvhlVhKNOzM2Hb62X9Und0CKxX9bmjrSY
+chaos smoke against http://aa8fc98273d32468d83f461cd7d4f975-18ea5f65f4c1ed02.elb.us-east-1.amazonaws.com:8080
+ok    no fault: 200, and no failover headers at all (a request the primary served has no story to tell)
+ok    fault-529@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-timeout@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-connect@mock: 200 hops=1 from=mock (want 200 hops=1 from=mock)
+ok    fault-cut: the stream ends in a terminal error event
+ok    fault-cut: the reason is upstream_stream_cut, not a generic api_error
+ok    fault-cut: no message_stop — a cut answer never claims to have finished
+ok    fault-cut: exactly one message_start (saw 1)
+ok    fault-cut: HTTP 200 — the status line was spent before the fault
+{"checks": 9, "failed": 0}
