@@ -6182,7 +6182,12 @@ rather than at the apply.
 **One annotation, fixed in-branch.** The first run carried a deprecation notice —
 `hashicorp/setup-terraform@v3` targets Node 20 and the runner forces it onto 24. Bumped to
 `v4.0.1`, which is the same class of fix Phase 0 applied to `checkout` and `setup-uv`, and
-for the same reason: an annotation nobody acts on is an annotation nobody reads.
+for the same reason: an annotation nobody acts on is an annotation nobody reads. Confirmed
+rather than assumed on the branch head
+([run 31451242728](https://github.com/sergioavilax/headroom/actions/runs/31451242728), six
+jobs green): the only remaining `deprecat` line in the whole log is the
+`StarletteDeprecationWarning` from `fastapi.testclient` that Phase 0 deliberately left
+visible.
 
 **And one real defect the first run did not catch, fixed in the same push.**
 `aws_security_group.service` carried an inline `egress` block *and* three standalone
