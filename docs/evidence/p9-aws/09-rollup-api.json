@@ -1,0 +1,22 @@
+[
+  {
+    "day": "2026-08-11",
+    "tenant_id": "8f94c409-5fc4-4c4d-8706-3453432c90f7",
+    "requests": 6,
+    "input_tokens": 70,
+    "output_tokens": 35,
+    "reasoning_tokens": 0,
+    "usd_cost": "0.000096000000",
+    "unpriced_requests": 1,
+    "errored_requests": 1,
+    "cache_hits_exact": 0,
+    "cache_hits_semantic": 0,
+    "cache_misses": 0,
+    "cache_bypasses": 0,
+    "cache_disabled": 6,
+    "cache_avoided_usd": "0.000000000000",
+    "cache_avoided_unknown": 0,
+    "failover_requests": 3,
+    "computed_at": "2026-08-11T03:04:12.761377Z"
+  }
+]

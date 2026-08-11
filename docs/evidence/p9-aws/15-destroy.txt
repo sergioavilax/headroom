@@ -1,0 +1,2076 @@
+[0m[1mdata.terraform_remote_state.data: Reading...[0m[0m
+[0m[1mdata.terraform_remote_state.data: Read complete after 0s[0m
+[0m[1mdata.archive_file.rollup: Reading...[0m[0m
+[0m[1mdata.archive_file.rollup: Read complete after 0s [id=7e33aa48b8b6e390e519e5b6381d1f6136b0dfda][0m
+[0m[1mdata.aws_iam_policy_document.ecs_assume: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.rollup_secrets: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.lambda_assume: Reading...[0m[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Refreshing state... [id=ns-2qv5hepcqjjssw37][0m
+[0m[1maws_cloudwatch_log_group.rollup: Refreshing state... [id=/aws/lambda/headroom-rollup][0m
+[0m[1maws_security_group.service: Refreshing state... [id=sg-0242d37083a5bad82][0m
+[0m[1maws_security_group.endpoints: Refreshing state... [id=sg-0c9d2f26876f3ed4b][0m
+[0m[1maws_sns_topic.alarms: Refreshing state... [id=arn:aws:sns:us-east-1:675362625117:headroom-alarms][0m
+[0m[1maws_lb_target_group.ui: Refreshing state... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-ui/f9e41a167d470483][0m
+[0m[1mdata.aws_iam_policy_document.ecs_assume: Read complete after 0s [id=1077804475][0m
+[0m[1maws_lb_target_group.gateway: Refreshing state... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-gateway/b20177c2a31c7061][0m
+[0m[1mdata.aws_iam_policy_document.lambda_assume: Read complete after 0s [id=2690255455][0m
+[0m[1mdata.aws_iam_policy_document.rollup_secrets: Read complete after 0s [id=296120135][0m
+[0m[1maws_cloudwatch_log_group.gateway: Refreshing state... [id=/ecs/headroom/gateway][0m
+[0m[1maws_security_group.alb: Refreshing state... [id=sg-0aa5be8029de02fee][0m
+[0m[1mdata.aws_iam_policy_document.gateway_dynamodb: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.gateway_dynamodb: Read complete after 0s [id=328570916][0m
+[0m[1maws_ecs_cluster.main: Refreshing state... [id=arn:aws:ecs:us-east-1:675362625117:cluster/headroom][0m
+[0m[1mdata.aws_iam_policy_document.execution_secrets: Reading...[0m[0m
+[0m[1mdata.aws_iam_policy_document.execution_secrets: Read complete after 0s [id=2574472869][0m
+[0m[1maws_cloudwatch_log_group.ui: Refreshing state... [id=/ecs/headroom/ui][0m
+[0m[1mdata.aws_caller_identity.current: Reading...[0m[0m
+[0m[1maws_cloudwatch_event_rule.rollup_nightly: Refreshing state... [id=headroom-rollup-nightly][0m
+[0m[1maws_iam_role.gateway_task: Refreshing state... [id=headroom-gateway-task][0m
+[0m[1maws_iam_role.execution: Refreshing state... [id=headroom-ecs-execution][0m
+[0m[1mdata.aws_caller_identity.current: Read complete after 0s [id=675362625117][0m
+[0m[1maws_iam_role.rollup: Refreshing state... [id=headroom-rollup][0m
+[0m[1maws_service_discovery_service.gateway: Refreshing state... [id=srv-rjcrk5rhzogct7ej][0m
+[0m[1maws_cloudwatch_log_metric_filter.budget_refusals: Refreshing state... [id=headroom-budget-refusals][0m
+[0m[1maws_cloudwatch_log_metric_filter.provider_failures: Refreshing state... [id=headroom-provider-failures][0m
+[0m[1maws_cloudwatch_log_metric_filter.ledger_rows_lost: Refreshing state... [id=headroom-ledger-rows-lost][0m
+[0m[1maws_vpc_endpoint.secretsmanager: Refreshing state... [id=vpce-04ec6e17a9cfb76cf][0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_service: Refreshing state... [id=sgr-0ea5de3663b63ca1f][0m
+[0m[1maws_vpc_security_group_egress_rule.service_all: Refreshing state... [id=sgr-0fa485e6f7e21a6e4][0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_alb_gateway: Refreshing state... [id=sgr-0e5940c355604d0f4][0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_alb_ui: Refreshing state... [id=sgr-05d7e28f69b5512b7][0m
+[0m[1maws_lb.main: Refreshing state... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa][0m
+[0m[1maws_cloudwatch_metric_alarm.budget_refusals: Refreshing state... [id=headroom-budget-refusals][0m
+[0m[1maws_cloudwatch_metric_alarm.provider_down: Refreshing state... [id=headroom-provider-down][0m
+[0m[1maws_cloudwatch_metric_alarm.ledger_rows_lost: Refreshing state... [id=headroom-ledger-rows-lost][0m
+[0m[1maws_iam_role_policy.gateway_dynamodb: Refreshing state... [id=headroom-gateway-task:dynamodb][0m
+[0m[1maws_iam_role_policy_attachment.execution_managed: Refreshing state... [id=headroom-ecs-execution/arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy][0m
+[0m[1maws_iam_role_policy.execution_secrets: Refreshing state... [id=headroom-ecs-execution:secrets][0m
+[0m[1maws_ecs_task_definition.gateway: Refreshing state... [id=headroom-gateway][0m
+[0m[1maws_ecs_task_definition.ui: Refreshing state... [id=headroom-ui][0m
+[0m[1maws_lb_listener.ui: Refreshing state... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/8f5cd3f2112988d3][0m
+[0m[1maws_cloudwatch_metric_alarm.five_xx_rate: Refreshing state... [id=headroom-5xx-rate][0m
+[0m[1maws_lb_listener.gateway: Refreshing state... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/33bcbc3aba41b40c][0m
+[0m[1maws_iam_role_policy_attachment.rollup_vpc: Refreshing state... [id=headroom-rollup/arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole][0m
+[0m[1maws_iam_role_policy.rollup_secrets: Refreshing state... [id=headroom-rollup:secrets][0m
+[0m[1maws_lambda_function.rollup: Refreshing state... [id=headroom-rollup][0m
+[0m[1maws_ecs_service.ui: Refreshing state... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui][0m
+[0m[1maws_ecs_service.gateway: Refreshing state... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway][0m
+[0m[1maws_cloudwatch_event_target.rollup_nightly: Refreshing state... [id=headroom-rollup-nightly-terraform-hvvYwdsHQ5VehckwMHZISqpeLD][0m
+[0m[1maws_lambda_permission.rollup_nightly: Refreshing state... [id=AllowExecutionFromEventBridge][0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [31m-[0m destroy[0m
+
+Terraform will perform the following actions:
+
+[1m  # aws_cloudwatch_event_rule.rollup_nightly[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_event_rule" "rollup_nightly" {
+      [31m-[0m[0m arn                 = "arn:aws:events:us-east-1:675362625117:rule/headroom-rollup-nightly" [90m-> null[0m[0m
+      [31m-[0m[0m description         = "Aggregate yesterday and today into daily_rollups" [90m-> null[0m[0m
+      [31m-[0m[0m event_bus_name      = "default" [90m-> null[0m[0m
+      [31m-[0m[0m force_destroy       = false [90m-> null[0m[0m
+      [31m-[0m[0m id                  = "headroom-rollup-nightly" [90m-> null[0m[0m
+      [31m-[0m[0m is_enabled          = true [90m-> null[0m[0m
+      [31m-[0m[0m name                = "headroom-rollup-nightly" [90m-> null[0m[0m
+      [31m-[0m[0m region              = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m schedule_expression = "cron(15 0 * * ? *)" [90m-> null[0m[0m
+      [31m-[0m[0m state               = "ENABLED" [90m-> null[0m[0m
+      [31m-[0m[0m tags                = {
+          [31m-[0m[0m "Name" = "headroom-rollup-nightly"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all            = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-rollup-nightly"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_event_target.rollup_nightly[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_event_target" "rollup_nightly" {
+      [31m-[0m[0m arn            = "arn:aws:lambda:us-east-1:675362625117:function:headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m event_bus_name = "default" [90m-> null[0m[0m
+      [31m-[0m[0m force_destroy  = false [90m-> null[0m[0m
+      [31m-[0m[0m id             = "headroom-rollup-nightly-terraform-hvvYwdsHQ5VehckwMHZISqpeLD" [90m-> null[0m[0m
+      [31m-[0m[0m input          = jsonencode({})
+      [31m-[0m[0m region         = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m rule           = "headroom-rollup-nightly" [90m-> null[0m[0m
+      [31m-[0m[0m target_id      = "terraform-hvvYwdsHQ5VehckwMHZISqpeLD" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_log_group.gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_log_group" "gateway" {
+      [31m-[0m[0m arn                         = "arn:aws:logs:us-east-1:675362625117:log-group:/ecs/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m deletion_protection_enabled = false [90m-> null[0m[0m
+      [31m-[0m[0m id                          = "/ecs/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m log_group_class             = "STANDARD" [90m-> null[0m[0m
+      [31m-[0m[0m name                        = "/ecs/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m region                      = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m retention_in_days           = 7 [90m-> null[0m[0m
+      [31m-[0m[0m skip_destroy                = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                        = {
+          [31m-[0m[0m "Name" = "headroom-gateway"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                    = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-gateway"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_log_group.rollup[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_log_group" "rollup" {
+      [31m-[0m[0m arn                         = "arn:aws:logs:us-east-1:675362625117:log-group:/aws/lambda/headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m deletion_protection_enabled = false [90m-> null[0m[0m
+      [31m-[0m[0m id                          = "/aws/lambda/headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m log_group_class             = "STANDARD" [90m-> null[0m[0m
+      [31m-[0m[0m name                        = "/aws/lambda/headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m region                      = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m retention_in_days           = 7 [90m-> null[0m[0m
+      [31m-[0m[0m skip_destroy                = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                        = {
+          [31m-[0m[0m "Name" = "headroom-rollup"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                    = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-rollup"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_log_group.ui[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_log_group" "ui" {
+      [31m-[0m[0m arn                         = "arn:aws:logs:us-east-1:675362625117:log-group:/ecs/headroom/ui" [90m-> null[0m[0m
+      [31m-[0m[0m deletion_protection_enabled = false [90m-> null[0m[0m
+      [31m-[0m[0m id                          = "/ecs/headroom/ui" [90m-> null[0m[0m
+      [31m-[0m[0m log_group_class             = "STANDARD" [90m-> null[0m[0m
+      [31m-[0m[0m name                        = "/ecs/headroom/ui" [90m-> null[0m[0m
+      [31m-[0m[0m region                      = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m retention_in_days           = 7 [90m-> null[0m[0m
+      [31m-[0m[0m skip_destroy                = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                        = {
+          [31m-[0m[0m "Name" = "headroom-ui"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                    = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-ui"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_log_metric_filter.budget_refusals[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_log_metric_filter" "budget_refusals" {
+      [31m-[0m[0m apply_on_transformed_logs = false [90m-> null[0m[0m
+      [31m-[0m[0m id                        = "headroom-budget-refusals" [90m-> null[0m[0m
+      [31m-[0m[0m log_group_name            = "/ecs/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m name                      = "headroom-budget-refusals" [90m-> null[0m[0m
+      [31m-[0m[0m pattern                   = "{ $.budget_status = \"exceeded\" }" [90m-> null[0m[0m
+      [31m-[0m[0m region                    = "us-east-1" [90m-> null[0m[0m
+
+      [31m-[0m[0m metric_transformation {
+          [31m-[0m[0m default_value = "0" [90m-> null[0m[0m
+          [31m-[0m[0m dimensions    = {} [90m-> null[0m[0m
+          [31m-[0m[0m name          = "BudgetRefusals" [90m-> null[0m[0m
+          [31m-[0m[0m namespace     = "Headroom" [90m-> null[0m[0m
+          [31m-[0m[0m unit          = "Count" [90m-> null[0m[0m
+          [31m-[0m[0m value         = "1" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_cloudwatch_log_metric_filter.ledger_rows_lost[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_log_metric_filter" "ledger_rows_lost" {
+      [31m-[0m[0m apply_on_transformed_logs = false [90m-> null[0m[0m
+      [31m-[0m[0m id                        = "headroom-ledger-rows-lost" [90m-> null[0m[0m
+      [31m-[0m[0m log_group_name            = "/ecs/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m name                      = "headroom-ledger-rows-lost" [90m-> null[0m[0m
+      [31m-[0m[0m pattern                   = "{ ($.event = \"ledger_row_dropped\") || ($.event = \"ledger_write_failed\") || ($.event = \"ledger_shutdown_incomplete\") }" [90m-> null[0m[0m
+      [31m-[0m[0m region                    = "us-east-1" [90m-> null[0m[0m
+
+      [31m-[0m[0m metric_transformation {
+          [31m-[0m[0m default_value = "0" [90m-> null[0m[0m
+          [31m-[0m[0m dimensions    = {} [90m-> null[0m[0m
+          [31m-[0m[0m name          = "LedgerRowsLost" [90m-> null[0m[0m
+          [31m-[0m[0m namespace     = "Headroom" [90m-> null[0m[0m
+          [31m-[0m[0m unit          = "Count" [90m-> null[0m[0m
+          [31m-[0m[0m value         = "1" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_cloudwatch_log_metric_filter.provider_failures[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_log_metric_filter" "provider_failures" {
+      [31m-[0m[0m apply_on_transformed_logs = false [90m-> null[0m[0m
+      [31m-[0m[0m id                        = "headroom-provider-failures" [90m-> null[0m[0m
+      [31m-[0m[0m log_group_name            = "/ecs/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m name                      = "headroom-provider-failures" [90m-> null[0m[0m
+      [31m-[0m[0m pattern                   = "{ ($.outcome = \"upstream_timeout\") || ($.outcome = \"upstream_unavailable\") || ($.error_reason = \"upstream_status_5*\") || ($.failover_error = \"upstream_timeout\") || ($.failover_error = \"upstream_unavailable\") || ($.failover_error = \"upstream_status_5*\") || ($.failover_error = \"breaker_open\") }" [90m-> null[0m[0m
+      [31m-[0m[0m region                    = "us-east-1" [90m-> null[0m[0m
+
+      [31m-[0m[0m metric_transformation {
+          [31m-[0m[0m default_value = "0" [90m-> null[0m[0m
+          [31m-[0m[0m dimensions    = {} [90m-> null[0m[0m
+          [31m-[0m[0m name          = "ProviderFailures" [90m-> null[0m[0m
+          [31m-[0m[0m namespace     = "Headroom" [90m-> null[0m[0m
+          [31m-[0m[0m unit          = "Count" [90m-> null[0m[0m
+          [31m-[0m[0m value         = "1" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_cloudwatch_metric_alarm.budget_refusals[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_metric_alarm" "budget_refusals" {
+      [31m-[0m[0m actions_enabled                       = true [90m-> null[0m[0m
+      [31m-[0m[0m alarm_actions                         = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m alarm_description                     = "The budget gate refused at least one request in five minutes: a tenant is at its cap and its traffic is being dropped." [90m-> null[0m[0m
+      [31m-[0m[0m alarm_name                            = "headroom-budget-refusals" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                   = "arn:aws:cloudwatch:us-east-1:675362625117:alarm:headroom-budget-refusals" [90m-> null[0m[0m
+      [31m-[0m[0m comparison_operator                   = "GreaterThanOrEqualToThreshold" [90m-> null[0m[0m
+      [31m-[0m[0m datapoints_to_alarm                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m dimensions                            = {} [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_interval                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_periods                    = 1 [90m-> null[0m[0m
+      [31m-[0m[0m id                                    = "headroom-budget-refusals" [90m-> null[0m[0m
+      [31m-[0m[0m insufficient_data_actions             = [] [90m-> null[0m[0m
+      [31m-[0m[0m metric_name                           = "BudgetRefusals" [90m-> null[0m[0m
+      [31m-[0m[0m namespace                             = "Headroom" [90m-> null[0m[0m
+      [31m-[0m[0m ok_actions                            = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m period                                = 300 [90m-> null[0m[0m
+      [31m-[0m[0m region                                = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m statistic                             = "Sum" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                  = {
+          [31m-[0m[0m "Name" = "headroom-budget-refusals"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-budget-refusals"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m threshold                             = 1 [90m-> null[0m[0m
+      [31m-[0m[0m treat_missing_data                    = "notBreaching" [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_metric_alarm.five_xx_rate[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_metric_alarm" "five_xx_rate" {
+      [31m-[0m[0m actions_enabled                       = true [90m-> null[0m[0m
+      [31m-[0m[0m alarm_actions                         = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m alarm_description                     = "More than 5 of requests answered 5xx over five minutes (evaluated above 20 requests)." [90m-> null[0m[0m
+      [31m-[0m[0m alarm_name                            = "headroom-5xx-rate" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                   = "arn:aws:cloudwatch:us-east-1:675362625117:alarm:headroom-5xx-rate" [90m-> null[0m[0m
+      [31m-[0m[0m comparison_operator                   = "GreaterThanOrEqualToThreshold" [90m-> null[0m[0m
+      [31m-[0m[0m datapoints_to_alarm                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m dimensions                            = {} [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_interval                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_periods                    = 1 [90m-> null[0m[0m
+      [31m-[0m[0m id                                    = "headroom-5xx-rate" [90m-> null[0m[0m
+      [31m-[0m[0m insufficient_data_actions             = [] [90m-> null[0m[0m
+      [31m-[0m[0m ok_actions                            = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m period                                = 0 [90m-> null[0m[0m
+      [31m-[0m[0m region                                = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                  = {
+          [31m-[0m[0m "Name" = "headroom-5xx-rate"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-5xx-rate"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m threshold                             = 5 [90m-> null[0m[0m
+      [31m-[0m[0m treat_missing_data                    = "notBreaching" [90m-> null[0m[0m
+        [90m# (7 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m metric_query {
+          [31m-[0m[0m id          = "e5xx" [90m-> null[0m[0m
+          [31m-[0m[0m period      = 0 [90m-> null[0m[0m
+          [31m-[0m[0m return_data = false [90m-> null[0m[0m
+            [90m# (3 unchanged attributes hidden)[0m[0m
+
+          [31m-[0m[0m metric {
+              [31m-[0m[0m dimensions  = {
+                  [31m-[0m[0m "LoadBalancer" = "app/headroom/e4c8fb18199dbdaa"
+                } [90m-> null[0m[0m
+              [31m-[0m[0m metric_name = "HTTPCode_ELB_5XX_Count" [90m-> null[0m[0m
+              [31m-[0m[0m namespace   = "AWS/ApplicationELB" [90m-> null[0m[0m
+              [31m-[0m[0m period      = 300 [90m-> null[0m[0m
+              [31m-[0m[0m stat        = "Sum" [90m-> null[0m[0m
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+      [31m-[0m[0m metric_query {
+          [31m-[0m[0m id          = "reqs" [90m-> null[0m[0m
+          [31m-[0m[0m period      = 0 [90m-> null[0m[0m
+          [31m-[0m[0m return_data = false [90m-> null[0m[0m
+            [90m# (3 unchanged attributes hidden)[0m[0m
+
+          [31m-[0m[0m metric {
+              [31m-[0m[0m dimensions  = {
+                  [31m-[0m[0m "LoadBalancer" = "app/headroom/e4c8fb18199dbdaa"
+                } [90m-> null[0m[0m
+              [31m-[0m[0m metric_name = "RequestCount" [90m-> null[0m[0m
+              [31m-[0m[0m namespace   = "AWS/ApplicationELB" [90m-> null[0m[0m
+              [31m-[0m[0m period      = 300 [90m-> null[0m[0m
+              [31m-[0m[0m stat        = "Sum" [90m-> null[0m[0m
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+      [31m-[0m[0m metric_query {
+          [31m-[0m[0m id          = "t5xx" [90m-> null[0m[0m
+          [31m-[0m[0m period      = 0 [90m-> null[0m[0m
+          [31m-[0m[0m return_data = false [90m-> null[0m[0m
+            [90m# (3 unchanged attributes hidden)[0m[0m
+
+          [31m-[0m[0m metric {
+              [31m-[0m[0m dimensions  = {
+                  [31m-[0m[0m "LoadBalancer" = "app/headroom/e4c8fb18199dbdaa"
+                } [90m-> null[0m[0m
+              [31m-[0m[0m metric_name = "HTTPCode_Target_5XX_Count" [90m-> null[0m[0m
+              [31m-[0m[0m namespace   = "AWS/ApplicationELB" [90m-> null[0m[0m
+              [31m-[0m[0m period      = 300 [90m-> null[0m[0m
+              [31m-[0m[0m stat        = "Sum" [90m-> null[0m[0m
+                [90m# (1 unchanged attribute hidden)[0m[0m
+            }
+        }
+      [31m-[0m[0m metric_query {
+          [31m-[0m[0m expression  = "IF(reqs >= 20, 100 * (FILL(t5xx, 0) + FILL(e5xx, 0)) / reqs, 0)" [90m-> null[0m[0m
+          [31m-[0m[0m id          = "rate" [90m-> null[0m[0m
+          [31m-[0m[0m label       = "5xx %" [90m-> null[0m[0m
+          [31m-[0m[0m period      = 0 [90m-> null[0m[0m
+          [31m-[0m[0m return_data = true [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_cloudwatch_metric_alarm.ledger_rows_lost[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_metric_alarm" "ledger_rows_lost" {
+      [31m-[0m[0m actions_enabled                       = true [90m-> null[0m[0m
+      [31m-[0m[0m alarm_actions                         = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m alarm_description                     = "A ledger row was dropped, failed to write, or was lost at shutdown. Spend is now under-reported and the log line is the only remaining copy." [90m-> null[0m[0m
+      [31m-[0m[0m alarm_name                            = "headroom-ledger-rows-lost" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                   = "arn:aws:cloudwatch:us-east-1:675362625117:alarm:headroom-ledger-rows-lost" [90m-> null[0m[0m
+      [31m-[0m[0m comparison_operator                   = "GreaterThanOrEqualToThreshold" [90m-> null[0m[0m
+      [31m-[0m[0m datapoints_to_alarm                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m dimensions                            = {} [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_interval                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_periods                    = 1 [90m-> null[0m[0m
+      [31m-[0m[0m id                                    = "headroom-ledger-rows-lost" [90m-> null[0m[0m
+      [31m-[0m[0m insufficient_data_actions             = [] [90m-> null[0m[0m
+      [31m-[0m[0m metric_name                           = "LedgerRowsLost" [90m-> null[0m[0m
+      [31m-[0m[0m namespace                             = "Headroom" [90m-> null[0m[0m
+      [31m-[0m[0m ok_actions                            = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m period                                = 300 [90m-> null[0m[0m
+      [31m-[0m[0m region                                = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m statistic                             = "Sum" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                  = {
+          [31m-[0m[0m "Name" = "headroom-ledger-rows-lost"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-ledger-rows-lost"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m threshold                             = 1 [90m-> null[0m[0m
+      [31m-[0m[0m treat_missing_data                    = "notBreaching" [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_cloudwatch_metric_alarm.provider_down[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_cloudwatch_metric_alarm" "provider_down" {
+      [31m-[0m[0m actions_enabled                       = true [90m-> null[0m[0m
+      [31m-[0m[0m alarm_actions                         = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m alarm_description                     = "3 or more provider failures in five minutes timeouts, unreachable upstreams, upstream 5xx, or a tripped breaker." [90m-> null[0m[0m
+      [31m-[0m[0m alarm_name                            = "headroom-provider-down" [90m-> null[0m[0m
+      [31m-[0m[0m arn                                   = "arn:aws:cloudwatch:us-east-1:675362625117:alarm:headroom-provider-down" [90m-> null[0m[0m
+      [31m-[0m[0m comparison_operator                   = "GreaterThanOrEqualToThreshold" [90m-> null[0m[0m
+      [31m-[0m[0m datapoints_to_alarm                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m dimensions                            = {} [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_interval                   = 0 [90m-> null[0m[0m
+      [31m-[0m[0m evaluation_periods                    = 1 [90m-> null[0m[0m
+      [31m-[0m[0m id                                    = "headroom-provider-down" [90m-> null[0m[0m
+      [31m-[0m[0m insufficient_data_actions             = [] [90m-> null[0m[0m
+      [31m-[0m[0m metric_name                           = "ProviderFailures" [90m-> null[0m[0m
+      [31m-[0m[0m namespace                             = "Headroom" [90m-> null[0m[0m
+      [31m-[0m[0m ok_actions                            = [
+          [31m-[0m[0m "arn:aws:sns:us-east-1:675362625117:headroom-alarms",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m period                                = 300 [90m-> null[0m[0m
+      [31m-[0m[0m region                                = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m statistic                             = "Sum" [90m-> null[0m[0m
+      [31m-[0m[0m tags                                  = {
+          [31m-[0m[0m "Name" = "headroom-provider-down"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-provider-down"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m threshold                             = 3 [90m-> null[0m[0m
+      [31m-[0m[0m treat_missing_data                    = "notBreaching" [90m-> null[0m[0m
+        [90m# (4 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_ecs_cluster.main[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_ecs_cluster" "main" {
+      [31m-[0m[0m arn      = "arn:aws:ecs:us-east-1:675362625117:cluster/headroom" [90m-> null[0m[0m
+      [31m-[0m[0m id       = "arn:aws:ecs:us-east-1:675362625117:cluster/headroom" [90m-> null[0m[0m
+      [31m-[0m[0m name     = "headroom" [90m-> null[0m[0m
+      [31m-[0m[0m region   = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m tags     = {
+          [31m-[0m[0m "Name" = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+
+      [31m-[0m[0m setting {
+          [31m-[0m[0m name  = "containerInsights" [90m-> null[0m[0m
+          [31m-[0m[0m value = "disabled" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_ecs_service.gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_ecs_service" "gateway" {
+      [31m-[0m[0m arn                                = "arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone_rebalancing      = "ENABLED" [90m-> null[0m[0m
+      [31m-[0m[0m cluster                            = "arn:aws:ecs:us-east-1:675362625117:cluster/headroom" [90m-> null[0m[0m
+      [31m-[0m[0m deployment_maximum_percent         = 200 [90m-> null[0m[0m
+      [31m-[0m[0m deployment_minimum_healthy_percent = 100 [90m-> null[0m[0m
+      [31m-[0m[0m desired_count                      = 1 [90m-> null[0m[0m
+      [31m-[0m[0m enable_ecs_managed_tags            = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_execute_command             = false [90m-> null[0m[0m
+      [31m-[0m[0m health_check_grace_period_seconds  = 120 [90m-> null[0m[0m
+      [31m-[0m[0m iam_role                           = "/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS" [90m-> null[0m[0m
+      [31m-[0m[0m id                                 = "arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway" [90m-> null[0m[0m
+      [31m-[0m[0m launch_type                        = "FARGATE" [90m-> null[0m[0m
+      [31m-[0m[0m name                               = "gateway" [90m-> null[0m[0m
+      [31m-[0m[0m platform_version                   = "LATEST" [90m-> null[0m[0m
+      [31m-[0m[0m propagate_tags                     = "NONE" [90m-> null[0m[0m
+      [31m-[0m[0m region                             = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m scheduling_strategy                = "REPLICA" [90m-> null[0m[0m
+      [31m-[0m[0m tags                               = {
+          [31m-[0m[0m "Name" = "headroom-gateway"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                           = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-gateway"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m task_definition                    = "arn:aws:ecs:us-east-1:675362625117:task-definition/headroom-gateway:1" [90m-> null[0m[0m
+      [31m-[0m[0m triggers                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m wait_for_steady_state              = false [90m-> null[0m[0m
+
+      [31m-[0m[0m deployment_circuit_breaker {
+          [31m-[0m[0m enable   = false [90m-> null[0m[0m
+          [31m-[0m[0m rollback = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m deployment_configuration {
+          [31m-[0m[0m bake_time_in_minutes = "0" [90m-> null[0m[0m
+          [31m-[0m[0m strategy             = "ROLLING" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m deployment_controller {
+          [31m-[0m[0m type = "ECS" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m load_balancer {
+          [31m-[0m[0m container_name   = "gateway" [90m-> null[0m[0m
+          [31m-[0m[0m container_port   = 8000 [90m-> null[0m[0m
+          [31m-[0m[0m target_group_arn = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-gateway/b20177c2a31c7061" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m network_configuration {
+          [31m-[0m[0m assign_public_ip = true [90m-> null[0m[0m
+          [31m-[0m[0m security_groups  = [
+              [31m-[0m[0m "sg-0242d37083a5bad82",
+              [31m-[0m[0m "sg-089442c7421961a20",
+            ] [90m-> null[0m[0m
+          [31m-[0m[0m subnets          = [
+              [31m-[0m[0m "subnet-02b41a018f4124680",
+              [31m-[0m[0m "subnet-0ece21329bbccc90c",
+            ] [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m service_registries {
+          [31m-[0m[0m container_port = 0 [90m-> null[0m[0m
+          [31m-[0m[0m port           = 0 [90m-> null[0m[0m
+          [31m-[0m[0m registry_arn   = "arn:aws:servicediscovery:us-east-1:675362625117:service/srv-rjcrk5rhzogct7ej" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_ecs_service.ui[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_ecs_service" "ui" {
+      [31m-[0m[0m arn                                = "arn:aws:ecs:us-east-1:675362625117:service/headroom/ui" [90m-> null[0m[0m
+      [31m-[0m[0m availability_zone_rebalancing      = "ENABLED" [90m-> null[0m[0m
+      [31m-[0m[0m cluster                            = "arn:aws:ecs:us-east-1:675362625117:cluster/headroom" [90m-> null[0m[0m
+      [31m-[0m[0m deployment_maximum_percent         = 200 [90m-> null[0m[0m
+      [31m-[0m[0m deployment_minimum_healthy_percent = 100 [90m-> null[0m[0m
+      [31m-[0m[0m desired_count                      = 1 [90m-> null[0m[0m
+      [31m-[0m[0m enable_ecs_managed_tags            = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_execute_command             = false [90m-> null[0m[0m
+      [31m-[0m[0m health_check_grace_period_seconds  = 60 [90m-> null[0m[0m
+      [31m-[0m[0m iam_role                           = "/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS" [90m-> null[0m[0m
+      [31m-[0m[0m id                                 = "arn:aws:ecs:us-east-1:675362625117:service/headroom/ui" [90m-> null[0m[0m
+      [31m-[0m[0m launch_type                        = "FARGATE" [90m-> null[0m[0m
+      [31m-[0m[0m name                               = "ui" [90m-> null[0m[0m
+      [31m-[0m[0m platform_version                   = "LATEST" [90m-> null[0m[0m
+      [31m-[0m[0m propagate_tags                     = "NONE" [90m-> null[0m[0m
+      [31m-[0m[0m region                             = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m scheduling_strategy                = "REPLICA" [90m-> null[0m[0m
+      [31m-[0m[0m tags                               = {
+          [31m-[0m[0m "Name" = "headroom-ui"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                           = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-ui"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m task_definition                    = "arn:aws:ecs:us-east-1:675362625117:task-definition/headroom-ui:1" [90m-> null[0m[0m
+      [31m-[0m[0m triggers                           = {} [90m-> null[0m[0m
+      [31m-[0m[0m wait_for_steady_state              = false [90m-> null[0m[0m
+
+      [31m-[0m[0m deployment_circuit_breaker {
+          [31m-[0m[0m enable   = false [90m-> null[0m[0m
+          [31m-[0m[0m rollback = false [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m deployment_configuration {
+          [31m-[0m[0m bake_time_in_minutes = "0" [90m-> null[0m[0m
+          [31m-[0m[0m strategy             = "ROLLING" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m deployment_controller {
+          [31m-[0m[0m type = "ECS" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m load_balancer {
+          [31m-[0m[0m container_name   = "ui" [90m-> null[0m[0m
+          [31m-[0m[0m container_port   = 3000 [90m-> null[0m[0m
+          [31m-[0m[0m target_group_arn = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-ui/f9e41a167d470483" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m network_configuration {
+          [31m-[0m[0m assign_public_ip = true [90m-> null[0m[0m
+          [31m-[0m[0m security_groups  = [
+              [31m-[0m[0m "sg-0242d37083a5bad82",
+            ] [90m-> null[0m[0m
+          [31m-[0m[0m subnets          = [
+              [31m-[0m[0m "subnet-02b41a018f4124680",
+              [31m-[0m[0m "subnet-0ece21329bbccc90c",
+            ] [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_ecs_task_definition.gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_ecs_task_definition" "gateway" {
+      [31m-[0m[0m arn                      = "arn:aws:ecs:us-east-1:675362625117:task-definition/headroom-gateway:1" [90m-> null[0m[0m
+      [31m-[0m[0m arn_without_revision     = "arn:aws:ecs:us-east-1:675362625117:task-definition/headroom-gateway" [90m-> null[0m[0m
+      [31m-[0m[0m container_definitions    = jsonencode(
+            [
+              [31m-[0m[0m {
+                  [31m-[0m[0m environment      = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "AWS_REGION"
+                          [31m-[0m[0m value = "us-east-1"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "HEADROOM_BUCKETS_TABLE"
+                          [31m-[0m[0m value = "headroom_buckets"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "HEADROOM_BUDGETS_TABLE"
+                          [31m-[0m[0m value = "headroom_budgets"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "HEADROOM_LOG_LEVEL"
+                          [31m-[0m[0m value = "INFO"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "HF_HOME"
+                          [31m-[0m[0m value = "/opt/hf"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "HF_HUB_OFFLINE"
+                          [31m-[0m[0m value = "1"
+                        },
+                    ]
+                  [31m-[0m[0m essential        = true
+                  [31m-[0m[0m healthCheck      = {
+                      [31m-[0m[0m command     = [
+                          [31m-[0m[0m "CMD-SHELL",
+                          [31m-[0m[0m "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=4)\"",
+                        ]
+                      [31m-[0m[0m interval    = 30
+                      [31m-[0m[0m retries     = 3
+                      [31m-[0m[0m startPeriod = 60
+                      [31m-[0m[0m timeout     = 5
+                    }
+                  [31m-[0m[0m image            = "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:latest"
+                  [31m-[0m[0m logConfiguration = {
+                      [31m-[0m[0m logDriver = "awslogs"
+                      [31m-[0m[0m options   = {
+                          [31m-[0m[0m awslogs-group         = "/ecs/headroom/gateway"
+                          [31m-[0m[0m awslogs-region        = "us-east-1"
+                          [31m-[0m[0m awslogs-stream-prefix = "gateway"
+                        }
+                    }
+                  [31m-[0m[0m mountPoints      = []
+                  [31m-[0m[0m name             = "gateway"
+                  [31m-[0m[0m portMappings     = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m containerPort = 8000
+                          [31m-[0m[0m hostPort      = 8000
+                          [31m-[0m[0m protocol      = "tcp"
+                        },
+                    ]
+                  [31m-[0m[0m secrets          = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name      = "ANTHROPIC_API_KEY"
+                          [31m-[0m[0m valueFrom = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/anthropic-api-key-VuV8us"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name      = "DATABASE_URL"
+                          [31m-[0m[0m valueFrom = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name      = "HEADROOM_ADMIN_TOKEN"
+                          [31m-[0m[0m valueFrom = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/admin-token-tkigwq"
+                        },
+                    ]
+                  [31m-[0m[0m systemControls   = []
+                  [31m-[0m[0m volumesFrom      = []
+                },
+            ]
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m cpu                      = "512" [90m-> null[0m[0m
+      [31m-[0m[0m enable_fault_injection   = false [90m-> null[0m[0m
+      [31m-[0m[0m execution_role_arn       = "arn:aws:iam::675362625117:role/headroom-ecs-execution" [90m-> null[0m[0m
+      [31m-[0m[0m family                   = "headroom-gateway" [90m-> null[0m[0m
+      [31m-[0m[0m id                       = "headroom-gateway" [90m-> null[0m[0m
+      [31m-[0m[0m memory                   = "2048" [90m-> null[0m[0m
+      [31m-[0m[0m network_mode             = "awsvpc" [90m-> null[0m[0m
+      [31m-[0m[0m region                   = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m requires_compatibilities = [
+          [31m-[0m[0m "FARGATE",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m revision                 = 1 [90m-> null[0m[0m
+      [31m-[0m[0m skip_destroy             = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                     = {
+          [31m-[0m[0m "Name" = "headroom-gateway"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                 = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-gateway"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m task_role_arn            = "arn:aws:iam::675362625117:role/headroom-gateway-task" [90m-> null[0m[0m
+      [31m-[0m[0m track_latest             = false [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m runtime_platform {
+          [31m-[0m[0m cpu_architecture        = "X86_64" [90m-> null[0m[0m
+          [31m-[0m[0m operating_system_family = "LINUX" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_ecs_task_definition.ui[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_ecs_task_definition" "ui" {
+      [31m-[0m[0m arn                      = "arn:aws:ecs:us-east-1:675362625117:task-definition/headroom-ui:1" [90m-> null[0m[0m
+      [31m-[0m[0m arn_without_revision     = "arn:aws:ecs:us-east-1:675362625117:task-definition/headroom-ui" [90m-> null[0m[0m
+      [31m-[0m[0m container_definitions    = jsonencode(
+            [
+              [31m-[0m[0m {
+                  [31m-[0m[0m environment      = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m name  = "HEADROOM_GATEWAY_URL"
+                          [31m-[0m[0m value = "http://gateway.headroom.local:8000"
+                        },
+                    ]
+                  [31m-[0m[0m essential        = true
+                  [31m-[0m[0m healthCheck      = {
+                      [31m-[0m[0m command     = [
+                          [31m-[0m[0m "CMD-SHELL",
+                          [31m-[0m[0m "node -e \"fetch('http://localhost:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+                        ]
+                      [31m-[0m[0m interval    = 30
+                      [31m-[0m[0m retries     = 3
+                      [31m-[0m[0m startPeriod = 30
+                      [31m-[0m[0m timeout     = 5
+                    }
+                  [31m-[0m[0m image            = "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/ui:latest"
+                  [31m-[0m[0m logConfiguration = {
+                      [31m-[0m[0m logDriver = "awslogs"
+                      [31m-[0m[0m options   = {
+                          [31m-[0m[0m awslogs-group         = "/ecs/headroom/ui"
+                          [31m-[0m[0m awslogs-region        = "us-east-1"
+                          [31m-[0m[0m awslogs-stream-prefix = "ui"
+                        }
+                    }
+                  [31m-[0m[0m mountPoints      = []
+                  [31m-[0m[0m name             = "ui"
+                  [31m-[0m[0m portMappings     = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m containerPort = 3000
+                          [31m-[0m[0m hostPort      = 3000
+                          [31m-[0m[0m protocol      = "tcp"
+                        },
+                    ]
+                  [31m-[0m[0m systemControls   = []
+                  [31m-[0m[0m volumesFrom      = []
+                },
+            ]
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m cpu                      = "256" [90m-> null[0m[0m
+      [31m-[0m[0m enable_fault_injection   = false [90m-> null[0m[0m
+      [31m-[0m[0m execution_role_arn       = "arn:aws:iam::675362625117:role/headroom-ecs-execution" [90m-> null[0m[0m
+      [31m-[0m[0m family                   = "headroom-ui" [90m-> null[0m[0m
+      [31m-[0m[0m id                       = "headroom-ui" [90m-> null[0m[0m
+      [31m-[0m[0m memory                   = "512" [90m-> null[0m[0m
+      [31m-[0m[0m network_mode             = "awsvpc" [90m-> null[0m[0m
+      [31m-[0m[0m region                   = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m requires_compatibilities = [
+          [31m-[0m[0m "FARGATE",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m revision                 = 1 [90m-> null[0m[0m
+      [31m-[0m[0m skip_destroy             = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                     = {
+          [31m-[0m[0m "Name" = "headroom-ui"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                 = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-ui"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m track_latest             = false [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m runtime_platform {
+          [31m-[0m[0m cpu_architecture        = "X86_64" [90m-> null[0m[0m
+          [31m-[0m[0m operating_system_family = "LINUX" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_iam_role.execution[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role" "execution" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::675362625117:role/headroom-ecs-execution" [90m-> null[0m[0m
+      [31m-[0m[0m assume_role_policy    = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "sts:AssumeRole"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m Service = "ecs-tasks.amazonaws.com"
+                        }
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m create_date           = "2026-08-11T02:49:55Z" [90m-> null[0m[0m
+      [31m-[0m[0m force_detach_policies = false [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "headroom-ecs-execution" [90m-> null[0m[0m
+      [31m-[0m[0m managed_policy_arns   = [
+          [31m-[0m[0m "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m max_session_duration  = 3600 [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "headroom-ecs-execution" [90m-> null[0m[0m
+      [31m-[0m[0m path                  = "/" [90m-> null[0m[0m
+      [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m unique_id             = "AROAZ2PV72ZO7W6UFBW7K" [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m inline_policy {
+          [31m-[0m[0m name   = "secrets" [90m-> null[0m[0m
+          [31m-[0m[0m policy = jsonencode(
+                {
+                  [31m-[0m[0m Statement = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m Action   = "secretsmanager:GetSecretValue"
+                          [31m-[0m[0m Effect   = "Allow"
+                          [31m-[0m[0m Resource = [
+                              [31m-[0m[0m "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr",
+                              [31m-[0m[0m "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/anthropic-api-key-VuV8us",
+                              [31m-[0m[0m "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/admin-token-tkigwq",
+                            ]
+                          [31m-[0m[0m Sid      = "ReadTheThreeSecretsTheTaskDefinitionNames"
+                        },
+                    ]
+                  [31m-[0m[0m Version   = "2012-10-17"
+                }
+            ) [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_iam_role.gateway_task[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role" "gateway_task" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::675362625117:role/headroom-gateway-task" [90m-> null[0m[0m
+      [31m-[0m[0m assume_role_policy    = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "sts:AssumeRole"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m Service = "ecs-tasks.amazonaws.com"
+                        }
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m create_date           = "2026-08-11T02:49:54Z" [90m-> null[0m[0m
+      [31m-[0m[0m force_detach_policies = false [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "headroom-gateway-task" [90m-> null[0m[0m
+      [31m-[0m[0m managed_policy_arns   = [] [90m-> null[0m[0m
+      [31m-[0m[0m max_session_duration  = 3600 [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "headroom-gateway-task" [90m-> null[0m[0m
+      [31m-[0m[0m path                  = "/" [90m-> null[0m[0m
+      [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m unique_id             = "AROAZ2PV72ZORGLM6UMVJ" [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m inline_policy {
+          [31m-[0m[0m name   = "dynamodb" [90m-> null[0m[0m
+          [31m-[0m[0m policy = jsonencode(
+                {
+                  [31m-[0m[0m Statement = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m Action   = [
+                              [31m-[0m[0m "dynamodb:UpdateItem",
+                              [31m-[0m[0m "dynamodb:Scan",
+                              [31m-[0m[0m "dynamodb:PutItem",
+                              [31m-[0m[0m "dynamodb:GetItem",
+                              [31m-[0m[0m "dynamodb:DeleteItem",
+                            ]
+                          [31m-[0m[0m Effect   = "Allow"
+                          [31m-[0m[0m Resource = [
+                              [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_budgets",
+                              [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_buckets",
+                            ]
+                          [31m-[0m[0m Sid      = "TheBudgetGateAndTheTokenBuckets"
+                        },
+                      [31m-[0m[0m {
+                          [31m-[0m[0m Action   = [
+                              [31m-[0m[0m "dynamodb:DescribeTable",
+                              [31m-[0m[0m "dynamodb:CreateTable",
+                            ]
+                          [31m-[0m[0m Effect   = "Allow"
+                          [31m-[0m[0m Resource = [
+                              [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_budgets",
+                              [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_buckets",
+                            ]
+                          [31m-[0m[0m Sid      = "EnsureTableStaysTheSameCodePathItIsLocally"
+                        },
+                    ]
+                  [31m-[0m[0m Version   = "2012-10-17"
+                }
+            ) [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_iam_role.rollup[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role" "rollup" {
+      [31m-[0m[0m arn                   = "arn:aws:iam::675362625117:role/headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m assume_role_policy    = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "sts:AssumeRole"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m Service = "lambda.amazonaws.com"
+                        }
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m create_date           = "2026-08-11T02:49:54Z" [90m-> null[0m[0m
+      [31m-[0m[0m force_detach_policies = false [90m-> null[0m[0m
+      [31m-[0m[0m id                    = "headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m managed_policy_arns   = [
+          [31m-[0m[0m "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m max_session_duration  = 3600 [90m-> null[0m[0m
+      [31m-[0m[0m name                  = "headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m path                  = "/" [90m-> null[0m[0m
+      [31m-[0m[0m tags                  = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all              = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m unique_id             = "AROAZ2PV72ZO7LGX7XILY" [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m inline_policy {
+          [31m-[0m[0m name   = "secrets" [90m-> null[0m[0m
+          [31m-[0m[0m policy = jsonencode(
+                {
+                  [31m-[0m[0m Statement = [
+                      [31m-[0m[0m {
+                          [31m-[0m[0m Action   = "secretsmanager:GetSecretValue"
+                          [31m-[0m[0m Effect   = "Allow"
+                          [31m-[0m[0m Resource = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr"
+                          [31m-[0m[0m Sid      = "ReadTheDatabaseUrlAtInvocation"
+                        },
+                    ]
+                  [31m-[0m[0m Version   = "2012-10-17"
+                }
+            ) [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_iam_role_policy.execution_secrets[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy" "execution_secrets" {
+      [31m-[0m[0m id          = "headroom-ecs-execution:secrets" [90m-> null[0m[0m
+      [31m-[0m[0m name        = "secrets" [90m-> null[0m[0m
+      [31m-[0m[0m policy      = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = "secretsmanager:GetSecretValue"
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr",
+                          [31m-[0m[0m "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/anthropic-api-key-VuV8us",
+                          [31m-[0m[0m "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/admin-token-tkigwq",
+                        ]
+                      [31m-[0m[0m Sid      = "ReadTheThreeSecretsTheTaskDefinitionNames"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m role        = "headroom-ecs-execution" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role_policy.gateway_dynamodb[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy" "gateway_dynamodb" {
+      [31m-[0m[0m id          = "headroom-gateway-task:dynamodb" [90m-> null[0m[0m
+      [31m-[0m[0m name        = "dynamodb" [90m-> null[0m[0m
+      [31m-[0m[0m policy      = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "dynamodb:UpdateItem",
+                          [31m-[0m[0m "dynamodb:Scan",
+                          [31m-[0m[0m "dynamodb:PutItem",
+                          [31m-[0m[0m "dynamodb:GetItem",
+                          [31m-[0m[0m "dynamodb:DeleteItem",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_budgets",
+                          [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_buckets",
+                        ]
+                      [31m-[0m[0m Sid      = "TheBudgetGateAndTheTokenBuckets"
+                    },
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = [
+                          [31m-[0m[0m "dynamodb:DescribeTable",
+                          [31m-[0m[0m "dynamodb:CreateTable",
+                        ]
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = [
+                          [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_budgets",
+                          [31m-[0m[0m "arn:aws:dynamodb:us-east-1:675362625117:table/headroom_buckets",
+                        ]
+                      [31m-[0m[0m Sid      = "EnsureTableStaysTheSameCodePathItIsLocally"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m role        = "headroom-gateway-task" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role_policy.rollup_secrets[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy" "rollup_secrets" {
+      [31m-[0m[0m id          = "headroom-rollup:secrets" [90m-> null[0m[0m
+      [31m-[0m[0m name        = "secrets" [90m-> null[0m[0m
+      [31m-[0m[0m policy      = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action   = "secretsmanager:GetSecretValue"
+                      [31m-[0m[0m Effect   = "Allow"
+                      [31m-[0m[0m Resource = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr"
+                      [31m-[0m[0m Sid      = "ReadTheDatabaseUrlAtInvocation"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2012-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m role        = "headroom-rollup" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_iam_role_policy_attachment.execution_managed[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy_attachment" "execution_managed" {
+      [31m-[0m[0m id         = "headroom-ecs-execution/arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" [90m-> null[0m[0m
+      [31m-[0m[0m policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy" [90m-> null[0m[0m
+      [31m-[0m[0m role       = "headroom-ecs-execution" [90m-> null[0m[0m
+    }
+
+[1m  # aws_iam_role_policy_attachment.rollup_vpc[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_iam_role_policy_attachment" "rollup_vpc" {
+      [31m-[0m[0m id         = "headroom-rollup/arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole" [90m-> null[0m[0m
+      [31m-[0m[0m policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole" [90m-> null[0m[0m
+      [31m-[0m[0m role       = "headroom-rollup" [90m-> null[0m[0m
+    }
+
+[1m  # aws_lambda_function.rollup[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lambda_function" "rollup" {
+      [31m-[0m[0m architectures                  = [
+          [31m-[0m[0m "x86_64",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m arn                            = "arn:aws:lambda:us-east-1:675362625117:function:headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m code_sha256                    = "Ly4aDyt9klHrKIwkG4/eKtX1+uLl3m6Ipf8xgi7R7M0=" [90m-> null[0m[0m
+      [31m-[0m[0m filename                       = "./../lambda/rollup.zip" [90m-> null[0m[0m
+      [31m-[0m[0m function_name                  = "headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m handler                        = "headroom.rollup.handler.handler" [90m-> null[0m[0m
+      [31m-[0m[0m id                             = "headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m invoke_arn                     = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:675362625117:function:headroom-rollup/invocations" [90m-> null[0m[0m
+      [31m-[0m[0m last_modified                  = "2026-08-11T02:50:05.207+0000" [90m-> null[0m[0m
+      [31m-[0m[0m layers                         = [] [90m-> null[0m[0m
+      [31m-[0m[0m memory_size                    = 512 [90m-> null[0m[0m
+      [31m-[0m[0m package_type                   = "Zip" [90m-> null[0m[0m
+      [31m-[0m[0m publish                        = false [90m-> null[0m[0m
+      [31m-[0m[0m qualified_arn                  = "arn:aws:lambda:us-east-1:675362625117:function:headroom-rollup:$LATEST" [90m-> null[0m[0m
+      [31m-[0m[0m qualified_invoke_arn           = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:675362625117:function:headroom-rollup:$LATEST/invocations" [90m-> null[0m[0m
+      [31m-[0m[0m region                         = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m reserved_concurrent_executions = -1 [90m-> null[0m[0m
+      [31m-[0m[0m response_streaming_invoke_arn  = "arn:aws:apigateway:us-east-1:lambda:path/2021-11-15/functions/arn:aws:lambda:us-east-1:675362625117:function:headroom-rollup/response-streaming-invocations" [90m-> null[0m[0m
+      [31m-[0m[0m role                           = "arn:aws:iam::675362625117:role/headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m runtime                        = "python3.12" [90m-> null[0m[0m
+      [31m-[0m[0m skip_destroy                   = false [90m-> null[0m[0m
+      [31m-[0m[0m source_code_hash               = "Ly4aDyt9klHrKIwkG4/eKtX1+uLl3m6Ipf8xgi7R7M0=" [90m-> null[0m[0m
+      [31m-[0m[0m source_code_size               = 3851708 [90m-> null[0m[0m
+      [31m-[0m[0m tags                           = {
+          [31m-[0m[0m "Name" = "headroom-rollup"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                       = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-rollup"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m timeout                        = 120 [90m-> null[0m[0m
+      [31m-[0m[0m version                        = "$LATEST" [90m-> null[0m[0m
+        [90m# (7 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m environment {
+          [31m-[0m[0m variables = {
+              [31m-[0m[0m "DATABASE_URL_SECRET_ARN" = "arn:aws:secretsmanager:us-east-1:675362625117:secret:headroom/database-url-iml2Zr"
+            } [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m ephemeral_storage {
+          [31m-[0m[0m size = 512 [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m logging_config {
+          [31m-[0m[0m log_format            = "Text" [90m-> null[0m[0m
+          [31m-[0m[0m log_group             = "/aws/lambda/headroom-rollup" [90m-> null[0m[0m
+            [90m# (2 unchanged attributes hidden)[0m[0m
+        }
+
+      [31m-[0m[0m tracing_config {
+          [31m-[0m[0m mode = "PassThrough" [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m vpc_config {
+          [31m-[0m[0m ipv6_allowed_for_dual_stack = false [90m-> null[0m[0m
+          [31m-[0m[0m security_group_ids          = [
+              [31m-[0m[0m "sg-089442c7421961a20",
+            ] [90m-> null[0m[0m
+          [31m-[0m[0m subnet_ids                  = [
+              [31m-[0m[0m "subnet-026cacc21ec4916e3",
+              [31m-[0m[0m "subnet-0583bf06f17cb4ac1",
+            ] [90m-> null[0m[0m
+          [31m-[0m[0m vpc_id                      = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_lambda_permission.rollup_nightly[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lambda_permission" "rollup_nightly" {
+      [31m-[0m[0m action              = "lambda:InvokeFunction" [90m-> null[0m[0m
+      [31m-[0m[0m function_name       = "headroom-rollup" [90m-> null[0m[0m
+      [31m-[0m[0m id                  = "AllowExecutionFromEventBridge" [90m-> null[0m[0m
+      [31m-[0m[0m principal           = "events.amazonaws.com" [90m-> null[0m[0m
+      [31m-[0m[0m region              = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m source_arn          = "arn:aws:events:us-east-1:675362625117:rule/headroom-rollup-nightly" [90m-> null[0m[0m
+      [31m-[0m[0m statement_id        = "AllowExecutionFromEventBridge" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_lb.main[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lb" "main" {
+      [31m-[0m[0m arn                                                          = "arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa" [90m-> null[0m[0m
+      [31m-[0m[0m arn_suffix                                                   = "app/headroom/e4c8fb18199dbdaa" [90m-> null[0m[0m
+      [31m-[0m[0m client_keep_alive                                            = 3600 [90m-> null[0m[0m
+      [31m-[0m[0m desync_mitigation_mode                                       = "defensive" [90m-> null[0m[0m
+      [31m-[0m[0m dns_name                                                     = "headroom-1115834826.us-east-1.elb.amazonaws.com" [90m-> null[0m[0m
+      [31m-[0m[0m drop_invalid_header_fields                                   = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_cross_zone_load_balancing                             = true [90m-> null[0m[0m
+      [31m-[0m[0m enable_deletion_protection                                   = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_http2                                                 = true [90m-> null[0m[0m
+      [31m-[0m[0m enable_prefix_for_ipv6_source_nat                            = "off" [90m-> null[0m[0m
+      [31m-[0m[0m enable_tls_version_and_cipher_suite_headers                  = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_waf_fail_open                                         = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_xff_client_port                                       = false [90m-> null[0m[0m
+      [31m-[0m[0m enable_zonal_shift                                           = false [90m-> null[0m[0m
+      [31m-[0m[0m id                                                           = "arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa" [90m-> null[0m[0m
+      [31m-[0m[0m idle_timeout                                                 = 180 [90m-> null[0m[0m
+      [31m-[0m[0m internal                                                     = false [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type                                              = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancer_type                                           = "application" [90m-> null[0m[0m
+      [31m-[0m[0m name                                                         = "headroom" [90m-> null[0m[0m
+      [31m-[0m[0m preserve_host_header                                         = false [90m-> null[0m[0m
+      [31m-[0m[0m region                                                       = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m security_groups                                              = [
+          [31m-[0m[0m "sg-0aa5be8029de02fee",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m subnets                                                      = [
+          [31m-[0m[0m "subnet-02b41a018f4124680",
+          [31m-[0m[0m "subnet-0ece21329bbccc90c",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m tags                                                         = {
+          [31m-[0m[0m "Name" = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                                                     = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                                                       = "vpc-00737af3912a09328" [90m-> null[0m[0m
+      [31m-[0m[0m xff_header_processing_mode                                   = "append" [90m-> null[0m[0m
+      [31m-[0m[0m zone_id                                                      = "Z35SXDOTRQ7X7K" [90m-> null[0m[0m
+        [90m# (3 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m access_logs {
+          [31m-[0m[0m enabled = false [90m-> null[0m[0m
+            [90m# (2 unchanged attributes hidden)[0m[0m
+        }
+
+      [31m-[0m[0m connection_logs {
+          [31m-[0m[0m enabled = false [90m-> null[0m[0m
+            [90m# (2 unchanged attributes hidden)[0m[0m
+        }
+
+      [31m-[0m[0m health_check_logs {
+          [31m-[0m[0m enabled = false [90m-> null[0m[0m
+            [90m# (2 unchanged attributes hidden)[0m[0m
+        }
+
+      [31m-[0m[0m subnet_mapping {
+          [31m-[0m[0m subnet_id            = "subnet-02b41a018f4124680" [90m-> null[0m[0m
+            [90m# (4 unchanged attributes hidden)[0m[0m
+        }
+      [31m-[0m[0m subnet_mapping {
+          [31m-[0m[0m subnet_id            = "subnet-0ece21329bbccc90c" [90m-> null[0m[0m
+            [90m# (4 unchanged attributes hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_lb_listener.gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lb_listener" "gateway" {
+      [31m-[0m[0m arn                                                                 = "arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/33bcbc3aba41b40c" [90m-> null[0m[0m
+      [31m-[0m[0m id                                                                  = "arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/33bcbc3aba41b40c" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancer_arn                                                   = "arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa" [90m-> null[0m[0m
+      [31m-[0m[0m port                                                                = 8080 [90m-> null[0m[0m
+      [31m-[0m[0m protocol                                                            = "HTTP" [90m-> null[0m[0m
+      [31m-[0m[0m region                                                              = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m routing_http_response_server_enabled                                = true [90m-> null[0m[0m
+      [31m-[0m[0m tags                                                                = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                                                            = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m default_action {
+          [31m-[0m[0m order            = 1 [90m-> null[0m[0m
+          [31m-[0m[0m target_group_arn = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-gateway/b20177c2a31c7061" [90m-> null[0m[0m
+          [31m-[0m[0m type             = "forward" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_lb_listener.ui[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lb_listener" "ui" {
+      [31m-[0m[0m arn                                                                 = "arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/8f5cd3f2112988d3" [90m-> null[0m[0m
+      [31m-[0m[0m id                                                                  = "arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/8f5cd3f2112988d3" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancer_arn                                                   = "arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa" [90m-> null[0m[0m
+      [31m-[0m[0m port                                                                = 3001 [90m-> null[0m[0m
+      [31m-[0m[0m protocol                                                            = "HTTP" [90m-> null[0m[0m
+      [31m-[0m[0m region                                                              = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m routing_http_response_server_enabled                                = true [90m-> null[0m[0m
+      [31m-[0m[0m tags                                                                = {} [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                                                            = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (11 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m default_action {
+          [31m-[0m[0m order            = 1 [90m-> null[0m[0m
+          [31m-[0m[0m target_group_arn = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-ui/f9e41a167d470483" [90m-> null[0m[0m
+          [31m-[0m[0m type             = "forward" [90m-> null[0m[0m
+        }
+    }
+
+[1m  # aws_lb_target_group.gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lb_target_group" "gateway" {
+      [31m-[0m[0m arn                                = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-gateway/b20177c2a31c7061" [90m-> null[0m[0m
+      [31m-[0m[0m arn_suffix                         = "targetgroup/headroom-gateway/b20177c2a31c7061" [90m-> null[0m[0m
+      [31m-[0m[0m deregistration_delay               = "10" [90m-> null[0m[0m
+      [31m-[0m[0m id                                 = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-gateway/b20177c2a31c7061" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type                    = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m lambda_multi_value_headers_enabled = false [90m-> null[0m[0m
+      [31m-[0m[0m load_balancer_arns                 = [
+          [31m-[0m[0m "arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m load_balancing_algorithm_type      = "round_robin" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancing_anomaly_mitigation  = "off" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancing_cross_zone_enabled  = "use_load_balancer_configuration" [90m-> null[0m[0m
+      [31m-[0m[0m name                               = "headroom-gateway" [90m-> null[0m[0m
+      [31m-[0m[0m port                               = 8000 [90m-> null[0m[0m
+      [31m-[0m[0m protocol                           = "HTTP" [90m-> null[0m[0m
+      [31m-[0m[0m protocol_version                   = "HTTP1" [90m-> null[0m[0m
+      [31m-[0m[0m proxy_protocol_v2                  = false [90m-> null[0m[0m
+      [31m-[0m[0m region                             = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m slow_start                         = 0 [90m-> null[0m[0m
+      [31m-[0m[0m tags                               = {
+          [31m-[0m[0m "Name" = "headroom-gateway"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                           = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-gateway"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m target_control_port                = 0 [90m-> null[0m[0m
+      [31m-[0m[0m target_type                        = "ip" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                             = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m health_check {
+          [31m-[0m[0m enabled             = true [90m-> null[0m[0m
+          [31m-[0m[0m healthy_threshold   = 2 [90m-> null[0m[0m
+          [31m-[0m[0m interval            = 15 [90m-> null[0m[0m
+          [31m-[0m[0m matcher             = "200" [90m-> null[0m[0m
+          [31m-[0m[0m path                = "/healthz" [90m-> null[0m[0m
+          [31m-[0m[0m port                = "traffic-port" [90m-> null[0m[0m
+          [31m-[0m[0m protocol            = "HTTP" [90m-> null[0m[0m
+          [31m-[0m[0m timeout             = 5 [90m-> null[0m[0m
+          [31m-[0m[0m unhealthy_threshold = 3 [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m stickiness {
+          [31m-[0m[0m cookie_duration = 86400 [90m-> null[0m[0m
+          [31m-[0m[0m enabled         = false [90m-> null[0m[0m
+          [31m-[0m[0m type            = "lb_cookie" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m target_failover {}
+
+      [31m-[0m[0m target_group_health {
+          [31m-[0m[0m dns_failover {
+              [31m-[0m[0m minimum_healthy_targets_count      = "1" [90m-> null[0m[0m
+              [31m-[0m[0m minimum_healthy_targets_percentage = "off" [90m-> null[0m[0m
+            }
+          [31m-[0m[0m unhealthy_state_routing {
+              [31m-[0m[0m minimum_healthy_targets_count      = 1 [90m-> null[0m[0m
+              [31m-[0m[0m minimum_healthy_targets_percentage = "off" [90m-> null[0m[0m
+            }
+        }
+
+      [31m-[0m[0m target_health_state {}
+    }
+
+[1m  # aws_lb_target_group.ui[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_lb_target_group" "ui" {
+      [31m-[0m[0m arn                                = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-ui/f9e41a167d470483" [90m-> null[0m[0m
+      [31m-[0m[0m arn_suffix                         = "targetgroup/headroom-ui/f9e41a167d470483" [90m-> null[0m[0m
+      [31m-[0m[0m deregistration_delay               = "10" [90m-> null[0m[0m
+      [31m-[0m[0m id                                 = "arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-ui/f9e41a167d470483" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type                    = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m lambda_multi_value_headers_enabled = false [90m-> null[0m[0m
+      [31m-[0m[0m load_balancer_arns                 = [
+          [31m-[0m[0m "arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m load_balancing_algorithm_type      = "round_robin" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancing_anomaly_mitigation  = "off" [90m-> null[0m[0m
+      [31m-[0m[0m load_balancing_cross_zone_enabled  = "use_load_balancer_configuration" [90m-> null[0m[0m
+      [31m-[0m[0m name                               = "headroom-ui" [90m-> null[0m[0m
+      [31m-[0m[0m port                               = 3000 [90m-> null[0m[0m
+      [31m-[0m[0m protocol                           = "HTTP" [90m-> null[0m[0m
+      [31m-[0m[0m protocol_version                   = "HTTP1" [90m-> null[0m[0m
+      [31m-[0m[0m proxy_protocol_v2                  = false [90m-> null[0m[0m
+      [31m-[0m[0m region                             = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m slow_start                         = 0 [90m-> null[0m[0m
+      [31m-[0m[0m tags                               = {
+          [31m-[0m[0m "Name" = "headroom-ui"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                           = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-ui"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m target_control_port                = 0 [90m-> null[0m[0m
+      [31m-[0m[0m target_type                        = "ip" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                             = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m health_check {
+          [31m-[0m[0m enabled             = true [90m-> null[0m[0m
+          [31m-[0m[0m healthy_threshold   = 2 [90m-> null[0m[0m
+          [31m-[0m[0m interval            = 15 [90m-> null[0m[0m
+          [31m-[0m[0m matcher             = "200" [90m-> null[0m[0m
+          [31m-[0m[0m path                = "/api/healthz" [90m-> null[0m[0m
+          [31m-[0m[0m port                = "traffic-port" [90m-> null[0m[0m
+          [31m-[0m[0m protocol            = "HTTP" [90m-> null[0m[0m
+          [31m-[0m[0m timeout             = 5 [90m-> null[0m[0m
+          [31m-[0m[0m unhealthy_threshold = 3 [90m-> null[0m[0m
+        }
+
+      [31m-[0m[0m stickiness {
+          [31m-[0m[0m cookie_duration = 86400 [90m-> null[0m[0m
+          [31m-[0m[0m enabled         = false [90m-> null[0m[0m
+          [31m-[0m[0m type            = "lb_cookie" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m target_failover {}
+
+      [31m-[0m[0m target_group_health {
+          [31m-[0m[0m dns_failover {
+              [31m-[0m[0m minimum_healthy_targets_count      = "1" [90m-> null[0m[0m
+              [31m-[0m[0m minimum_healthy_targets_percentage = "off" [90m-> null[0m[0m
+            }
+          [31m-[0m[0m unhealthy_state_routing {
+              [31m-[0m[0m minimum_healthy_targets_count      = 1 [90m-> null[0m[0m
+              [31m-[0m[0m minimum_healthy_targets_percentage = "off" [90m-> null[0m[0m
+            }
+        }
+
+      [31m-[0m[0m target_health_state {}
+    }
+
+[1m  # aws_security_group.alb[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group" "alb" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-east-1:675362625117:security-group/sg-0aa5be8029de02fee" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "The two public listeners. One source CIDR, supplied at apply time." [90m-> null[0m[0m
+      [31m-[0m[0m egress                 = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "0.0.0.0/0",
+                ]
+              [31m-[0m[0m description      = "To the tasks. The ALB talks to nothing else."
+              [31m-[0m[0m from_port        = 0
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "-1"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 0
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sg-0aa5be8029de02fee" [90m-> null[0m[0m
+      [31m-[0m[0m ingress                = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "75.142.216.151/32",
+                ]
+              [31m-[0m[0m description      = "Console listener, from the operators network only"
+              [31m-[0m[0m from_port        = 3001
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 3001
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "75.142.216.151/32",
+                ]
+              [31m-[0m[0m description      = "Gateway listener, from the operators network only"
+              [31m-[0m[0m from_port        = 8080
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 8080
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m name                   = "headroom-alb" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id               = "675362625117" [90m-> null[0m[0m
+      [31m-[0m[0m region                 = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m revoke_rules_on_delete = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                   = {
+          [31m-[0m[0m "Name" = "headroom-alb"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-alb"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                 = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_security_group.endpoints[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group" "endpoints" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-east-1:675362625117:security-group/sg-0c9d2f26876f3ed4b" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "The Secrets Manager interface endpoint. HTTPS, from the workload group." [90m-> null[0m[0m
+      [31m-[0m[0m egress                 = [] [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sg-0c9d2f26876f3ed4b" [90m-> null[0m[0m
+      [31m-[0m[0m ingress                = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = []
+              [31m-[0m[0m description      = "HTTPS from anything wearing the workload group in practice, the Lambda"
+              [31m-[0m[0m from_port        = 443
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = [
+                  [31m-[0m[0m "sg-089442c7421961a20",
+                ]
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 443
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m name                   = "headroom-endpoints" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id               = "675362625117" [90m-> null[0m[0m
+      [31m-[0m[0m region                 = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m revoke_rules_on_delete = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                   = {
+          [31m-[0m[0m "Name" = "headroom-endpoints"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-endpoints"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                 = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_security_group.service[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_security_group" "service" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-east-1:675362625117:security-group/sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "Fargate tasks: reachable from the ALB, and from each other on the gateways port." [90m-> null[0m[0m
+      [31m-[0m[0m egress                 = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = [
+                  [31m-[0m[0m "0.0.0.0/0",
+                ]
+              [31m-[0m[0m description      = "Providers, ECR, CloudWatch Logs, Secrets Manager, and Postgres."
+              [31m-[0m[0m from_port        = 0
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "-1"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 0
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m ingress                = [
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = []
+              [31m-[0m[0m description      = "The console reaching the gateway by its service-discovery name"
+              [31m-[0m[0m from_port        = 8000
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = []
+              [31m-[0m[0m self             = true
+              [31m-[0m[0m to_port          = 8000
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = []
+              [31m-[0m[0m description      = "The consoles container port, from the load balancer"
+              [31m-[0m[0m from_port        = 3000
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = [
+                  [31m-[0m[0m "sg-0aa5be8029de02fee",
+                ]
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 3000
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m cidr_blocks      = []
+              [31m-[0m[0m description      = "The gateways container port, from the load balancer"
+              [31m-[0m[0m from_port        = 8000
+              [31m-[0m[0m ipv6_cidr_blocks = []
+              [31m-[0m[0m prefix_list_ids  = []
+              [31m-[0m[0m protocol         = "tcp"
+              [31m-[0m[0m security_groups  = [
+                  [31m-[0m[0m "sg-0aa5be8029de02fee",
+                ]
+              [31m-[0m[0m self             = false
+              [31m-[0m[0m to_port          = 8000
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m name                   = "headroom-service" [90m-> null[0m[0m
+      [31m-[0m[0m owner_id               = "675362625117" [90m-> null[0m[0m
+      [31m-[0m[0m region                 = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m revoke_rules_on_delete = false [90m-> null[0m[0m
+      [31m-[0m[0m tags                   = {
+          [31m-[0m[0m "Name" = "headroom-service"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-service"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                 = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+    }
+
+[1m  # aws_service_discovery_private_dns_namespace.main[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_service_discovery_private_dns_namespace" "main" {
+      [31m-[0m[0m arn         = "arn:aws:servicediscovery:us-east-1:675362625117:namespace/ns-2qv5hepcqjjssw37" [90m-> null[0m[0m
+      [31m-[0m[0m description = "Service-to-service names inside the VPC" [90m-> null[0m[0m
+      [31m-[0m[0m hosted_zone = "Z05138123R678ADXBYE4X" [90m-> null[0m[0m
+      [31m-[0m[0m id          = "ns-2qv5hepcqjjssw37" [90m-> null[0m[0m
+      [31m-[0m[0m name        = "headroom.local" [90m-> null[0m[0m
+      [31m-[0m[0m region      = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m tags        = {
+          [31m-[0m[0m "Name" = "headroom.local"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all    = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom.local"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc         = "vpc-00737af3912a09328" [90m-> null[0m[0m
+    }
+
+[1m  # aws_service_discovery_service.gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_service_discovery_service" "gateway" {
+      [31m-[0m[0m arn           = "arn:aws:servicediscovery:us-east-1:675362625117:service/srv-rjcrk5rhzogct7ej" [90m-> null[0m[0m
+      [31m-[0m[0m force_destroy = false [90m-> null[0m[0m
+      [31m-[0m[0m id            = "srv-rjcrk5rhzogct7ej" [90m-> null[0m[0m
+      [31m-[0m[0m name          = "gateway" [90m-> null[0m[0m
+      [31m-[0m[0m namespace_id  = "ns-2qv5hepcqjjssw37" [90m-> null[0m[0m
+      [31m-[0m[0m region        = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m tags          = {
+          [31m-[0m[0m "Name" = "headroom-gateway"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all      = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-gateway"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m type          = "DNS_HTTP" [90m-> null[0m[0m
+        [90m# (1 unchanged attribute hidden)[0m[0m
+
+      [31m-[0m[0m dns_config {
+          [31m-[0m[0m namespace_id   = "ns-2qv5hepcqjjssw37" [90m-> null[0m[0m
+          [31m-[0m[0m routing_policy = "MULTIVALUE" [90m-> null[0m[0m
+
+          [31m-[0m[0m dns_records {
+              [31m-[0m[0m ttl  = 10 [90m-> null[0m[0m
+              [31m-[0m[0m type = "A" [90m-> null[0m[0m
+            }
+        }
+    }
+
+[1m  # aws_sns_topic.alarms[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_sns_topic" "alarms" {
+      [31m-[0m[0m application_success_feedback_sample_rate = 0 [90m-> null[0m[0m
+      [31m-[0m[0m arn                                      = "arn:aws:sns:us-east-1:675362625117:headroom-alarms" [90m-> null[0m[0m
+      [31m-[0m[0m content_based_deduplication              = false [90m-> null[0m[0m
+      [31m-[0m[0m fifo_topic                               = false [90m-> null[0m[0m
+      [31m-[0m[0m firehose_success_feedback_sample_rate    = 0 [90m-> null[0m[0m
+      [31m-[0m[0m http_success_feedback_sample_rate        = 0 [90m-> null[0m[0m
+      [31m-[0m[0m id                                       = "arn:aws:sns:us-east-1:675362625117:headroom-alarms" [90m-> null[0m[0m
+      [31m-[0m[0m lambda_success_feedback_sample_rate      = 0 [90m-> null[0m[0m
+      [31m-[0m[0m name                                     = "headroom-alarms" [90m-> null[0m[0m
+      [31m-[0m[0m owner                                    = "675362625117" [90m-> null[0m[0m
+      [31m-[0m[0m policy                                   = jsonencode(
+            {
+              [31m-[0m[0m Id        = "__default_policy_ID"
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = [
+                          [31m-[0m[0m "SNS:GetTopicAttributes",
+                          [31m-[0m[0m "SNS:SetTopicAttributes",
+                          [31m-[0m[0m "SNS:AddPermission",
+                          [31m-[0m[0m "SNS:RemovePermission",
+                          [31m-[0m[0m "SNS:DeleteTopic",
+                          [31m-[0m[0m "SNS:Subscribe",
+                          [31m-[0m[0m "SNS:ListSubscriptionsByTopic",
+                          [31m-[0m[0m "SNS:Publish",
+                        ]
+                      [31m-[0m[0m Condition = {
+                          [31m-[0m[0m StringEquals = {
+                              [31m-[0m[0m "AWS:SourceOwner" = "675362625117"
+                            }
+                        }
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = {
+                          [31m-[0m[0m AWS = "*"
+                        }
+                      [31m-[0m[0m Resource  = "arn:aws:sns:us-east-1:675362625117:headroom-alarms"
+                      [31m-[0m[0m Sid       = "__default_statement_ID"
+                    },
+                ]
+              [31m-[0m[0m Version   = "2008-10-17"
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m region                                   = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m signature_version                        = 0 [90m-> null[0m[0m
+      [31m-[0m[0m sqs_success_feedback_sample_rate         = 0 [90m-> null[0m[0m
+      [31m-[0m[0m tags                                     = {
+          [31m-[0m[0m "Name" = "headroom-alarms"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                                 = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-alarms"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+        [90m# (18 unchanged attributes hidden)[0m[0m
+    }
+
+[1m  # aws_vpc_endpoint.secretsmanager[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_endpoint" "secretsmanager" {
+      [31m-[0m[0m arn                        = "arn:aws:ec2:us-east-1:675362625117:vpc-endpoint/vpce-04ec6e17a9cfb76cf" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_blocks                = [] [90m-> null[0m[0m
+      [31m-[0m[0m dns_entry                  = [
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-04ec6e17a9cfb76cf-j6guknrk.secretsmanager.us-east-1.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z7HUB22UULQXV"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-04ec6e17a9cfb76cf-j6guknrk-us-east-1b.secretsmanager.us-east-1.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z7HUB22UULQXV"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "vpce-04ec6e17a9cfb76cf-j6guknrk-us-east-1a.secretsmanager.us-east-1.vpce.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z7HUB22UULQXV"
+            },
+          [31m-[0m[0m {
+              [31m-[0m[0m dns_name       = "secretsmanager.us-east-1.amazonaws.com"
+              [31m-[0m[0m hosted_zone_id = "Z0211612WLMUMMM4HCKV"
+            },
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m id                         = "vpce-04ec6e17a9cfb76cf" [90m-> null[0m[0m
+      [31m-[0m[0m ip_address_type            = "ipv4" [90m-> null[0m[0m
+      [31m-[0m[0m network_interface_ids      = [
+          [31m-[0m[0m "eni-0eb4f0070c080ddc6",
+          [31m-[0m[0m "eni-0fd92446286809112",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m owner_id                   = "675362625117" [90m-> null[0m[0m
+      [31m-[0m[0m policy                     = jsonencode(
+            {
+              [31m-[0m[0m Statement = [
+                  [31m-[0m[0m {
+                      [31m-[0m[0m Action    = "*"
+                      [31m-[0m[0m Effect    = "Allow"
+                      [31m-[0m[0m Principal = "*"
+                      [31m-[0m[0m Resource  = "*"
+                    },
+                ]
+            }
+        ) [90m-> null[0m[0m
+      [31m-[0m[0m private_dns_enabled        = true [90m-> null[0m[0m
+      [31m-[0m[0m region                     = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m requester_managed          = false [90m-> null[0m[0m
+      [31m-[0m[0m route_table_ids            = [] [90m-> null[0m[0m
+      [31m-[0m[0m security_group_ids         = [
+          [31m-[0m[0m "sg-0c9d2f26876f3ed4b",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m service_name               = "com.amazonaws.us-east-1.secretsmanager" [90m-> null[0m[0m
+      [31m-[0m[0m service_region             = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m state                      = "available" [90m-> null[0m[0m
+      [31m-[0m[0m subnet_ids                 = [
+          [31m-[0m[0m "subnet-026cacc21ec4916e3",
+          [31m-[0m[0m "subnet-0583bf06f17cb4ac1",
+        ] [90m-> null[0m[0m
+      [31m-[0m[0m tags                       = {
+          [31m-[0m[0m "Name" = "headroom-secretsmanager"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                   = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Name"      = "headroom-secretsmanager"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m vpc_endpoint_type          = "Interface" [90m-> null[0m[0m
+      [31m-[0m[0m vpc_id                     = "vpc-00737af3912a09328" [90m-> null[0m[0m
+        [90m# (2 unchanged attributes hidden)[0m[0m
+
+      [31m-[0m[0m dns_options {
+          [31m-[0m[0m dns_record_ip_type                             = "ipv4" [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_only_for_inbound_resolver_endpoint = false [90m-> null[0m[0m
+          [31m-[0m[0m private_dns_specified_domains                  = [] [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+
+      [31m-[0m[0m subnet_configuration {
+          [31m-[0m[0m ipv4      = "10.42.133.168" [90m-> null[0m[0m
+          [31m-[0m[0m subnet_id = "subnet-0583bf06f17cb4ac1" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+      [31m-[0m[0m subnet_configuration {
+          [31m-[0m[0m ipv4      = "10.42.159.53" [90m-> null[0m[0m
+          [31m-[0m[0m subnet_id = "subnet-026cacc21ec4916e3" [90m-> null[0m[0m
+            [90m# (1 unchanged attribute hidden)[0m[0m
+        }
+    }
+
+[1m  # aws_vpc_security_group_egress_rule.service_all[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_security_group_egress_rule" "service_all" {
+      [31m-[0m[0m arn                    = "arn:aws:ec2:us-east-1:675362625117:security-group-rule/sgr-0fa485e6f7e21a6e4" [90m-> null[0m[0m
+      [31m-[0m[0m cidr_ipv4              = "0.0.0.0/0" [90m-> null[0m[0m
+      [31m-[0m[0m description            = "Providers, ECR, CloudWatch Logs, Secrets Manager, and Postgres." [90m-> null[0m[0m
+      [31m-[0m[0m id                     = "sgr-0fa485e6f7e21a6e4" [90m-> null[0m[0m
+      [31m-[0m[0m ip_protocol            = "-1" [90m-> null[0m[0m
+      [31m-[0m[0m region                 = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_id      = "sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_rule_id = "sgr-0fa485e6f7e21a6e4" [90m-> null[0m[0m
+      [31m-[0m[0m tags_all               = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+    }
+
+[1m  # aws_vpc_security_group_ingress_rule.service_from_alb_gateway[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_security_group_ingress_rule" "service_from_alb_gateway" {
+      [31m-[0m[0m arn                          = "arn:aws:ec2:us-east-1:675362625117:security-group-rule/sgr-0e5940c355604d0f4" [90m-> null[0m[0m
+      [31m-[0m[0m description                  = "The gateways container port, from the load balancer" [90m-> null[0m[0m
+      [31m-[0m[0m from_port                    = 8000 [90m-> null[0m[0m
+      [31m-[0m[0m id                           = "sgr-0e5940c355604d0f4" [90m-> null[0m[0m
+      [31m-[0m[0m ip_protocol                  = "tcp" [90m-> null[0m[0m
+      [31m-[0m[0m referenced_security_group_id = "sg-0aa5be8029de02fee" [90m-> null[0m[0m
+      [31m-[0m[0m region                       = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_id            = "sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_rule_id       = "sgr-0e5940c355604d0f4" [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                     = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m to_port                      = 8000 [90m-> null[0m[0m
+    }
+
+[1m  # aws_vpc_security_group_ingress_rule.service_from_alb_ui[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_security_group_ingress_rule" "service_from_alb_ui" {
+      [31m-[0m[0m arn                          = "arn:aws:ec2:us-east-1:675362625117:security-group-rule/sgr-05d7e28f69b5512b7" [90m-> null[0m[0m
+      [31m-[0m[0m description                  = "The consoles container port, from the load balancer" [90m-> null[0m[0m
+      [31m-[0m[0m from_port                    = 3000 [90m-> null[0m[0m
+      [31m-[0m[0m id                           = "sgr-05d7e28f69b5512b7" [90m-> null[0m[0m
+      [31m-[0m[0m ip_protocol                  = "tcp" [90m-> null[0m[0m
+      [31m-[0m[0m referenced_security_group_id = "sg-0aa5be8029de02fee" [90m-> null[0m[0m
+      [31m-[0m[0m region                       = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_id            = "sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_rule_id       = "sgr-05d7e28f69b5512b7" [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                     = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m to_port                      = 3000 [90m-> null[0m[0m
+    }
+
+[1m  # aws_vpc_security_group_ingress_rule.service_from_service[0m will be [1m[31mdestroyed[0m
+[0m  [31m-[0m[0m resource "aws_vpc_security_group_ingress_rule" "service_from_service" {
+      [31m-[0m[0m arn                          = "arn:aws:ec2:us-east-1:675362625117:security-group-rule/sgr-0ea5de3663b63ca1f" [90m-> null[0m[0m
+      [31m-[0m[0m description                  = "The console reaching the gateway by its service-discovery name" [90m-> null[0m[0m
+      [31m-[0m[0m from_port                    = 8000 [90m-> null[0m[0m
+      [31m-[0m[0m id                           = "sgr-0ea5de3663b63ca1f" [90m-> null[0m[0m
+      [31m-[0m[0m ip_protocol                  = "tcp" [90m-> null[0m[0m
+      [31m-[0m[0m referenced_security_group_id = "sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m region                       = "us-east-1" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_id            = "sg-0242d37083a5bad82" [90m-> null[0m[0m
+      [31m-[0m[0m security_group_rule_id       = "sgr-0ea5de3663b63ca1f" [90m-> null[0m[0m
+      [31m-[0m[0m tags_all                     = {
+          [31m-[0m[0m "Layer"     = "compute"
+          [31m-[0m[0m "ManagedBy" = "terraform"
+          [31m-[0m[0m "Phase"     = "p9"
+          [31m-[0m[0m "Project"   = "headroom"
+        } [90m-> null[0m[0m
+      [31m-[0m[0m to_port                      = 8000 [90m-> null[0m[0m
+    }
+
+[1mPlan:[0m [0m0 to add, 0 to change, 43 to destroy.
+
+Changes to Outputs:
+  [31m-[0m[0m account_id                     = "675362625117" [90m-> null[0m[0m
+  [31m-[0m[0m alarm_topic_arn                = "arn:aws:sns:us-east-1:675362625117:headroom-alarms" [90m-> null[0m[0m
+  [31m-[0m[0m alb_dns_name                   = "headroom-1115834826.us-east-1.elb.amazonaws.com" [90m-> null[0m[0m
+  [31m-[0m[0m cluster_name                   = "headroom" [90m-> null[0m[0m
+  [31m-[0m[0m console_url                    = "http://headroom-1115834826.us-east-1.elb.amazonaws.com:3001" [90m-> null[0m[0m
+  [31m-[0m[0m gateway_log_group              = "/ecs/headroom/gateway" [90m-> null[0m[0m
+  [31m-[0m[0m gateway_task_definition        = "headroom-gateway:1" [90m-> null[0m[0m
+  [31m-[0m[0m gateway_url                    = "http://headroom-1115834826.us-east-1.elb.amazonaws.com:8080" [90m-> null[0m[0m
+  [31m-[0m[0m rollup_function_name           = "headroom-rollup" [90m-> null[0m[0m
+  [31m-[0m[0m rollup_log_group               = "/aws/lambda/headroom-rollup" [90m-> null[0m[0m
+  [31m-[0m[0m run_task_network_configuration = jsonencode(
+        {
+          [31m-[0m[0m awsvpcConfiguration = {
+              [31m-[0m[0m assignPublicIp = "ENABLED"
+              [31m-[0m[0m securityGroups = [
+                  [31m-[0m[0m "sg-0242d37083a5bad82",
+                  [31m-[0m[0m "sg-089442c7421961a20",
+                ]
+              [31m-[0m[0m subnets        = [
+                  [31m-[0m[0m "subnet-02b41a018f4124680",
+                  [31m-[0m[0m "subnet-0ece21329bbccc90c",
+                ]
+            }
+        }
+    ) [90m-> null[0m[0m
+[0m[1m
+Do you really want to destroy all resources?[0m
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  [1mEnter a value:[0m [0m
+[0m[1maws_iam_role_policy.execution_secrets: Destroying... [id=headroom-ecs-execution:secrets][0m[0m
+[0m[1maws_iam_role_policy.rollup_secrets: Destroying... [id=headroom-rollup:secrets][0m[0m
+[0m[1maws_lambda_permission.rollup_nightly: Destroying... [id=AllowExecutionFromEventBridge][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.ledger_rows_lost: Destroying... [id=headroom-ledger-rows-lost][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.provider_down: Destroying... [id=headroom-provider-down][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Destroying... [id=vpce-04ec6e17a9cfb76cf][0m[0m
+[0m[1maws_cloudwatch_event_target.rollup_nightly: Destroying... [id=headroom-rollup-nightly-terraform-hvvYwdsHQ5VehckwMHZISqpeLD][0m[0m
+[0m[1maws_vpc_security_group_egress_rule.service_all: Destroying... [id=sgr-0fa485e6f7e21a6e4][0m[0m
+[0m[1maws_ecs_service.gateway: Destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway][0m[0m
+[0m[1maws_ecs_service.ui: Destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui][0m[0m
+[0m[1maws_iam_role_policy.rollup_secrets: Destruction complete after 0s[0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_alb_ui: Destroying... [id=sgr-05d7e28f69b5512b7][0m[0m
+[0m[1maws_cloudwatch_event_target.rollup_nightly: Destruction complete after 0s[0m
+[0m[1maws_iam_role_policy.execution_secrets: Destruction complete after 0s[0m
+[0m[1maws_lambda_permission.rollup_nightly: Destruction complete after 0s[0m
+[0m[1maws_cloudwatch_metric_alarm.budget_refusals: Destroying... [id=headroom-budget-refusals][0m[0m
+[0m[1maws_iam_role_policy_attachment.execution_managed: Destroying... [id=headroom-ecs-execution/arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.five_xx_rate: Destroying... [id=headroom-5xx-rate][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.ledger_rows_lost: Destruction complete after 0s[0m
+[0m[1maws_iam_role_policy.gateway_dynamodb: Destroying... [id=headroom-gateway-task:dynamodb][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.provider_down: Destruction complete after 0s[0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_alb_gateway: Destroying... [id=sgr-0e5940c355604d0f4][0m[0m
+[0m[1maws_iam_role_policy_attachment.execution_managed: Destruction complete after 0s[0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_service: Destroying... [id=sgr-0ea5de3663b63ca1f][0m[0m
+[0m[1maws_iam_role_policy.gateway_dynamodb: Destruction complete after 1s[0m
+[0m[1maws_cloudwatch_event_rule.rollup_nightly: Destroying... [id=headroom-rollup-nightly][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.budget_refusals: Destruction complete after 1s[0m
+[0m[1maws_lambda_function.rollup: Destroying... [id=headroom-rollup][0m[0m
+[0m[1maws_cloudwatch_metric_alarm.five_xx_rate: Destruction complete after 1s[0m
+[0m[1maws_cloudwatch_log_metric_filter.ledger_rows_lost: Destroying... [id=headroom-ledger-rows-lost][0m[0m
+[0m[1maws_vpc_security_group_egress_rule.service_all: Destruction complete after 1s[0m
+[0m[1maws_cloudwatch_log_metric_filter.provider_failures: Destroying... [id=headroom-provider-failures][0m[0m
+[0m[1maws_cloudwatch_event_rule.rollup_nightly: Destruction complete after 0s[0m
+[0m[1maws_cloudwatch_log_metric_filter.budget_refusals: Destroying... [id=headroom-budget-refusals][0m[0m
+[0m[1maws_cloudwatch_log_metric_filter.ledger_rows_lost: Destruction complete after 0s[0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_alb_ui: Destruction complete after 1s[0m
+[0m[1maws_sns_topic.alarms: Destroying... [id=arn:aws:sns:us-east-1:675362625117:headroom-alarms][0m[0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_service: Destruction complete after 1s[0m
+[0m[1maws_vpc_security_group_ingress_rule.service_from_alb_gateway: Destruction complete after 1s[0m
+[0m[1maws_cloudwatch_log_metric_filter.provider_failures: Destruction complete after 0s[0m
+[0m[1maws_cloudwatch_log_metric_filter.budget_refusals: Destruction complete after 0s[0m
+[0m[1maws_sns_topic.alarms: Destruction complete after 0s[0m
+[0m[1maws_lambda_function.rollup: Destruction complete after 5s[0m
+[0m[1maws_iam_role_policy_attachment.rollup_vpc: Destroying... [id=headroom-rollup/arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole][0m[0m
+[0m[1maws_cloudwatch_log_group.rollup: Destroying... [id=/aws/lambda/headroom-rollup][0m[0m
+[0m[1maws_iam_role_policy_attachment.rollup_vpc: Destruction complete after 0s[0m
+[0m[1maws_iam_role.rollup: Destroying... [id=headroom-rollup][0m[0m
+[0m[1maws_cloudwatch_log_group.rollup: Destruction complete after 0s[0m
+[0m[1maws_iam_role.rollup: Destruction complete after 1s[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 00m10s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 00m10s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 00m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 00m20s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 00m20s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 00m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 00m30s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 00m30s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 00m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 00m40s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 00m40s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 00m40s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 00m50s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 00m50s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 00m50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 01m00s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 01m00s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 01m00s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 01m10s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 01m10s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 01m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 01m20s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 01m20s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 01m20s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 01m30s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 01m30s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 01m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 01m40s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 01m40s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 01m40s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 01m50s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 01m50s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 01m50s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 02m00s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 02m00s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 02m00s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 02m10s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 02m10s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 02m10s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 02m20s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 02m20s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 02m20s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 02m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Still destroying... [id=vpce-04ec6e17a9cfb76cf, 02m30s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 02m30s elapsed][0m[0m
+[0m[1maws_vpc_endpoint.secretsmanager: Destruction complete after 2m32s[0m
+[0m[1maws_security_group.endpoints: Destroying... [id=sg-0c9d2f26876f3ed4b][0m[0m
+[0m[1maws_security_group.endpoints: Destruction complete after 2s[0m
+[0m[1maws_ecs_service.gateway: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/gateway, 02m40s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 02m40s elapsed][0m[0m
+[0m[1maws_ecs_service.gateway: Destruction complete after 2m40s[0m
+[0m[1maws_service_discovery_service.gateway: Destroying... [id=srv-rjcrk5rhzogct7ej][0m[0m
+[0m[1maws_ecs_task_definition.gateway: Destroying... [id=headroom-gateway][0m[0m
+[0m[1maws_lb_listener.gateway: Destroying... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/33bcbc3aba41b40c][0m[0m
+[0m[1maws_ecs_task_definition.gateway: Destruction complete after 1s[0m
+[0m[1maws_cloudwatch_log_group.gateway: Destroying... [id=/ecs/headroom/gateway][0m[0m
+[0m[1maws_iam_role.gateway_task: Destroying... [id=headroom-gateway-task][0m[0m
+[0m[1maws_lb_listener.gateway: Destruction complete after 1s[0m
+[0m[1maws_lb_target_group.gateway: Destroying... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-gateway/b20177c2a31c7061][0m[0m
+[0m[1maws_service_discovery_service.gateway: Destruction complete after 1s[0m
+[0m[1maws_lb_target_group.gateway: Destruction complete after 0s[0m
+[0m[1maws_cloudwatch_log_group.gateway: Destruction complete after 0s[0m
+[0m[1maws_iam_role.gateway_task: Destruction complete after 0s[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 02m50s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 03m00s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 03m10s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 03m20s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 03m30s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 03m40s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Still destroying... [id=arn:aws:ecs:us-east-1:675362625117:service/headroom/ui, 03m50s elapsed][0m[0m
+[0m[1maws_ecs_service.ui: Destruction complete after 3m53s[0m
+[0m[1maws_ecs_cluster.main: Destroying... [id=arn:aws:ecs:us-east-1:675362625117:cluster/headroom][0m[0m
+[0m[1maws_ecs_task_definition.ui: Destroying... [id=headroom-ui][0m[0m
+[0m[1maws_security_group.service: Destroying... [id=sg-0242d37083a5bad82][0m[0m
+[0m[1maws_lb_listener.ui: Destroying... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:listener/app/headroom/e4c8fb18199dbdaa/8f5cd3f2112988d3][0m[0m
+[0m[1maws_ecs_task_definition.ui: Destruction complete after 0s[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Destroying... [id=ns-2qv5hepcqjjssw37][0m[0m
+[0m[1maws_cloudwatch_log_group.ui: Destroying... [id=/ecs/headroom/ui][0m[0m
+[0m[1maws_iam_role.execution: Destroying... [id=headroom-ecs-execution][0m[0m
+[0m[1maws_ecs_cluster.main: Destruction complete after 0s[0m
+[0m[1maws_lb_listener.ui: Destruction complete after 0s[0m
+[0m[1maws_lb.main: Destroying... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:loadbalancer/app/headroom/e4c8fb18199dbdaa][0m[0m
+[0m[1maws_lb_target_group.ui: Destroying... [id=arn:aws:elasticloadbalancing:us-east-1:675362625117:targetgroup/headroom-ui/f9e41a167d470483][0m[0m
+[0m[1maws_lb_target_group.ui: Destruction complete after 1s[0m
+[0m[1maws_cloudwatch_log_group.ui: Destruction complete after 1s[0m
+[0m[1maws_iam_role.execution: Destruction complete after 1s[0m
+[0m[1maws_security_group.service: Destruction complete after 1s[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Still destroying... [id=ns-2qv5hepcqjjssw37, 00m10s elapsed][0m[0m
+[0m[1maws_lb.main: Still destroying... [id=arn:aws:elasticloadbalancing:us-east-1:...balancer/app/headroom/e4c8fb18199dbdaa, 00m10s elapsed][0m[0m
+[0m[1maws_lb.main: Destruction complete after 18s[0m
+[0m[1maws_security_group.alb: Destroying... [id=sg-0aa5be8029de02fee][0m[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Still destroying... [id=ns-2qv5hepcqjjssw37, 00m20s elapsed][0m[0m
+[0m[1maws_security_group.alb: Destruction complete after 5s[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Still destroying... [id=ns-2qv5hepcqjjssw37, 00m30s elapsed][0m[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Still destroying... [id=ns-2qv5hepcqjjssw37, 00m40s elapsed][0m[0m
+[0m[1maws_service_discovery_private_dns_namespace.main: Destruction complete after 44s[0m
+[0m[1m[32m
+Destroy complete! Resources: 43 destroyed.[0m
