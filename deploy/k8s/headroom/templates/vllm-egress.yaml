@@ -84,7 +84,7 @@ spec:
             capabilities:
               # The one capability, and it is what the DNAT rule needs. Everything else is
               # dropped; the container is not privileged and mounts no host path.
-              add: ["NET_ADMIN"]
+              add: ["NET_ADMIN", "MKNOD"]
               drop: ["ALL"]
           volumeMounts:
             - name: state
