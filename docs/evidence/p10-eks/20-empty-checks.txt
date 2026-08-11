@@ -1,0 +1,43 @@
+{
+    "clusters": []
+}
+[]
+[]
+[]
+[]
+[]
+[]
+[]
+------------------------------------------------------------------------------
+|                          DescribeNetworkInterfaces                         |
++------------------------+--------------------------------------+------------+
+|  eni-0bfb9eefa31a0e2f7 |  AWS Lambda VPC ENI-headroom-rollup  |  available |
+|  eni-05e4e8e0a7ee652e3 |  AWS Lambda VPC ENI-headroom-rollup  |  available |
+|  eni-0d1249235e28085d6 |  RDSNetworkInterface                 |  in-use    |
+|  eni-087b71dbeeff2567c |  AWS Lambda VPC ENI-headroom-rollup  |  available |
++------------------------+--------------------------------------+------------+
+-----------------------------------------------
+|           DescribeSecurityGroups            |
++--------------------+------------------------+
+|  headroom-db       |  sg-0adb294feb2d558aa  |
+|  headroom-workload |  sg-089442c7421961a20  |
+|  default           |  sg-05c248fd4b1bcd8fe  |
++--------------------+------------------------+
+[]
+{
+    "OpenIDConnectProviderList": []
+}
+[]
+[
+    "headroom-db"
+]
+{
+    "TableNames": [
+        "headroom_buckets",
+        "headroom_budgets"
+    ]
+}
+[
+    "headroom/ui",
+    "headroom/gateway"
+]
