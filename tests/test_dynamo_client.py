@@ -26,6 +26,7 @@ from headroom.db.dynamo import (
     DynamoClient,
     _client_kwargs,
     budgets_table_name,
+    configured_region,
     translate_dynamo_error,
 )
 
@@ -102,6 +103,83 @@ def test_a_real_credential_in_the_environment_wins(monkeypatch: pytest.MonkeyPat
     kwargs = _client_kwargs("http://localhost:8001")
 
     assert "aws_access_key_id" not in kwargs, "an operator's own credential is not overridden"
+
+
+# --- the region, under either of its two names ------------------------------------------
+
+
+def _no_region(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("AWS_REGION", "AWS_DEFAULT_REGION"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_a_deployment_that_states_only_aws_region_still_gets_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Phase 10 scar, one layer below the chart that also fixes it (H-094).
+
+    `AWS_REGION` is the name every AWS runtime documents and the only one an operator
+    writing a manifest would think to set. It is *not* the name botocore's environment
+    resolution reads — that is `AWS_DEFAULT_REGION`, which ECS Fargate injects for free
+    and Kubernetes does not inject at all. The first cluster smoke therefore failed with
+    `NoRegionError` while `AWS_REGION` was plainly set in the pod, which points an
+    operator at the one thing that is already correct.
+
+    Resolving it here means no fourth runtime has to know any of that.
+    """
+    _no_region(monkeypatch)
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+
+    assert configured_region() == "us-east-1"
+    assert _client_kwargs(None)["region_name"] == "us-east-1"
+
+
+def test_the_other_name_works_too_and_is_not_quietly_preferred(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fargate and the Phase 9 runbook both set `AWS_DEFAULT_REGION`; that path must not
+    regress while the new name is being taught."""
+    _no_region(monkeypatch)
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-west-1")
+
+    assert _client_kwargs(None)["region_name"] == "eu-west-1"
+
+
+def test_no_region_anywhere_is_left_to_fail_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Invariant 3's shape, applied to configuration rather than to a credential.
+
+    A deployment that states no region must raise `NoRegionError` from botocore. Filling
+    one in here would mean a misconfigured production pod silently addressing `us-east-1`
+    — writing budget reservations to a table in the wrong region, and looking healthy.
+    """
+    _no_region(monkeypatch)
+
+    assert configured_region() is None
+    assert "region_name" not in _client_kwargs(None)
+
+
+def test_an_exported_but_empty_region_is_not_a_region(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`export AWS_REGION=$SOMETHING_UNSET` sets the variable to the empty string, which
+    boto3 accepts and then fails on somewhere further away."""
+    _no_region(monkeypatch)
+    monkeypatch.setenv("AWS_REGION", "   ")
+
+    assert configured_region() is None
+
+
+def test_the_emulator_still_has_a_region_to_sign_against(monkeypatch: pytest.MonkeyPatch) -> None:
+    """DynamoDB Local validates no signature but SigV4 still needs a scope to build one,
+    and a developer with no AWS configuration at all runs `make up && make test`."""
+    _no_region(monkeypatch)
+
+    assert _client_kwargs("http://localhost:8001")["region_name"] == "us-east-1"
+
+
+def test_the_emulator_defers_to_a_stated_region(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_region(monkeypatch)
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-south-1")
+
+    assert _client_kwargs("http://localhost:8001")["region_name"] == "ap-south-1"
 
 
 def test_the_emulator_credential_has_no_hyphen() -> None:

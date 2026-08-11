@@ -35,8 +35,11 @@ unreachable for nine seconds has an error count of zero and is still an outage.
 the start of the window to the first success and from the last success to the end, as well
 as between successes — so a silent stall is visible as a number rather than as an absence.
 
-Exit code 0 if `dropped` is zero, 1 otherwise. Ctrl-C prints the summary rather than a
-traceback: this runs for the length of a `helm upgrade` and its output is evidence.
+Exit code 0 if `dropped` is zero, 1 otherwise; **2 if `--key` is empty or whitespace**,
+refused before the first request (`checked_key`, H-095 — a fresh terminal without
+`$MOCK_KEY` produced 8122/8122 `dropped` on a cluster nothing was wrong with). Ctrl-C
+prints the summary rather than a traceback: this runs for the length of a `helm upgrade`
+and its output is evidence.
 """
 
 from __future__ import annotations
@@ -116,6 +119,35 @@ def classify(
         # event — and why this reads the body rather than the status.
         return OK if stream_complete is not False else DROPPED
     return DROPPED
+
+
+def checked_key(key: str) -> str:
+    """The key, stripped — or a refusal, because an empty one measures nothing.
+
+    A fresh terminal is the whole failure mode. `MOCK_KEY` is exported in §7a and every
+    later section re-exports it; a shell that skipped that step has `$MOCK_KEY` set to the
+    empty string, and `--key ""` is a perfectly valid argument. Phase 10 ran this loop:
+    **8122 requests, 8122 dropped**, every one of them
+    `Illegal header value b'Bearer '` — httpx refusing to put a bare `Bearer` on the wire.
+
+    Nothing was harmed by that: it is client-side, no request reached the cluster, and no
+    rollout was in progress. What it cost was ten minutes and, for the length of them, a
+    number that looked exactly like a total outage. A run whose every request fails
+    *before the socket* is not a measurement, and the honest thing for an instrument to do
+    is refuse to start rather than produce a JSON file that reads like a catastrophe.
+
+    Whitespace counts as empty for the same reason it does in `headroom/db/dynamo.py`'s
+    region: `--key " "` comes from the same slipped export and fails the same way.
+    """
+    cleaned = key.strip()
+    if not cleaned:
+        raise ValueError(
+            "--key is empty or whitespace. Every request would fail before it reached the "
+            "network (httpx: Illegal header value b'Bearer '), and the summary would read "
+            "as a total outage. Re-export the key — §7a of deploy/k8s/README.md mints it, "
+            "and a fresh terminal does not have it."
+        )
+    return cleaned
 
 
 @dataclass(slots=True)
@@ -314,7 +346,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="load_loop", description=__doc__)
     parser.add_argument("--base-url", required=True, help="e.g. http://…elb.amazonaws.com:8080")
-    parser.add_argument("--key", required=True, help="a virtual key scoped to mock-* models")
+    parser.add_argument(
+        "--key",
+        required=True,
+        help="a virtual key scoped to mock-* models. Refused if empty or whitespace: an "
+        "unexported $MOCK_KEY in a fresh terminal fails every request before the socket "
+        "and the summary reads like an outage that never happened.",
+    )
     parser.add_argument(
         "--duration-s", type=float, default=0.0, help="0 runs until Ctrl-C (the default)"
     )
@@ -354,6 +392,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--label", default="load-loop", help="goes in the summary, for evidence")
     parser.add_argument("--out", help="write the summary JSON here as well as to stdout")
     args = parser.parse_args(argv)
+
+    # Before the banner and before a single request: a run that cannot authenticate is not
+    # a measurement, and ten minutes of `dropped` is an expensive way to learn it.
+    try:
+        args.key = checked_key(args.key)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     print(
         f"load loop against {args.base_url} — {args.model} on the {args.dialect} dialect, "

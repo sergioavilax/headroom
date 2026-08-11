@@ -753,6 +753,15 @@ is §P8.H3's first clause, measured this time rather than asserted.
 
 → `15-failover-loop.json`, `16-failover-ledger.json`, `17-provider-health.json`
 
+**And keep §9's port-forward open on a fourth screen while this runs.** The console's *Live
+traffic* view is the one place the whole arc is visible at once — the stack's colour moving
+from `vllm_a` to `vllm_b`, `CALLER-VISIBLE 5XX` holding at zero, and each flipped row naming
+the hop that produced it. Capture it twice: once mid-kill with the breaker `open`, once after
+the arc completes. It costs nothing, the window is about fifteen minutes wide, and it is gone
+with the cluster.
+
+→ `24-live-flip.png`, `25-breaker-open.png`
+
 ## 12. Capture everything else — **before you destroy anything**
 
 `docs/evidence/p10-eks/README.md` is the capture list. Evidence lives in the repo and

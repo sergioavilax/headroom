@@ -7196,3 +7196,238 @@ uv run pytest                1402 passed, 2 deselected, 1 warning in 22.12s
 ```
 
 ---
+
+## Phase 10 — closed: the operator ran it on EKS, and the window was fourteen hours (2026-08-11)
+
+Branch `claude/p10-eks`, GitHub #12. The runbook was executed end to end on a real cluster in
+`us-east-1`: created ≈23:00 on 2026-08-10, deleted ≈13:00 on 2026-08-11, data layer destroyed
+behind it. **Nothing of Headroom remains on AWS.** This entry closes the phase against the gate
+and records what the window found, including the three things it found about itself.
+
+**All four gate conditions are now met.** The two that were the operator's — *the cluster
+provably gone* and *the evidence set committed* — are `20`/`21`/`22` and the twenty-two files in
+`docs/evidence/p10-eks/`.
+
+### Shipped in the window
+
+- **The cluster served, live, through a Network Load Balancer.** One streamed request to
+  `claude-haiku-4-5`, `x-headroom-request-id: hr_a12bb3905a424a1e8ec6c06cf73bc7aa`, **no
+  `x-headroom-failover-*` headers**, and the ledger row to match: 15 in / 7 out at
+  `usd_per_mtok_in 1.00 / out 5.00` from `price_effective_from: 2026-08-08`, `usd_cost:
+  0.000050000000` — exact, not rounded — `cost_status: priced`, `cache_disposition:
+  cache_disabled`, and **`passthrough_overhead_ms: 0.0175`** against `upstream_latency_ms:
+  1006.18`. The third runtime to produce that row shape, after compose and ECS.
+- **Chaos 9/9 against the cluster.** `{"checks": 9, "failed": 0}` — including the three that are
+  about a cut stream saying so (`upstream_stream_cut`, no `message_stop`, exactly one
+  `message_start`), through an NLB rather than an ALB.
+- **The unattended overnight run.** Every pod `AGE 10h`, **`RESTARTS 0`** — gateway ×2, console,
+  vLLM egress, and the completed migration Job.
+- **Zero dropped requests on a rolling upgrade, in three runs that tell the whole story.**
+  Run 1 (`preStopSleepSeconds: 5`): 8331 requests, **1 dropped**. Run 2 (sleep tripled to 15):
+  8326 requests, **2 dropped** — one per replaced pod again, *the sleep is irrelevant*, which is
+  the diagnosis. Run 3, against the lame-duck drain: **8342 requests, 8342 ok, `dropped: 0`,
+  `incidents: []`**, `max_gap_ms: 535`, on a rollout where the pods leaving and the pods arriving
+  were both draining pods. The find-fix-verify is complete and all three files are committed.
+- **The tailnet path, proved from inside the cluster.** The egress pod's `Startup complete`, then
+  a curl from a pod in `us-east-1` answered by a 4090 on the operator's desk listing
+  `cyankiwi/Qwen3.6-27B-AWQ-INT4`. Nothing advertised into the cluster, nothing changed in
+  `headroom/`.
+- **A GPU killed from orbit, measured: 92 requests, 92 ok, `dropped: 0`** across a `docker kill
+  vllm-a` mid-run. The ledger says the same thing from inside — 40 rows, all `200`: 22 on
+  `vllm_a` at `failover_hops: 0`, 18 at `hops: 1, from: vllm_a`, of which **10 `breaker_open` and
+  8 `upstream_unavailable`**. `/admin/providers` caught `vllm_a` with 25 total failures and
+  `last_error: upstream_unavailable`, re-admitted after the restart.
+- **The console, served from a pod in the cluster, during the kill.** `24-live-flip.png`: 104
+  requests, **66 served by a fallback, `CALLER-VISIBLE 5XX: 0`**, every flipped row naming the
+  hop reason. `25-breaker-open.png`: `vllm_a` **`open`**, `4/5` breakers closed, `failures 10/20`,
+  `probes in 0s`.
+- **A clean teardown, in the order that matters.** `helm uninstall` before `eksctl delete
+  cluster`, then the per-service checks: no cluster, no stacks, no instances, no auto-scaling
+  group, **no `available` EBS volume**, no load balancers of either kind, no target groups, no
+  `eksctl-headroom` role, no OIDC provider — with the VPC, both data-layer security groups and
+  RDS still standing, which is what says the cluster left without taking the data layer with it.
+  Then `No changes.` on the data layer, `Destroy complete! Resources: 26 destroyed.`, and six
+  final checks all empty. **$0 in orphans.**
+
+### Shipped in this session (the close)
+
+- **H-093 and H-094 formalised** — the two first-contact bugs the operator fixed and committed on
+  day 1, which had a fix in the chart and no decision record. Both are the same shape and it is
+  the shape worth having a number for: *the thing that broke is the thing the previous runtime
+  was doing for free.*
+- **The region fix pushed down into the code** (H-094). `headroom/db/dynamo.py` now resolves the
+  region itself from either `AWS_REGION` or `AWS_DEFAULT_REGION` and passes it explicitly, so no
+  fourth runtime has to know that botocore reads only the second name. Bounded: with no region
+  stated anywhere, nothing is invented and `NoRegionError` still fires — a default there would
+  mean a misconfigured pod quietly writing budget reservations to the wrong region and looking
+  healthy. Six tests, sabotage-checked.
+- **The load loop refuses a key that is not a key** (H-095), exiting 2 before the first request.
+- **Two scar tests for the day-1 fixes**: the egress pod's two capabilities beside its
+  `drop: ["ALL"]`, and the gateway's region under both names.
+- **The evidence README reconciled against every file actually present** — including the five
+  rows that read **not captured** in those words, and the two dashboard captures renumbered out
+  of the range the runbook had reserved for `18-events.txt` and `19-uninstall.txt`.
+
+### Deviations
+
+1. **The three-day evidence window was run in about fourteen hours** (**H-096**). §P10 says
+   *"Evidence window: three days"*; the cluster was created ≈23:00 on 2026-08-10 and deleted
+   ≈13:00 on 2026-08-11. The reasoning, in full: **three days was a cost-and-scope ceiling, not
+   an evidence requirement.** Nothing on §P10's list is a function of elapsed time — the rolling
+   upgrade is a ten-minute measurement, the failover demo seven, the empty checks a teardown —
+   and every capture the list asks for that could be taken was taken inside the window. The one
+   thing duration genuinely buys was deliberately preserved: the unattended overnight run
+   (`day2-pods-overnight.txt`, `AGE 10h`, `RESTARTS 0`). What it costs is stated rather than
+   waved past: A7 is answered against a shorter denominator, the slow failures (a rotating
+   certificate, an expiring token, a filling disk) are untested, and §10's day-2 billing check
+   had almost no history to check.
+2. **`24`/`25` are not the console captures the list asked for.** `12-console-overview.png` and
+   `13-console-requests.png` — Overview and Requests at rest — were not taken. What the window
+   produced instead is **Live traffic during the kill**, which proves the same "served from the
+   cluster" claim on a harder view and proves the failover claim at the same time. The trade is
+   stated in the evidence README rather than hidden: **this set has no capture of the Overview
+   view on EKS at all.** Same shape as H-084 in Phase 9, and the same rule — the substitution is
+   argued in the open, not renumbered into the slot it did not fill.
+3. **Four install-time captures were lost** — `01-cluster-created`, `02-nodes`, `03-helm-install`,
+   `05-migrate-job`: console output from a shell whose scrollback was not redirected at the time,
+   in a window that then compressed. Each is partly recoverable from what did land (the two node
+   names from `day1-pods.txt`, the four revisions from `11-helm-history.txt`, the migration Job's
+   `Completed` line from both), and none is recoverable in full, because the cluster is gone.
+   **The install is the thinnest-evidenced step of this phase**; everything from §7 onward has a
+   file. Recorded because a capture list that quietly closed its own gaps would be worthless.
+4. **`19-uninstall.txt` was not captured, and the property it existed to prove survived.** The
+   file was to show the load-balancer list going empty *before* the cluster was deleted;
+   `20-empty-checks.txt` shows both `elbv2` and `elb` lists empty with the VPC still standing,
+   which is the outcome that ordering exists to produce.
+5. **`18`/`19` were renumbered to `24`/`25`.** The two dashboard captures were committed under
+   numbers the runbook had already reserved for the event stream (§12) and the uninstall check
+   (§13). Renumbered out of that range so a reader following the runbook to a file does not find
+   a screenshot of something else; `23` stays reserved for the billing capture.
+6. **`docs/evidence/p9-aws/02-cost-allocation-tags.png` is still not in the repo.** Runbook §1
+   retried it, per H-080 as amended. No capture landed. The evidence README's own instruction was
+   that if the keys had not surfaced by §17 *"that is itself the finding and it goes in the phase
+   log in those words"* — so: **it is the finding, and this is it.** Whether the three keys are
+   now Active is unknown to this repo, and the §17 read below will settle it either way.
+7. **A code change in a closing session** — `headroom/db/dynamo.py`. Additive, behaviour-
+   preserving on both existing runtimes (compose sets no region and still gets the emulator
+   default; ECS sets both names and gets the same one it got before), and it removes the need for
+   a fourth runtime to rediscover H-094. Called out because a phase close is not normally where
+   `headroom/` changes.
+
+### A7 — the spend line, estimate versus actual
+
+**Estimates from `deploy/k8s/README.md`'s table; the actuals are pending on Cost Explorer, which
+lags up to 24 hours behind the final day of usage.** The window was fourteen hours, so the
+comparison A7 pre-registered — three days at $20–25 — is answered against a shorter denominator,
+and the **rate** is the honest number to read.
+
+| | Estimate | Actual |
+|---|---:|---:|
+| EKS control plane | $2.40/day | *pending* |
+| Nodes (2 × `t3.medium`) + EBS | $2.11/day | *pending* |
+| Network Load Balancer | $0.54/day | *pending* |
+| Data layer (`Layer=data`) | $0.53/day | *pending* |
+| **Rate** | **$5.58/day** | *pending* |
+| **Window total** (≈14 h, ≈0.58 day) | **≈$3.25** | *pending* |
+| **The three-day figure the table projected** | **$17–19** | not run |
+| **A7's pre-registered estimate** | **$20–25** | not run |
+
+The only Cost Explorer read taken during the window is Phase 9's day-of check: **$0.04** for the
+Phase 9 deploy day. **`23-billing.png` and `docs/evidence/p9-aws/18-billing.png` land tomorrow as
+a docs-only commit to `main` after this PR merges** — both need the same 24-hour lag, and neither
+is worth a branch.
+
+**A7 is therefore not yet answered, and the reason is arithmetic rather than reluctance.** A
+fourteen-hour window cannot confirm or falsify a three-day estimate directly; what it can do is
+give the rate the estimate was built from, which is what the table above will carry.
+
+### Deferred
+
+- **`23-billing.png`, `../p9-aws/18-billing.png`, and the actuals column** — tomorrow, on `main`.
+- **`02-cost-allocation-tags.png`** — deviation 6. If the keys are Active when §17 is read, the
+  capture goes with the billing commit; if they are not, that is the closing state of H-080 and
+  the Phase 9 spend line stays unattributable, which is a fact about AWS Billing rather than
+  about this project.
+- **What a longer window would have tested** — deviation 1's second cost. Named, not fixed.
+- **The residual H-091 names** — a connection idle for the whole drain window and first reused in
+  the milliseconds after SIGTERM. Not observed in run 3, and **not thereby ruled out**: one
+  600-second run at four in flight is not a proof of absence, and the decision record still says
+  so in those words.
+- **An Ingress controller, cert-manager, metrics-server, Prometheus, a service mesh, a GitOps
+  controller, a Cluster Autoscaler, HTTPS** — unchanged from the opening entry.
+- **The `expired_releases` alarm, a `provider_open_at` timing mark, per-key budgets, concurrency
+  limits, prompt-cache tier pricing, latency-based breaker tripping** — still deferred from
+  Phases 3, 4, 4b, 6, 8 and 9; untouched.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+178 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 172 source files
+
+$ make test
+================ 1415 passed, 2 deselected, 1 warning in 21.29s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1417 tests collected (1415 deselected) in 0.21s
+
+$ uv run pytest -q -v | grep -c SKIPPED
+0
+```
+
+**1402 → 1415**, thirteen new: six in `tests/test_dynamo_client.py` (20), five in
+`tests/test_load_loop.py` (25), two in `tests/test_deploy_k8s.py` (41). No existing test changed.
+
+```
+$ make helm-check
+helm lint deploy/k8s/headroom
+==> Linting deploy/k8s/headroom
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+helm template headroom deploy/k8s/headroom | kubeconform -strict -summary -kubernetes-version 1.31.0
+Summary: 6 resources found parsing stdin - Valid: 6, Invalid: 0, Errors: 0, Skipped: 0
+helm template headroom deploy/k8s/headroom --set gateway.service.type=LoadBalancer … --set autoscaling.enabled=true
+Summary: 9 resources found parsing stdin - Valid: 9, Invalid: 0, Errors: 0, Skipped: 0
+```
+
+**The four sabotage checks for this session's guards**, each run and each restored from a copy:
+
+```
+remove MKNOD from the egress pod        → test_dropping_all_capabilities_…                FAILED
+chart sets only AWS_REGION              → test_the_gateway_is_told_its_region_under_both… FAILED
+dynamo reads only AWS_DEFAULT_REGION    → test_a_deployment_that_states_only_aws_region…  FAILED
+load loop accepts an empty key          → test_a_key_that_is_not_a_key_is_refused…        FAILED ×3
+```
+
+The fourth one is a finding in its own right: the first time it was run it **hung** rather than
+failing, because without the guard `main()` falls through to a loop whose default duration is
+"until Ctrl-C". The test now bounds `--duration-s`, so a regression fails CI instead of stalling
+it — recorded in H-095 because a sabotage check that hangs is a sabotage check nobody will run
+twice.
+
+### The gate, condition by condition
+
+*"the chart in-repo with lint clean; the evidence set committed; the cluster provably gone;
+`deploy/k8s/README.md` runbook complete enough that a stranger could repeat it."*
+
+1. **The chart in-repo with lint clean** — ✅, above, and it is now a chart that has been
+   installed four times on a real cluster rather than only rendered.
+2. **The evidence set committed** — ✅ with five rows reading *not captured* and one *pending*.
+   Committed and marked is the condition; committed and complete was never the condition, and
+   pretending otherwise would be the one failure mode this discipline exists to prevent.
+3. **The cluster provably gone** — ✅. `20`, `21`, `22`: no cluster, no orphaned load balancer,
+   no `available` volume, `Destroy complete! Resources: 26 destroyed.`, six final checks empty.
+4. **A stranger could repeat it** — ✅, and better than when it was written: §8 carries the drain
+   finding and Run 3, §11 carries `--timeout 60` and why, and the two first-contact bugs are
+   fixed in the chart the stranger would install rather than described in a log they would read
+   afterwards.
+
+**PR #12 stays open for review.** Nothing here has been merged.

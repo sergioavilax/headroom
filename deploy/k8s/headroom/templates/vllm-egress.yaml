@@ -82,8 +82,13 @@ spec:
             {{- toYaml .Values.vllm.resources | nindent 12 }}
           securityContext:
             capabilities:
-              # The one capability, and it is what the DNAT rule needs. Everything else is
-              # dropped; the container is not privileged and mounts no host path.
+              # Two capabilities, and both are load-bearing. `NET_ADMIN` is what the DNAT
+              # rule needs. `MKNOD` is the one this chart learned at first install
+              # (H-093): `drop: ["ALL"]` removes it, containerboot uses it to `mknod`
+              # /dev/net/tun on a node whose image does not already expose the device,
+              # and without it the pod is CrashLoopBackOff with a message about a TUN
+              # device rather than about a capability. Everything else is dropped; the
+              # container is not privileged and mounts no host path.
               add: ["NET_ADMIN", "MKNOD"]
               drop: ["ALL"]
           volumeMounts:

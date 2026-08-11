@@ -5947,3 +5947,194 @@ person to point the loop somewhere new reads it at the moment they are choosing.
 passes `--timeout 60`. The evidence README keeps both runs and says which is which.
 
 ---
+
+## H-093 — `drop: ["ALL"]` is right, and it removed a capability tailscale needs (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The tailscale egress pod (H-087) is the only container in this chart that needs a
+Linux capability at all: `NET_ADMIN`, for the DNAT rule that turns a ClusterIP into a route to a
+machine on the operator's desk. It was written the way a hardened container is written —
+`drop: ["ALL"]`, then add back exactly what is needed — and at first install it went
+**CrashLoopBackOff, seven restarts**, before any other part of the phase had been exercised.
+
+`containerboot` creates `/dev/net/tun` itself when the node's image does not already expose the
+device, and `mknod(2)` on a character device needs `CAP_MKNOD`. That capability is in Docker's
+*default* set, so nothing in Phases 0–9 ever had to name it: compose has it without asking, and
+the ECS task definition never dropped anything. `drop: ["ALL"]` is the first thing in this
+project's history to take it away.
+
+**Decision.** `add: ["NET_ADMIN", "MKNOD"]`. Both, and the template says which is for what.
+
+The alternatives were worse in the way that matters. Removing the `drop: ["ALL"]` would have
+handed the pod thirteen capabilities to fix a problem with one, and it is the pod with a tailnet
+auth key in it. Running privileged is the same trade, larger. `TS_USERSPACE=true` would have
+avoided the device entirely — but userspace networking means packet handling in Go for every byte
+of a 27B model's streamed output, which is a real latency cost paid permanently to avoid naming a
+capability once.
+
+**Why this has a number rather than being a one-line fix.** The failure mode is the lesson. A
+capability model is a *deny list turned allow list*, and the moment it is turned over, every
+default the previous runtime supplied silently becomes a thing that must be enumerated — with no
+diff, no lint failure, and no error message that says "capability". What the operator sees is a
+container that will not start and a log line about a TUN device, which reads like a tailscale
+problem, a node-image problem, or a networking problem. It is a manifest problem. This is the
+same shape as H-082 (AWS enforces a charset that nothing local enforces) and H-083 (Terraform's
+region is not the CLI's): **the thing that broke is the thing the previous runtime was doing for
+free**, and the error names the symptom rather than the missing declaration.
+
+**Consequences.** `deploy/k8s/headroom/templates/vllm-egress.yaml` carries both capabilities and a
+comment saying which is for what.
+`tests/test_deploy_k8s.py::test_dropping_all_capabilities_leaves_the_egress_pod_the_two_it_needs`
+asserts `drop: ["ALL"]` *and* both additions together — sabotage-checked by removing `MKNOD`,
+which fails it. The gateway and console pods are unaffected: they drop ALL and add nothing,
+because they need nothing.
+
+---
+
+## H-094 — Two names for one region: Fargate injected it for free, Kubernetes injects nothing (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The second failure at first contact with the cluster, minutes after H-093. The
+gateway pod started, served `/healthz`, and failed the first request that touched a budget with
+botocore's `NoRegionError` — **while `AWS_REGION` was plainly set in the pod**, which is the
+detail that makes this worth a number.
+
+`AWS_REGION` is the name AWS documents and the name anybody writing a manifest reaches for. It is
+not the name botocore's environment resolution reads. In this botocore
+(`botocore/configprovider.py`) the region entry is `('region', 'AWS_DEFAULT_REGION', None, None)`:
+one environment variable, and it is the other one. On ECS Fargate the distinction is invisible
+because the agent injects **both** names into every task, which is why Phase 9 shipped, ran live,
+and closed without anybody discovering it. Kubernetes injects neither. The variable an operator
+sets by hand is the one botocore does not read.
+
+**Decision.** Two layers, deliberately both.
+
+1. **The chart sets both names** from one values key (`aws.region`), so they cannot disagree.
+2. **`headroom/db/dynamo.py` resolves the region itself** — `configured_region()` reads
+   `AWS_REGION` then `AWS_DEFAULT_REGION`, treats whitespace as absent, and passes `region_name`
+   to the client explicitly. Belt and braces on purpose: the chart fix repairs *this* runtime, and
+   the code fix means **no fourth runtime has to know any of this**. Nothing has to inject
+   anything for the gateway to know where it is.
+
+The code fix is bounded in the direction that matters: when the environment states no region at
+all, nothing is invented and botocore still raises `NoRegionError`. A default here would mean a
+misconfigured production pod quietly addressing `us-east-1` — writing budget reservations to a
+table in the wrong region, and looking healthy while it did. That is invariant 3's shape (a
+missing credential fails loudly) applied to configuration. The emulator path is the only place a
+default is still supplied, because DynamoDB Local validates no signature and a developer with no
+AWS configuration at all must still be able to run `make up && make test`.
+
+**The third-runtime finding, which is the general point.** Compose, ECS and Kubernetes have now
+each run this same image, and each supplies a different amount of ambient environment. Every phase
+that adds a runtime discovers one more thing the previous ones were doing invisibly — H-083 found
+it for the CLI's region, this finds it for the process's. The rule that falls out: **a container
+should depend on nothing its orchestrator was not asked in writing to provide.** Where the code
+can resolve something itself it should, because the set of runtimes is not closed and the failure
+mode is an error message pointing at the one thing that is already correct.
+
+**Consequences.** `deploy/k8s/headroom/templates/_helpers.tpl` sets `AWS_REGION` and
+`AWS_DEFAULT_REGION` from `.Values.aws.region`.
+`tests/test_deploy_k8s.py::test_the_gateway_is_told_its_region_under_both_names` pins the chart
+half; five tests in `tests/test_dynamo_client.py` pin the code half, including the two that keep
+it honest — no region stated means no `region_name` passed, and an exported-but-empty variable is
+not a region. Sabotage-checked in both directions. `headroom/db/dynamo.py`'s module docstring
+carries the botocore line that explains it.
+
+---
+
+## H-095 — A load loop with an empty key measures the client, and must refuse to start (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §8 was started in a fresh terminal in which `$MOCK_KEY` had never been exported.
+`--key ""` is a valid argument, so the loop ran its full course and reported **8122 requests,
+8122 dropped** — every one of them `Illegal header value b'Bearer '`, httpx refusing to put a bare
+`Bearer` on the wire. Not one request left the machine.
+
+Nothing was harmed. No cluster was touched, no rollout was in progress, nothing was billed. What
+it produced was ten minutes and, for the length of them, a summary that read exactly like a total
+outage of a system that was working perfectly.
+
+**Decision.** `scripts/load_loop.py` refuses an empty-or-whitespace `--key` before the first
+request, exiting **2** — distinct from the 0 of a clean run and the 1 of a real drop, so a script
+that shells this out can tell "I asked wrong" from "it broke". The message names the symptom the
+operator has already seen (`Illegal header value`) and the runbook section that mints the key.
+
+Whitespace counts as empty, for the same reason it does in H-094's region: `--key " "` comes from
+the same slipped export and fails the same way.
+
+**Why an instrument, of all things, gets a guard.** H-090 built this loop so that a zero would be
+worth reading, and the argument was entirely about the *classifier* — that `shed` requires
+positive evidence and everything unknown falls to `dropped`. That asymmetry is correct, and it is
+exactly what makes this failure so loud: a client-side fault with no status line is, by design,
+8122 dropped requests. **The classifier cannot distinguish "the system failed" from "the
+measurement was never taken"**, because from inside a request there is no difference. So the
+distinction has to be drawn before the loop starts, which is the only place it exists.
+
+The generalisation is the one H-092 was circling from the other side. That was a constant *inside*
+the instrument that had not been re-derived for the system under test; this is an *input* to the
+instrument that was never checked at all. An instrument that cannot fail its own preconditions
+loudly will eventually publish a number about itself.
+
+**Consequences.** `checked_key()` in `scripts/load_loop.py`, called from `main()` before the
+banner prints. Four tests in `tests/test_load_loop.py`. The bounded `--duration-s` in the first of
+them is not decoration: without the guard, `main()` falls through to a loop whose default duration
+is *until Ctrl-C*, so the sabotage check hung rather than failing — found by running it, and fixed
+so that a regression fails CI instead of stalling it. The 8122-drop run is recorded in the
+evidence README and deliberately **not** committed as a file.
+
+---
+
+## H-096 — The three-day window, run in fourteen hours (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P10 says *"Evidence window: three days"*, and §0.4's assumption A7 prices three days
+at $20–25. The operator created the cluster at ≈23:00 on 2026-08-10 and deleted it at ≈13:00 on
+2026-08-11: **about fourteen hours**, with the whole runbook — install, live smoke, chaos, three
+rolling-upgrade measurements, the tailnet proof, the failover demo, teardown and both sets of
+empty checks — executed inside it.
+
+**Decision.** Compress, on the reading that **three days was a cost-and-scope ceiling, not an
+evidence requirement.** Nothing in §P10's list is a function of elapsed time. "A rolling `helm
+upgrade` with zero dropped requests" is a ten-minute measurement; the failover demo is seven
+minutes; the empty checks are a teardown. Three days was the budget the plan was willing to spend,
+phrased as a duration because that is how EKS bills. A window that runs the entire list and stops
+is under the ceiling, not short of a requirement.
+
+**The one thing duration was actually for, and it was kept.** A cluster that works for ten minutes
+and a cluster that works are different claims, and the only part of a three-day window that tests
+the difference is leaving it alone. `day2-pods-overnight.txt` is that: every pod `AGE 10h`,
+**`RESTARTS 0`**, unattended overnight, across the boundary where a leak or a subtly wrong probe
+would show. Ten hours is not three days. It is also not ten minutes, and it is the part of the
+window that was protected when the rest was compressed.
+
+**What it costs, said plainly.** Three things.
+
+1. **A7 is answered against a shorter denominator.** The estimate-versus-actual table compares a
+   fourteen-hour actual to a three-day estimate, so the honest comparison is the *rate* — and the
+   phase log states it that way rather than reporting a total that looks like a triumph of
+   frugality.
+2. **The slow failures are untested.** A certificate rotating, a token expiring, a disk filling,
+   an IRSA credential refreshing on its own schedule — nothing in this window would have caught
+   any of them, and three days might have. That is the class of thing that only appears on day two
+   or three, and this phase makes no claim about it.
+3. **The day-2 billing check (§10) had almost no history to check.** Its job is to catch cost
+   drift while there is still time to act; in a fourteen-hour window there is no drift to catch
+   and no time in which to act on it.
+
+**Alternatives.** Running the full three days was available and would have cost roughly $12 more
+and two further days of an operator's attention on a cluster whose observable surface had stopped
+changing after the first evening. Running *less* — skipping the overnight — would have saved a few
+dollars and cost the only claim in this phase that duration actually buys. The middle is what was
+taken.
+
+**Consequences.** Logged as a deviation in `docs/PHASE_LOG.md` with this reasoning, rather than as
+a silent difference between a plan that says three days and an evidence set that took one. The
+evidence README states the window and derives it from `11-helm-history.txt` and the teardown
+files. A7's table reports the rate as well as the total, and says which of the two answers the
+pre-registered question.
+
+---
