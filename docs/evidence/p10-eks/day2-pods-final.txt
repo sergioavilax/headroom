@@ -1,0 +1,6 @@
+NAME                               READY   STATUS      RESTARTS   AGE
+headroom-gateway-bd894698b-nt7xg   1/1     Running     0          20m
+headroom-gateway-bd894698b-v5776   1/1     Running     0          20m
+headroom-migrate-425gg             0/1     Completed   0          17m
+headroom-ui-6fcf68bcb5-f5mxh       1/1     Running     0          13h
+headroom-vllm-f944dd56b-4x5vz      1/1     Running     0          12h
