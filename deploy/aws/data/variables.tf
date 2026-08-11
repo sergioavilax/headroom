@@ -7,13 +7,13 @@
 # `compute`, because it is the ALB's allow-list and the ALB is compute.
 
 variable "region" {
-  description = "AWS region. One region, deliberately: multi-region is in 'what production adds'."
+  description = "AWS region. One region, deliberately: multi-region is in what production adds."
   type        = string
   default     = "us-east-1"
 }
 
 variable "project" {
-  description = "The `Project` cost-allocation tag, and the prefix every name is built from."
+  description = "The Project cost-allocation tag, and the prefix every name is built from."
   type        = string
   default     = "headroom"
 }
@@ -30,7 +30,7 @@ variable "phase" {
 }
 
 variable "vpc_cidr" {
-  description = "The VPC's address space. /16, carved into two public and two private /20s."
+  description = "The VPCs address space. /16, carved into two public and two private /20s."
   type        = string
   default     = "10.42.0.0/16"
 }

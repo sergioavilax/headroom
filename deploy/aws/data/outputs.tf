@@ -26,12 +26,12 @@ output "private_subnet_ids" {
 }
 
 output "workload_security_group_id" {
-  description = "Join this to be allowed to reach Postgres. Compute's tasks and Lambda do."
+  description = "Join this to be allowed to reach Postgres. Computes tasks and Lambda do."
   value       = aws_security_group.workload.id
 }
 
 output "db_endpoint" {
-  description = "host:port. The `DATABASE_URL` secret is built from this by hand, once."
+  description = "host:port. The DATABASE_URL secret is built from this by hand, once."
   value       = aws_db_instance.main.endpoint
 }
 
