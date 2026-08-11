@@ -103,3 +103,30 @@ export function timeSlots(endMs: number, slots: number, widthMs: number): number
   const last = Math.floor(endMs / widthMs) * widthMs;
   return Array.from({ length: slots }, (_, index) => last - (slots - 1 - index) * widthMs);
 }
+
+/** One UTC day, in milliseconds — the slot width of the history view's chart. */
+export const DAY_MS = 86_400_000;
+
+/**
+ * A `YYYY-MM-DD` day from `/admin/usage/rollups`, as UTC-midnight milliseconds.
+ *
+ * Built from the parts rather than handed to `new Date(string)`, which is the whole
+ * point of the function. The gateway resolves a rollup's day in UTC and nowhere else
+ * (`daily_rollups.day` is the UTC day of `started_at`); a console that let the engine
+ * parse the string could put the same day on a different bar depending on where the
+ * browser is, and the failure looks like "yesterday's spend is on the wrong column"
+ * rather than like a bug. `Date.UTC` has no locale in it at all.
+ */
+export function utcDayMs(day: string): number {
+  const [year, month, date] = day.split("-").map(Number);
+  return Date.UTC(year ?? 1970, (month ?? 1) - 1, date ?? 1);
+}
+
+/** `2026-08-11` → `11 Aug`, for an axis tick. Formatted in UTC, for `utcDayMs`' reason. */
+export function dayLabel(day: string): string {
+  return new Date(utcDayMs(day)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
