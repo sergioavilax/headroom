@@ -4265,3 +4265,136 @@ rest.
   rule can see. The spot-check remains the chain's second clause — and it has now found two
   distinct systematic drifts the mechanical layer was blind to by construction, which is an
   argument for keeping a human in the chain rather than for replacing them.
+
+---
+
+## H-072 — Two harness gaps found by running it for real: a column contract, and a key Backline never wrote (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The H2 machinery was written in a session with no key, tested against synthetic
+rows and synthetic summaries, and shipped as ready. It was ready in the sense that every
+verdict it could reach was exercised. It was not ready in the sense that mattered: the first
+time an operator pointed it at the real artifacts, it failed twice.
+
+**Gap 1 — the export SQL and the analyzer disagreed about what a ledger row is.**
+RUNBOOK §2f's `SELECT` listed 21 columns and none of the five token columns. `analyse()` reads
+`row["input_tokens"]` for the two-meter cross-check, so the first export died on:
+
+```
+KeyError: input_tokens
+```
+
+The operator re-exported by hand with `input_tokens, output_tokens, reasoning_tokens,
+cache_read_tokens, cache_write_tokens` added, and the run's analysis is the one committed at
+`0914cc7`. Nothing was lost — but the failure cost a re-export at exactly the moment §2f warns
+is time-critical (*"do it before the next `make test`"*, because the Postgres contract suite
+truncates the control plane and takes `usage_ledger` with it, H-029).
+
+**The worse half of gap 1, which the `KeyError` was hiding.** Three columns were read through
+`.get`, so a missing one would not have raised at all:
+
+| column | read as | what a missing column would have produced |
+|---|---|---|
+| `cache_disposition` | `.get` | every row counted as *not* `cache_disabled` → **"INVALIDATES THE RUN"** on a run that was fine |
+| `passthrough_overhead_ms` | `.get` | an empty overhead list → no percentiles, no verdict |
+| `usd_cost` | `.get` | metered spend of `$0.00` → a **DISAGREE** verdict on the two-meter cross-check |
+
+A crash costs a re-export. A silent degradation costs a wrong published verdict, and the first
+of those three is the exact clause H-047 makes load-bearing. That is the defect worth fixing,
+and the `KeyError` was the symptom that led to it.
+
+**Gap 2 — `parity: NO DATA` against a summary full of data.** `_parity()` read
+`summary["overall"]`. Backline's `summary.json` has no such key and never has. `evals/report.py`
+computes it at *render* time:
+
+```python
+total_n += bucket["n"]
+weighted += bucket["score"] * bucket["n"]
+...
+lines.append(f"| **overall** | {total_n} | **{weighted / total_n:.1f}** |  |  |  |")
+```
+
+So the number every parity claim in this repo is stated against — 93.3 for the direct-local
+run — is a one-decimal n-weighted mean of ten category scores, materialised in a table and
+never stored. The analyzer looked for it as a field, did not find it, and reported the
+pre-registered primary instrument as unmeasurable.
+
+**Why the tests did not catch either.** They tested the code against fixtures the code's own
+author invented:
+
+```python
+result = analyse([row()], summary={"overall": overall, "total_cost_usd": "0.004"})
+```
+
+That fixture is not a Backline summary. It is a description of what `_parity` happened to
+read. A test written from the reader rather than from the real artifact can only ever confirm
+the reader — which is the general form of the lesson, and it is not specific to this module.
+
+**Decision.**
+
+1. **`REQUIRED_COLUMNS` is a contract, checked once, up front.** `require_columns()` runs
+   before any arithmetic, over the union of the rows' keys, and raises naming **every** missing
+   column at once plus the runbook step that produces them. Every `.get` on a required column
+   is now a `[]`, so the contract is the only place a missing column can be handled.
+2. **The runbook SQL and `REQUIRED_COLUMNS` are pinned to each other.**
+   `test_the_runbook_export_selects_every_column_the_analyzer_reads` parses the `SELECT` out
+   of `RUNBOOK.md` and asserts it covers the set. Editing one without the other turns the
+   suite red rather than costing an operator a re-export.
+3. **`overall_score()` is Backline's arithmetic, named as such**, with a docstring that says
+   the key does not exist so nobody re-introduces the assumption. A document with no
+   `categories` block raises with that explanation rather than returning `None`.
+4. **The fixtures are the real shape.** `summary()` in `tests/test_experiments_h2.py` is
+   Backline's actual schema, and `test_backlines_summary_carries_no_overall_key_and_never_did`
+   asserts against the two committed summaries — so if Backline ever *starts* writing an
+   `overall`, the suite says so instead of two definitions drifting apart.
+5. **Both committed artifacts are pinned to their committed inputs**, the way the H1 curve
+   already was: `test_the_committed_analysis_is_the_one_the_committed_inputs_produce` and its
+   adjudication sibling. A stale result file now fails rather than being published.
+
+**Timing, because it decides whether this is adjudication or tuning.** Both figures the parity
+verdict is computed from were public and committed **before** this fix: 93.7 is derivable from
+the `summary.json` the operator captured, 93.3 is Backline's published direct-local figure and
+has been quoted in the pre-registration since `aa134f4`, and the ledger export landed at
+`0914cc7`. The bound (3.0), the comparator (direct-local), and the rounding (one decimal, the
+figure `evals report` prints) were all fixed in the pre-registration before the run. Nothing in
+this decision could have moved the verdict; it could only have left it unstated. **Formalising
+a verdict whose inputs are already committed is adjudication. Choosing an instrument after
+seeing the numbers would have been tuning, and the distinction is exactly the one invariant 8
+exists to protect** — so it is written down here rather than assumed.
+
+**Alternatives considered.**
+
+- **Just add the columns to the SQL and move on.** Rejected: it fixes this instance and leaves
+  the drift mechanism intact. The pin is three lines of test and removes the class.
+- **Make the analyzer tolerate missing columns and report what it can.** Rejected outright.
+  Partial analysis of an $8 run that publishes a verdict from incomplete inputs is the same
+  failure as caching a truncated reply (invariant 6, one layer up). Refusing loudly is correct.
+- **Accept `summary["overall"]` if present, fall back to computing it.** Rejected: tolerance is
+  what let this hide. There is one definition of `overall` and it is Backline's; a second
+  accepted spelling is a second definition waiting to disagree.
+- **Import Backline's `report.py` / `gate.py` instead of restating their arithmetic.** Rejected:
+  Backline is not a dependency of this repo and the keyless replay in CI must not need it on the
+  path (the P5 pattern — compute where the dependencies live, commit, replay keylessly). The
+  restated pieces are small, quoted with their source, and checked against Backline's own
+  recorded output: `test_the_gate_rules_reproduce_the_operators_verbatim_output` asserts the
+  reasons match what the operator pasted back, character for character.
+
+**Consequences.**
+
+- The analyzer refuses an incomplete export instead of degrading, and says what to run.
+- `experiments/h2/adjudicate.py` exists and writes `h2_gate_adjudication.json`, so the gate's
+  FAIL is adjudicated from committed evidence rather than from a script that does not survive
+  the session.
+- Backline's two summaries and its gate baseline are committed under `docs/evidence/` per
+  invariant 9. H2's parity claim previously depended on `~/code/backline/data/evals/`, which is
+  one `make test` in that repo away from being gone.
+- Test count for H2 goes 15 → 44. The added coverage is almost entirely *against the real
+  artifacts* rather than against fixtures, which is the correction this decision is really
+  about.
+- **Not done, deliberately:** `generate.py`'s cap still reads per-invocation landed spend
+  rather than cumulative (H-070 noted it; §0.6's `$1` is whole-project, the harness's `$1` is
+  per run). It did not bind — H1 landed at ~$0.53–0.57 — and the fix would have to read the
+  artifact's `spend` block, which this same session is publishing as an under-reporting
+  record. Two changes to one number in one PR, one of them unmeasured, is how a receipt stops
+  being a receipt.

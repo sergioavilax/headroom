@@ -5454,3 +5454,237 @@ uv run pytest                1 failed, 1215 passed, 2 deselected, 1 warning in 1
                              (the failure is the same pre-existing stale-curve pin;
                               1197 passed / 1 failed before this session)
 ```
+
+---
+
+## Phase 8 — closed: three experiments adjudicated, and the gate that failed on both runs
+
+**Date**: 2026-08-10 · **Branch**: `claude/p8-experiments` · **Decisions**: H-072 ·
+**Spend this session: $0.00** (Claude Code ran nothing that costs money; the operator's H1
+and H2 runs are accounted below)
+
+The phase gate, from BUILD_PLAN §P8: *all three adjudicated in REPORT.md with verdicts; the
+H1 curve as both committed JSON and a chart in the repo's visual language; the corpus hashed
+and drift-pinned; PHASE_LOG records spend vs the §0.6 caps.* All four met.
+
+**Shipped**
+
+- **`experiments/results/REPORT.md`, finished.** H1 with both families and the two-number
+  overlap that is the actual reason τ₀ does not exist; H2 with parity, three overhead
+  numbers, the cache-disabled proof, the two-meter cross-check and the gate adjudication;
+  H3 unchanged from its earlier adjudication; and an honest cumulative money table that
+  publishes the *evidenced* H1 figure separately from the reconstructed one.
+- **Two harness gaps the operator hit, fixed and pinned (H-072).**
+  - RUNBOOK §2f's export SQL selected none of the five token columns `analyze.py` reads, so
+    the operator's first export died on `KeyError: input_tokens`. The SQL now selects them,
+    the analyzer checks `REQUIRED_COLUMNS` **once, up front**, and names every missing column
+    plus the runbook step that produces them.
+    `test_the_runbook_export_selects_every_column_the_analyzer_reads` parses the SELECT out
+    of the markdown and holds the two to each other, so they cannot drift again. The stronger
+    half of that fix: three columns were read through `.get` and would have degraded
+    *silently* — a missing `cache_disposition` reports every row as not-cache-disabled and
+    invalidates a perfectly good run.
+  - `analyze.py` printed `parity: NO DATA` against a real `summary.json` because it read a
+    key Backline has never written. Backline computes `overall` at render time as the
+    n-weighted mean of category scores (`evals/report.py`); `overall_score()` is now that
+    arithmetic. **The parity verdict was formalised against the pre-registered bound with the
+    numbers already public and committed** — 93.7 gateway, 93.3 reference, both landed at
+    `0914cc7` — so this is adjudication, not tuning.
+- **`experiments/h2/adjudicate.py`** and `experiments/results/h2_gate_adjudication.json` —
+  the gate's FAIL decided from committed evidence rather than from a scratch script, with the
+  per-question half folded in when Backline's `results.jsonl` is supplied.
+- **Backline's evidence committed here**, per invariant 9: both summaries and the gate
+  baseline in `docs/evidence/p8-experiments/`. The parity claim previously depended on a
+  directory in another repo that one `make test` there would truncate.
+- **Tests: 44 for H2 (from 15), 5 new H1 pins.** Two are the artifact-to-input pins the H1
+  curve already had — `test_the_committed_analysis_is_the_one_the_committed_inputs_produce`
+  and its adjudication sibling — plus the residual-attribution check that ties the $0.000855
+  meter difference to the pre-flight smoke's own `request_id`.
+
+**Findings — H2, beyond the pre-registered clauses**
+
+- **The two meters agree exactly, not merely within $0.01.** Headroom metered $7.541253 and
+  Backline $7.540398. The entire $0.000855 residual is one identified row:
+  `hr_e171f6024fc64772a66840fda6aab05a`, the §2c pre-flight tool-block smoke, recorded in
+  `h2_preflight.json`, issued on the same tenant five minutes before the suite and never seen
+  by Backline. Set it aside and 461 requests reconcile to twelve decimal places.
+- **One pre-registered clause could not be evaluated, and that is a defect in the
+  pre-registration.** §H2.4 asks that token totals agree exactly; Backline publishes cost and
+  **no token totals**, in neither `summary.json` nor `results.jsonl`. Reported as
+  `NOT EVALUABLE` rather than dropped. The related premise *is* checkable and holds:
+  `cache_read_tokens` and `cache_write_tokens` are 0 across all 462 rows.
+
+**The gate adjudication — the honest version**
+
+Backline's strict regression gate failed on the H2 run. The verbatim output is below. What
+the adjudication turns on is that **the direct-local reference run — the very run whose 93.3
+is H2's pre-registered comparator — fails the same gate against the same baseline, on
+disjoint categories.** So does the committed sweep row, and so did the AWS run. No full-suite
+`claude-sonnet-5` run in Backline's recorded history has ever passed this gate.
+
+- **The pre-registered parity instrument is the Δ bound, not the gate.** §H2.2 makes the
+  overall-score comparison primary and names `evals gate` the secondary, "on the record with
+  its known failure modes", including the advance notice that a legitimate fresh run can fail
+  it on variance alone. With the fixed reader: **93.7, Δ +0.4, bound 3.0, WITHIN NOISE.**
+  Nothing was swapped, widened or re-run to get there.
+- **It scatters both ways, which is what §A5.5 pre-declared variance looks like.** Over all
+  133 questions the gateway scored higher on 13, lower on 17, identical on 103; it *improved*
+  `abstention` by 10.0 and `multi_step` by 6.1. **T1 — the deterministic answer-key tier —
+  is identical on 132 of 133**, and the one that moved moved in the gateway's favour.
+- **`contract_terms` 76.7:** the dip partly pre-exists (the reference is itself 2.33 under the
+  baseline), the category's same-model spread across five full runs is **8.33 points — larger
+  than the gate's whole 3.0 tolerance** — the AWS run with no Headroom in it scored 77.0, and
+  the committed baseline is a self-described *composite* no single run has reproduced.
+- **56% of the 6.00-point drop is one question**, `contract_terms-016`, zeroed because a
+  question scores `min(tier scores)` and its T2 failed. Two of the gateway's three T2
+  violations are the identical `sql_clean`/`information_schema` mode as both of the
+  reference's, on different ids — textbook flicker, and both runs sit at the bottom of the
+  historical 2–8 range.
+- **The third violation is unique to the gateway run and is named in REPORT.md in full**, with
+  its mechanism, both answers, and the raw recorded check detail in the artifact.
+  `cites_clause` requires the contract code and the section marker to be **adjacent**. Both
+  runs cite the same clause and both get T1 right (`8%`); the gateway's answer interposed a
+  parenthetical, so the regex extracted nothing. It is adjudicated as §A5.5's *own* named
+  precedent — a checker false positive — and it is written down rather than folded into
+  "variance", so a reader can disagree using the same evidence.
+- **Nothing was re-run, re-rolled or healed** (§H2.5). `errors.n` was 0; there was no heal
+  pass to use.
+
+**Deviations from the plan — the three amendments, straight**
+
+All three were **pre-measurement** corrections under risk-register item 3 (a bad batch is
+regenerated *before* the sweep, never after). No H1 number existed to be flattered by any of
+them, and each is a DECISIONS entry with its alternatives and its cost.
+
+1. **H-069 — the compound ask.** The operator's spot-check failed `contract_terms-004#p3`:
+   the body asked for a rate *and* a citation, the paraphrase asked only for the citation.
+   The forced redraw reproduced the collapse in 2 of 3 fresh candidates. Made mechanical; the
+   audit then found **25 collapsed candidates across 17 questions** — a 1-in-3 rate the
+   sampled twenty could never have shown. The rubric was deliberately *not* bumped, and the
+   lever was recorded with its cost in case the redraws thrashed.
+2. **H-070 — `RUBRIC_VERSION` 2, after they thrashed.** They did: **17 → 8 → 5 → 5**, ~$0.11,
+   with five ids failing three to four independent rounds on the identical shape. The lever
+   was pulled. Rule 4 now asks for what the checker checks, "batches never mix versions"
+   became code rather than a docstring sentence, and the full regeneration landed
+   **$0.190212 in 147 calls** — under its own ~$0.30 projection.
+3. **H-071 — a prohibition must survive as a prohibition.** The operator's spot-check failed
+   `reconciliation-006#p1`: `Do not submit a batch.` had become an instruction to submit
+   individually. The forced redraw came back with a clean `#p1` and **the identical inversion
+   in `#p3`** — so re-reading the same sampled ids would have passed it. Made mechanical; the
+   audit found **13 bad probes across 7 questions**, the whole reconciliation family. It also
+   surfaced a regex bug that was total for the check: `_ASK_BREAK` carried `re.IGNORECASE`
+   across its initials guard, so `ask_segments()` had **never** split a sentence ending in a
+   letter — and prohibitions end in `batch.` and `anything.`. Measured effect on H-069's
+   verdicts across all 390 committed probes: **zero**.
+
+**What that sequence actually demonstrates, since it is the part worth keeping:** the
+operator's human spot-check caught **two distinct systematic generation failures across three
+review rounds that the mechanical checks could not see** — scope compression, then negation
+inversion — and *neither* was reachable by re-reading the sampled twenty. Each catch was one
+probe; each audit turned that one probe into 25 and 13. The mechanical clause found the rest;
+the human clause found the *kind*. Every round was pre-measurement, and the sweep did not run
+until the approval was recorded in the corpus artifact's provenance block.
+
+**Deferred — nothing, and two things named for later**
+
+No part of Phase 8 is outstanding. Recorded as follow-up work rather than deferred scope:
+
+- **The entity-and-period filter H1 argues for.** REPORT.md names it as the first thing
+  Headroom's cache should grow — a filter, not a higher bar. Not built here; building the fix
+  a measurement recommends inside the measurement's own PR is how a finding becomes a pitch.
+- **`generate.py`'s stop reads per-invocation landed spend, not cumulative.** §0.6's $1 is
+  whole-project; the harness's $1 is per run. It never bound (the phase used ~$0.53–0.57), and
+  the obvious fix — read cumulative landed spend out of the artifact — was deliberately not
+  done mid-lever in H-070 and is not done here either, for the same reason: the artifact's
+  `spend` block is what a fix would have to read, and this session is the one publishing that
+  it under-reports.
+
+**Spend against §0.6 — and the H1 receipt is partly reconstructed, which is said out loud**
+
+| bucket | cap | spent | note |
+|---|---:|---:|---|
+| H1 paraphrase generation | $1.00 | **≈ $0.53–0.57** | **$0.443670 evidenced** across 8 committed `spend` blocks / 357 calls; two compound-ask redraw rounds were overwritten before commit and are reconstructed at $0.09–0.13 |
+| H2 suite through the gateway | $10.00 | **$7.541253** | $7.540398 suite + $0.000855 pre-flight smoke (budgeted ~$0.02) |
+| P8 contingency / heal passes | $6.00 | **$0.00** | no heal pass; no stop fired |
+| H3 | — | **$0.00** | mock chain and the operator's own GPUs |
+| **Phase 8** | **$17.00** | **≈ $8.07–8.11** | |
+| **Project, all phases** | **$20.00** | **≈ $8.08–8.12** | P0–P7 smokes < $0.01 |
+
+No budget amendment was needed and no cap was raised. The $12.00 Backline stop was never
+approached and the $15.00 Headroom backstop never fired — which is the point of setting a
+backstop above the operative stop (H-066).
+
+**Backline's gate, verbatim — both runs**
+
+The gateway run `21369386-a040-4589-90a1-0e75409711ec`:
+
+```
+gate: FAIL
+  ✗ contract_terms: 76.7 vs baseline 85.0 (-8.3 pts > 3)
+  ✗ 3 T2 violation(s) — process assertions failed
+  · adversarial: improved 93.3 → 100.0
+  · reconciliation: improved 96.7 → 98.3
+```
+
+The direct-local reference `a309dc57-b68e-4fbd-8591-38c2e7c63263`, whose 93.3 is H2's
+pre-registered comparator, against the same committed baseline:
+
+```
+gate: FAIL
+  ✗ abstention: 90.0 vs baseline 100.0 (-10.0 pts > 3)
+  ✗ multi_step: 65.0 vs baseline 72.8 (-7.8 pts > 3)
+  ✗ 2 T2 violation(s) — process assertions failed
+  · adversarial: improved 93.3 → 100.0
+  · reconciliation: improved 96.7 → 98.3
+```
+
+Both exit non-zero. Both are published.
+
+**The analyzer, verbatim**
+
+```
+462 rows
+  cache disabled (H-047): HOLDS (0 rows not cache_disabled)
+  passthrough overhead: p50 0.0612 ms, p95 0.1176 ms, p99 0.1644 ms -> HOLDS
+  outcomes: {'ok': 462}
+  failover hops: {0: 462} (must be {0: n})
+  parity: WITHIN NOISE — overall 93.7 vs direct_local 93.3, delta +0.4 against a bound of 3.0
+  two-meter cross-check: AGREE (Headroom $7.541253000000 vs Backline $7.540398)
+```
+
+**The adjudication, verbatim**
+
+```
+treatment gate: FAIL
+  ✗ contract_terms: 76.7 vs baseline 85.0 (-8.3 pts > 3)
+  ✗ 3 T2 violation(s) — process assertions failed
+reference gate: FAIL
+  ✗ abstention: 90.0 vs baseline 100.0 (-10.0 pts > 3)
+  ✗ multi_step: 65.0 vs baseline 72.8 (-7.8 pts > 3)
+  ✗ 2 T2 violation(s) — process assertions failed
+
+both fail: True · disjoint reasons: True
+reading: variance per Backline §A5.5's pre-declared failure modes
+gateway-only T2 violations (named, not folded in):
+  · contract_terms-016 (contract_terms) ['cites_clause']
+```
+
+**Gate**
+
+```
+uv run ruff check .          All checks passed!
+uv run ruff format --check . 164 files already formatted
+uv run mypy                  Success: no issues found in 163 source files
+uv run pytest                1250 passed, 2 deselected, 1 warning in 19.71s
+```
+
+**The stale-curve pin is green.** `test_the_committed_curve_is_the_one_this_corpus_produces`
+has been red since `d57aa33` — through three PHASE_LOG entries, deliberately, because clearing
+it meant sweeping a corpus that each of those sessions had just proven carried bad probes. The
+sweep ran at `c94657c` on the corpus the operator approved, and the pin has been green since.
+It was doing its job the whole time: REPORT.md's H1 numbers now follow from the committed
+corpus, and they did not before.
+
+Run with the compose stack up (`make up`), so nothing skips — 143 of these tests skip loudly
+on a missing store endpoint rather than inventing a fallback, and a gate reported with them
+skipped is not this repo's gate.
