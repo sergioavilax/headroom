@@ -88,6 +88,11 @@ line of difference, now on a third runtime.
 {{- /* boto3 needs a region, and a pod's metadata service is not a region source it reads. */ -}}
 - name: AWS_REGION
   value: {{ .Values.aws.region | quote }}
+{{- /* Fargate injects AWS_DEFAULT_REGION for free and this botocore reads only that
+   name for env region resolution; Kubernetes injects nothing, so we set both. Found
+   at first cluster smoke: NoRegionError with AWS_REGION present. */}}
+- name: AWS_DEFAULT_REGION
+  value: {{ .Values.aws.region | quote }}
 - name: HEADROOM_BUDGETS_TABLE
   value: {{ .Values.aws.budgetsTable | quote }}
 - name: HEADROOM_BUCKETS_TABLE
