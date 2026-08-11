@@ -125,7 +125,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
 
 resource "aws_security_group" "workload" {
   name        = "${var.project}-workload"
-  description = "Anything in this VPC that may talk to Postgres. Joined by compute's tasks and Lambda."
+  description = "Anything in this VPC that may talk to Postgres. Joined by computes tasks and Lambda."
   vpc_id      = aws_vpc.main.id
 
   egress {
