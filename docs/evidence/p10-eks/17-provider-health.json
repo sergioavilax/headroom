@@ -1,0 +1,169 @@
+[
+  {
+    "name": "anthropic",
+    "kind": "anthropic",
+    "state": "closed",
+    "samples": 0,
+    "failures": 0,
+    "failure_ratio": 0.0,
+    "consecutive_failures": 0,
+    "total_successes": 0,
+    "total_failures": 0,
+    "p50_latency_ms": null,
+    "p95_latency_ms": null,
+    "last_error": null,
+    "reopen_in_s": null,
+    "routes": [
+      {
+        "dialect": "anthropic",
+        "prefix": "claude-",
+        "chain": [
+          "anthropic"
+        ],
+        "attempts": [
+          "anthropic"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mock",
+    "kind": "mock",
+    "state": "closed",
+    "samples": 20,
+    "failures": 0,
+    "failure_ratio": 0.0,
+    "consecutive_failures": 0,
+    "total_successes": 412,
+    "total_failures": 0,
+    "p50_latency_ms": 5.983,
+    "p95_latency_ms": 10.325,
+    "last_error": null,
+    "reopen_in_s": null,
+    "routes": [
+      {
+        "dialect": "anthropic",
+        "prefix": "mock-",
+        "chain": [
+          "mock",
+          "mock_fallback"
+        ],
+        "attempts": [
+          "mock",
+          "mock_fallback"
+        ]
+      },
+      {
+        "dialect": "openai",
+        "prefix": "mock-",
+        "chain": [
+          "mock",
+          "mock_fallback"
+        ],
+        "attempts": [
+          "mock",
+          "mock_fallback"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mock_fallback",
+    "kind": "mock",
+    "state": "closed",
+    "samples": 0,
+    "failures": 0,
+    "failure_ratio": 0.0,
+    "consecutive_failures": 0,
+    "total_successes": 0,
+    "total_failures": 0,
+    "p50_latency_ms": null,
+    "p95_latency_ms": null,
+    "last_error": null,
+    "reopen_in_s": null,
+    "routes": [
+      {
+        "dialect": "anthropic",
+        "prefix": "mock-",
+        "chain": [
+          "mock",
+          "mock_fallback"
+        ],
+        "attempts": [
+          "mock",
+          "mock_fallback"
+        ]
+      },
+      {
+        "dialect": "openai",
+        "prefix": "mock-",
+        "chain": [
+          "mock",
+          "mock_fallback"
+        ],
+        "attempts": [
+          "mock",
+          "mock_fallback"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "vllm_a",
+    "kind": "openai_compat",
+    "state": "closed",
+    "samples": 10,
+    "failures": 0,
+    "failure_ratio": 0.0,
+    "consecutive_failures": 0,
+    "total_successes": 47,
+    "total_failures": 25,
+    "p50_latency_ms": 13072.992,
+    "p95_latency_ms": 16926.382,
+    "last_error": "upstream_unavailable",
+    "reopen_in_s": null,
+    "routes": [
+      {
+        "dialect": "openai",
+        "prefix": "",
+        "chain": [
+          "vllm_a",
+          "vllm_b"
+        ],
+        "attempts": [
+          "vllm_a",
+          "vllm_b"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "vllm_b",
+    "kind": "openai_compat",
+    "state": "closed",
+    "samples": 20,
+    "failures": 0,
+    "failure_ratio": 0.0,
+    "consecutive_failures": 0,
+    "total_successes": 31,
+    "total_failures": 0,
+    "p50_latency_ms": 5222.725,
+    "p95_latency_ms": 6098.24,
+    "last_error": null,
+    "reopen_in_s": null,
+    "routes": [
+      {
+        "dialect": "openai",
+        "prefix": "",
+        "chain": [
+          "vllm_a",
+          "vllm_b"
+        ],
+        "attempts": [
+          "vllm_a",
+          "vllm_b"
+        ]
+      }
+    ]
+  }
+]

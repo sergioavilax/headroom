@@ -1,0 +1,57 @@
+LAST SEEN   TYPE     REASON              OBJECT                                   MESSAGE
+10m         Normal   Scheduled           pod/headroom-gateway-5d465685b8-5clcj    Successfully assigned headroom/headroom-gateway-5d465685b8-5clcj to ip-10-42-22-43.ec2.internal
+10m         Normal   Scheduled           pod/headroom-migrate-ddw6r               Successfully assigned headroom/headroom-migrate-ddw6r to ip-10-42-4-212.ec2.internal
+10m         Normal   Scheduled           pod/headroom-gateway-5d465685b8-lzgmr    Successfully assigned headroom/headroom-gateway-5d465685b8-lzgmr to ip-10-42-4-212.ec2.internal
+10m         Normal   SuccessfulCreate    job/headroom-migrate                     Created pod: headroom-migrate-ddw6r
+10m         Normal   Created             pod/headroom-migrate-ddw6r               Created container: migrate
+10m         Normal   Pulled              pod/headroom-migrate-ddw6r               Successfully pulled image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10" in 181ms (181ms including waiting). Image size: 854875521 bytes.
+10m         Normal   Pulling             pod/headroom-migrate-ddw6r               Pulling image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10"
+10m         Normal   Started             pod/headroom-migrate-ddw6r               Started container migrate
+10m         Normal   Completed           job/headroom-migrate                     Job completed
+10m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled up replica set headroom-gateway-5d465685b8 from 0 to 1
+10m         Normal   SuccessfulCreate    replicaset/headroom-gateway-5d465685b8   Created pod: headroom-gateway-5d465685b8-lzgmr
+10m         Normal   Started             pod/headroom-gateway-5d465685b8-lzgmr    Started container gateway
+10m         Normal   Pulled              pod/headroom-gateway-5d465685b8-lzgmr    Container image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10" already present on machine
+10m         Normal   Created             pod/headroom-gateway-5d465685b8-lzgmr    Created container: gateway
+10m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled down replica set headroom-gateway-7dd9b5cf44 from 2 to 1
+10m         Normal   SuccessfulDelete    replicaset/headroom-gateway-7dd9b5cf44   Deleted pod: headroom-gateway-7dd9b5cf44-chfl4
+10m         Normal   SuccessfulCreate    replicaset/headroom-gateway-5d465685b8   Created pod: headroom-gateway-5d465685b8-5clcj
+10m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled up replica set headroom-gateway-5d465685b8 from 1 to 2
+10m         Normal   Killing             pod/headroom-gateway-7dd9b5cf44-chfl4    Stopping container gateway
+10m         Normal   Started             pod/headroom-gateway-5d465685b8-5clcj    Started container gateway
+10m         Normal   Created             pod/headroom-gateway-5d465685b8-5clcj    Created container: gateway
+10m         Normal   Pulled              pod/headroom-gateway-5d465685b8-5clcj    Successfully pulled image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10" in 136ms (136ms including waiting). Image size: 854875521 bytes.
+10m         Normal   Pulling             pod/headroom-gateway-5d465685b8-5clcj    Pulling image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10"
+10m         Normal   Killing             pod/headroom-gateway-7dd9b5cf44-zdsxj    Stopping container gateway
+10m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled down replica set headroom-gateway-7dd9b5cf44 from 1 to 0
+10m         Normal   SuccessfulDelete    replicaset/headroom-gateway-7dd9b5cf44   Deleted pod: headroom-gateway-7dd9b5cf44-zdsxj
+26m         Normal   SuccessfulDelete    replicaset/headroom-gateway-7dd9b5cf44   Deleted pod: headroom-gateway-7dd9b5cf44-chfl4
+26m         Normal   Killing             pod/headroom-gateway-7dd9b5cf44-chfl4    Stopping container gateway
+26m         Normal   Pulling             pod/headroom-gateway-5d465685b8-5clcj    Pulling image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10"
+26m         Normal   Created             pod/headroom-gateway-5d465685b8-5clcj    Created container: gateway
+26m         Normal   Pulled              pod/headroom-gateway-5d465685b8-5clcj    Successfully pulled image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:p10" in 136ms (136ms including waiting). Image size: 854875521 bytes.
+26m         Normal   Started             pod/headroom-gateway-5d465685b8-5clcj    Started container gateway
+26m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled down replica set headroom-gateway-7dd9b5cf44 from 1 to 0
+26m         Normal   Killing             pod/headroom-gateway-7dd9b5cf44-zdsxj    Stopping container gateway
+26m         Normal   SuccessfulDelete    replicaset/headroom-gateway-7dd9b5cf44   Deleted pod: headroom-gateway-7dd9b5cf44-zdsxj
+12m         Normal   SuccessfulCreate    job/headroom-migrate                     Created pod: headroom-migrate-9q88m
+12m         Normal   Created             pod/headroom-migrate-9q88m               Created container: migrate
+12m         Normal   Started             pod/headroom-migrate-9q88m               Started container migrate
+12m         Normal   Pulled              pod/headroom-migrate-9q88m               Container image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:latest" already present on machine
+12m         Normal   Completed           job/headroom-migrate                     Job completed
+12m         Normal   SuccessfulCreate    replicaset/headroom-gateway-5c47447d55   Created pod: headroom-gateway-5c47447d55-b25jn
+12m         Normal   Created             pod/headroom-gateway-5c47447d55-b25jn    Created container: gateway
+12m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled up replica set headroom-gateway-5c47447d55 from 0 to 1
+12m         Normal   Pulled              pod/headroom-gateway-5c47447d55-b25jn    Container image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:latest" already present on machine
+12m         Normal   Started             pod/headroom-gateway-5c47447d55-b25jn    Started container gateway
+12m         Normal   SuccessfulDelete    replicaset/headroom-gateway-5d465685b8   Deleted pod: headroom-gateway-5d465685b8-lzgmr
+12m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled up replica set headroom-gateway-5c47447d55 from 1 to 2
+12m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled down replica set headroom-gateway-5d465685b8 from 2 to 1
+12m         Normal   Killing             pod/headroom-gateway-5d465685b8-lzgmr    Stopping container gateway
+12m         Normal   SuccessfulCreate    replicaset/headroom-gateway-5c47447d55   Created pod: headroom-gateway-5c47447d55-97rxw
+12m         Normal   Started             pod/headroom-gateway-5c47447d55-97rxw    Started container gateway
+12m         Normal   Created             pod/headroom-gateway-5c47447d55-97rxw    Created container: gateway
+12m         Normal   Pulled              pod/headroom-gateway-5c47447d55-97rxw    Container image "675362625117.dkr.ecr.us-east-1.amazonaws.com/headroom/gateway:latest" already present on machine
+12m         Normal   ScalingReplicaSet   deployment/headroom-gateway              Scaled down replica set headroom-gateway-5d465685b8 from 1 to 0
+12m         Normal   SuccessfulDelete    replicaset/headroom-gateway-5d465685b8   Deleted pod: headroom-gateway-5d465685b8-5clcj
+12m         Normal   Killing             pod/headroom-gateway-5d465685b8-5clcj    Stopping container gateway
