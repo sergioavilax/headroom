@@ -1,0 +1,35 @@
+# deploy/aws/data — copy to terraform.tfvars and edit, or apply with no tfvars at all.
+#
+# Every variable in this root has a default and none of them is secret or
+# machine-specific, so `terraform apply` with no tfvars file is a supported, complete
+# configuration. This file exists to show what is adjustable, not to be required.
+#
+# **Nothing that belongs in Secrets Manager belongs here.** `*.tfvars` is gitignored
+# (`.gitignore` keeps only `*.tfvars.example`), and that is a safety net rather than a
+# licence: the three secret *values* are put in by hand with a leading space, per
+# deploy/aws/README.md §4, and never written to a file at all.
+
+# region = "us-east-1"
+
+# The tag prefix and the `Project` cost-allocation tag. Changing it renames the ECR
+# repositories and the secrets, so change it before the first apply or not at all.
+# project = "headroom"
+
+# Provenance, not a date range: this stays `p9` on the data layer through Phase 10's
+# window, because that is the phase that created these resources.
+# phase = "p9"
+
+# vpc_cidr = "10.42.0.0/16"
+
+# ~$0.016/hr. The second-largest line on the daily bill after the ALB.
+# db_instance_class = "db.t4g.micro"
+
+# 20 GB is the RDS minimum. The ledger is measured in megabytes.
+# db_allocated_storage = 20
+
+# Postgres 16 is fixed by BUILD_PLAN L2 and by migrations/0005's `CREATE EXTENSION
+# vector`. This variable exists to make the minor-version story explicit, not to invite
+# a major-version change.
+# db_engine_version = "16"
+
+# image_retention_count = 5

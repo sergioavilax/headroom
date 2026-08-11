@@ -1,0 +1,69 @@
+# deploy/aws/compute — copy to terraform.tfvars and edit.
+#
+#     cp terraform.tfvars.example terraform.tfvars
+#
+# `terraform.tfvars` is gitignored; `.tfvars.example` is the only spelling git keeps.
+#
+# ── Nothing secret goes in here, ever ──────────────────────────────────────────
+# Not the admin token, not the Anthropic key, not the database password. All three are
+# Secrets Manager values the operator puts in by hand with a leading space
+# (deploy/aws/README.md §4), and the only reason to write one here would be to get it
+# into Terraform state, which is the thing BUILD_PLAN §0.2 invariant 3 forbids by name.
+#
+# What *is* here is one machine-specific fact — the address the ALB will admit — and a
+# handful of sizing knobs.
+
+# ── Required ──────────────────────────────────────────────────────────────────
+#
+# The only source address the two listeners accept. Find it with:
+#
+#     curl -s https://checkip.amazonaws.com
+#
+# and append /32. There is no default: a wrong-but-present address fails closed and reads
+# like a networking problem, and an absent one fails at plan time and reads like what it
+# is. `0.0.0.0/0` is refused by a validation rule.
+#
+# A home connection's address changes. If the smoke starts timing out halfway through the
+# session, this is the first thing to re-check — `terraform apply` with a new value takes
+# a few seconds and touches one security group.
+home_cidr = "203.0.113.7/32"
+
+# ── Optional ──────────────────────────────────────────────────────────────────
+
+# Must match the data layer's.
+# region  = "us-east-1"
+# project = "headroom"
+
+# `p10` when this root is re-applied for the EKS window, so the bill can tell the two
+# compute deployments apart while the data layer underneath stays `p9`.
+# phase = "p9"
+
+# ECR tags. `latest` is what the runbook pushes; a git sha makes a deployment
+# self-describing and a rollback obvious. ECR tags are mutable, so re-pushing `latest`
+# needs `aws ecs update-service --force-new-deployment` to be picked up.
+# gateway_image_tag = "latest"
+# ui_image_tag      = "latest"
+
+# 2 is the interesting setting: it is the only way to observe H-018's auth-cache TTL as
+# the *cross-process* bound it is documented to be. It costs about $0.70/day.
+# gateway_desired_count = 1
+
+# Where the alarms page. An email subscription must be confirmed from the inbox before it
+# delivers anything — an unconfirmed one looks identical in `terraform apply`'s output.
+# Leave empty and the alarms still change state, they just do not reach anybody.
+# alarm_email = "you@example.com"
+
+# 00:15 UTC. Fifteen minutes after midnight rather than on the stroke, because the ledger
+# writer drains asynchronously and a job that fired at 00:00:00 would race the last rows
+# of the day it is summarising.
+# rollup_schedule = "cron(15 0 * * ? *)"
+
+# Alarm thresholds. The provider-down default of 3 comes from H-052's breaker constants
+# rather than from taste — see variables.tf.
+# alarm_5xx_percent       = 5
+# alarm_5xx_min_requests  = 20
+# alarm_provider_failures = 3
+
+# 7 days. Never 0: "never expire" is the retention a log group keeps after the stack it
+# belonged to is gone, and it is the classic thing an empty check misses.
+# log_retention_days = 7

@@ -149,11 +149,44 @@ jobs:
           path: ui/playwright-report/
           retention-days: 7
 
+  # Phase 9. Two things that can only break outside Python, both keyless and both cheap:
+  # the Terraform parses, and the rollup Lambda's package assembles. Neither touches an
+  # AWS account — `terraform init -backend=false` fetches providers from the registry and
+  # nothing else, and `validate` reads no data source. Together with
+  # `tests/test_deploy_aws.py` (which holds the `.tf` files to the constants the gateway
+  # actually uses) this is the whole of what CI can honestly say about a deployment it
+  # will never perform: invariant 2 gives every apply to the human.
+  deploy:
+    name: terraform validates, and the Lambda package builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          # Without this the action wraps `terraform` in a script that swallows the exit
+          # code, and `make tf-check` would pass on a file that does not parse.
+          terraform_wrapper: false
+      - run: uv sync --frozen
+      # The artifact Terraform's `archive_file` zips. Built here as well as on the
+      # operator's machine, so a change that breaks the packaging — a handler that grows
+      # an import of fastapi, an asyncpg with no wheel for the runtime — fails on the pull
+      # request rather than at the apply.
+      - run: make lambda-build
+      - run: make tf-check
+
   image:
     name: gateway and ui images build and serve
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # The default build, without `WITH_EMBED=1`. The deploy image adds the `embed`
+      # extra and bakes bge-small's weights — 3.81 GB unpacked — which is a multi-gigabyte
+      # download on every CI run for a variant only the operator's `docker push` uses.
+      # It is built and smoked by hand instead, and the phase log records that run.
       - run: docker build -t headroom:ci .
       - name: Smoke /healthz in the built image
         run: |
