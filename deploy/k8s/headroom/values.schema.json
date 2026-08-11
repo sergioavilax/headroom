@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Headroom chart values",
+  "description": "Helm validates every `install`, `upgrade`, `template` and `lint` against this file. `additionalProperties: false` is the point of it and not tidiness: a mistyped `loadbalancerSourceRanges` would otherwise merge in silently as a new key, leave the real one empty, and publish a load balancer to nobody or to everybody depending on which template read it. This is `config/routing.yaml`'s `extra=forbid` (H-014) one runtime over — the loader refuses, rather than a reviewer noticing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "secrets", "aws", "serviceAccount", "gateway", "ui", "vllm", "migrations", "autoscaling"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "commonLabels": { "type": "object", "additionalProperties": { "type": "string" } },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": { "name": { "type": "string" } }
+      }
+    },
+    "image": { "$ref": "#/$defs/image" },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["existingSecret", "keys"],
+      "properties": {
+        "existingSecret": { "type": "string", "minLength": 1 },
+        "keys": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["databaseUrl", "adminToken", "anthropicApiKey"],
+          "properties": {
+            "databaseUrl": { "type": "string", "minLength": 1 },
+            "adminToken": { "type": "string", "minLength": 1 },
+            "anthropicApiKey": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "aws": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region", "budgetsTable", "bucketsTable"],
+      "properties": {
+        "region": { "type": "string", "minLength": 1 },
+        "budgetsTable": { "type": "string", "minLength": 1 },
+        "bucketsTable": { "type": "string", "minLength": 1 }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create", "name"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string", "minLength": 1 },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replicaCount", "containerPort", "resources", "service", "probes", "strategy"],
+      "properties": {
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "logLevel": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR"] },
+        "embed": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hfHome": { "type": "string", "minLength": 1 },
+            "offline": { "type": "boolean" }
+          }
+        },
+        "resources": { "$ref": "#/$defs/resources" },
+        "strategy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxUnavailable", "maxSurge"],
+          "properties": {
+            "maxUnavailable": {
+              "description": "0 is the whole zero-dropped-requests property. A schema cannot forbid a value that is merely unwise, so the ceiling is the honest bound: anything above 1 would take most of the fleet away at once.",
+              "type": "integer", "minimum": 0, "maximum": 1
+            },
+            "maxSurge": { "type": "integer", "minimum": 1, "maximum": 2 }
+          }
+        },
+        "probes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "readiness": { "$ref": "#/$defs/probe" },
+            "liveness": { "$ref": "#/$defs/probe" },
+            "startup": { "$ref": "#/$defs/probe" }
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "preStopSleepSeconds": { "type": "integer", "minimum": 0 } }
+        },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "podAntiAffinity": { "type": "string", "enum": ["preferred", "off"] },
+        "podDisruptionBudget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "minAvailable": { "type": ["integer", "string"] }
+          }
+        },
+        "service": { "$ref": "#/$defs/service" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "podAnnotations": { "type": "object" },
+        "extraEnv": { "type": "array" }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": ["integer", "null"], "minimum": 1, "maximum": 100 },
+        "targetMemoryUtilizationPercentage": { "type": ["integer", "null"], "minimum": 1, "maximum": 100 }
+      }
+    },
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "backoffLimit": { "type": "integer", "minimum": 0 },
+        "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+        "resources": { "$ref": "#/$defs/resources" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/$defs/image" },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "resources": { "$ref": "#/$defs/resources" },
+        "probes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "readiness": { "$ref": "#/$defs/probe" },
+            "liveness": { "$ref": "#/$defs/probe" }
+          }
+        },
+        "service": { "$ref": "#/$defs/service" },
+        "nodeSelector": { "type": "object" },
+        "tolerations": { "type": "array" },
+        "podAnnotations": { "type": "object" }
+      }
+    },
+    "vllm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/$defs/image" },
+        "targetIP": {
+          "description": "A tailnet address. Empty is legal only while `enabled` is false; the template fails the render otherwise, because a proxy with nowhere to forward to would install cleanly and answer nothing.",
+          "type": "string"
+        },
+        "hostname": { "type": "string", "minLength": 1 },
+        "authKeySecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "key"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "key": { "type": "string", "minLength": 1 }
+          }
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["a", "b"],
+          "properties": {
+            "a": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "b": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "resources": { "$ref": "#/$defs/resources" }
+      }
+    }
+  },
+  "$defs": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "$ref": "#/$defs/resourceQuantities" },
+        "limits": { "$ref": "#/$defs/resourceQuantities" }
+      }
+    },
+    "resourceQuantities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": ["string", "number"] },
+        "memory": { "type": "string" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "initialDelaySeconds": { "type": "integer", "minimum": 0 },
+        "periodSeconds": { "type": "integer", "minimum": 1 },
+        "timeoutSeconds": { "type": "integer", "minimum": 1 },
+        "failureThreshold": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "port"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "loadBalancerSourceRanges": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$" }
+        }
+      }
+    }
+  }
+}

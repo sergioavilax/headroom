@@ -1,0 +1,128 @@
+{{- $component := "gateway" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "headroom.fullname" . }}-gateway
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.gateway.replicaCount }}
+  {{- end }}
+  # Enough to roll back twice without keeping every ReplicaSet this cluster ever saw.
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # The whole zero-dropped-requests property, in two numbers. `maxUnavailable: 0`
+      # means a Ready pod is never removed before its replacement is Ready; `maxSurge: 1`
+      # means the node group has to hold N+1 pods rather than 2N, which is what
+      # `tests/test_deploy_k8s.py` checks against the instance type in the eksctl config.
+      maxUnavailable: {{ .Values.gateway.strategy.maxUnavailable }}
+      maxSurge: {{ .Values.gateway.strategy.maxSurge }}
+  selector:
+    matchLabels:
+      {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with .Values.gateway.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Long enough for the preStop sleep below plus the gateway's own shutdown, which
+      # drains the ledger writer's queue into Postgres before closing the store (H-027:
+      # "a graceful stop loses nothing; only a SIGKILL does"). Kubernetes sends SIGKILL
+      # when this expires, so it is the number that decides whether that promise holds.
+      terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
+      {{- if eq .Values.gateway.podAntiAffinity "preferred" }}
+      affinity:
+        podAntiAffinity:
+          # Preferred, not required. Two gateway pods on two nodes is the point; a
+          # one-node cluster must still schedule, and a *required* rule would make the
+          # surge pod of a rolling upgrade unschedulable on a two-node cluster — turning
+          # a safety property into a deadlock.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 20 }}
+      {{- end }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The image's own CMD — `uvicorn headroom.api.main:app --host 0.0.0.0 --port
+          # 8000`. Not restated here: a chart that repeated the entrypoint would be a
+          # second copy of it, and the two would drift on the day one of them changed.
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.containerPort }}
+              protocol: TCP
+          env:
+            {{- include "headroom.gatewayEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          # `/healthz` for all three, because it is liveness-only by design (H-000) and
+          # that is what each of these actually wants to know. A readiness probe that
+          # claimed to have checked Postgres, DynamoDB and three providers would take the
+          # whole fleet out of rotation the moment one provider had a bad minute.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ .Values.gateway.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.startup.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .Values.gateway.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.gateway.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .Values.gateway.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.gateway.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.gateway.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.gateway.probes.liveness.failureThreshold }}
+          lifecycle:
+            preStop:
+              exec:
+                # Sleep, then let SIGTERM arrive. A pod is sent SIGTERM and removed from
+                # Endpoints at the same instant, and kube-proxy on every other node takes
+                # a moment to catch up — so without this pause the requests already
+                # heading for a doomed pod are exactly the ones that get dropped. It is
+                # not a race the application can win from inside, which is why it is here
+                # and not in `headroom/api/main.py`.
+                command: ["/bin/sh", "-c", "sleep {{ .Values.gateway.lifecycle.preStopSleepSeconds }}"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            # `readOnlyRootFilesystem` is deliberately not set. The image runs `uv run`,
+            # which writes to a cache directory at start, and turning this on would trade
+            # a real hardening claim for a container that does not boot. What is claimed
+            # here is claimed truthfully: no privilege escalation, no capabilities.

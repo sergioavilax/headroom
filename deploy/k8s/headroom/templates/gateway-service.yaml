@@ -1,0 +1,45 @@
+{{- $component := "gateway" -}}
+{{- include "headroom.requireSourceRanges" (dict "service" .Values.gateway.service "component" "gateway") -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "headroom.fullname" . }}-gateway
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+  {{- with .Values.gateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.gateway.service.type }}
+  {{- if ne .Values.gateway.service.type "ClusterIP" }}
+  # `Cluster`, and it is the setting the rolling-upgrade demo depends on.
+  #
+  # With an instance-target NLB the load balancer's targets are the *nodes*, and a
+  # `Cluster` policy lets kube-proxy on any node forward to a Ready pod on any other. So
+  # replacing a pod changes an Endpoints object and nothing about the load balancer's
+  # target set — no registration, no deregistration delay, no window in which the NLB is
+  # still sending traffic to something Kubernetes has already given up on.
+  #
+  # `Local` would preserve the client IP, and would make each node's health depend on
+  # whether a gateway pod happens to be scheduled there — which on a two-node, two-replica
+  # cluster is precisely the state a rolling upgrade passes through.
+  externalTrafficPolicy: Cluster
+  {{- end }}
+  {{- with .Values.gateway.service.loadBalancerSourceRanges }}
+  # The only source addresses this reaches the internet for. Rendered from
+  # `values.aws.yaml`, which git never sees; the template refuses to render a
+  # LoadBalancer without them at all (see `headroom.requireSourceRanges`).
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      # 8080 outside, 8000 inside — the compose stack's host port and the Phase 9 ALB
+      # listener port, kept so a curl against this cluster differs from a curl against
+      # localhost by the hostname alone.
+      port: {{ .Values.gateway.service.port }}
+      targetPort: http
+      protocol: TCP

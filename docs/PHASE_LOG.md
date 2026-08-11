@@ -6598,3 +6598,425 @@ in a description now fails on the pull request, in milliseconds, rather than hal
 through creating a VPC.
 
 ---
+
+## Phase 10 — Kubernetes: the three-day EKS window (2026-08-11)
+
+Branch `claude/p10-eks`, GitHub #12. BUILD_PLAN §P10's words are the spec: *"A **Helm
+chart** for the gateway + ui (values for image, secrets refs, resource requests, HPA
+optional-off), documented against the compose parity. EKS via `eksctl` (2 small managed
+nodes), RDS/DynamoDB reused from P9's Terraform (don't rebuild the data layer as k8s pods
+— using managed services from k8s IS the realistic architecture and the writeup says so).
+The human runs every `eksctl`/`helm` mutation; CC writes charts and runs `helm
+lint`/`template`. Evidence window: three days."*
+
+**Dated in UTC**; the session ran on the operator's local evening of 2026-08-10.
+
+**Nothing in this PR has been applied to an AWS account or to a cluster.** Invariant 2
+gives every `eksctl`, every `helm install`, every `kubectl` mutation and every AWS mutation
+to the human. What Claude Code ran is `helm lint`, `helm template`, `kubeconform`,
+`terraform fmt`/`validate`, `terraform output` (local state, no AWS call), the test suite,
+and the new load loop against the **compose** stack.
+
+**Shipped**
+
+- **`deploy/k8s/headroom/` — the Helm chart.** Ten templates, a `values.yaml` whose
+  defaults name no cloud at all, and a `values.schema.json` with
+  `additionalProperties: false`. `helm lint` clean, `helm template` clean, and the rendered
+  manifests schema-validated by `kubeconform -strict` in two shapes: the local default (6
+  resources) and the full AWS shape with the load balancer, the tailscale egress proxy and
+  the HPA all on (9 resources).
+- **Compose parity as a test, not a claim** (**H-088**). `tests/test_deploy_k8s.py` parses
+  `local.gateway_environment` and the `secrets` block out of `deploy/aws/compute/ecs.tf`
+  and asserts every name appears in the chart — so the three descriptions of one gateway
+  (`docker-compose.yml`, the ECS task definition, this chart) cannot drift silently. Ports,
+  probe paths, and the DynamoDB table names are pinned the same way. And
+  `DYNAMODB_ENDPOINT_URL` is asserted to appear **nowhere** under `deploy/k8s/`: its
+  absence is assumption A1's second half, now on a third runtime.
+- **One Network Load Balancer with instance targets, locked to the operator's `/32`**
+  (**H-085**), and `externalTrafficPolicy: Cluster` — which is what makes the zero-drop
+  claim reachable at all: the load balancer's targets are the *nodes*, so replacing a pod
+  changes an `Endpoints` object and nothing about the load balancer. The console is a
+  ClusterIP service reached by `kubectl port-forward`: no second load balancer, and RBAC
+  rather than an IP allow-list guarding the one component that holds the admin token.
+- **The chart declares no `kind: Secret` and has nowhere to put one** (**H-086**). The
+  three Phase 9 credentials arrive in a Secret the operator creates by hand from Secrets
+  Manager, referenced by `valueFrom.secretKeyRef`. External Secrets Operator is argued down
+  rather than skipped: a second Helm release, CRDs, an IRSA role and a `ClusterSecretStore`
+  to replace one command that runs once, in a three-day window, for one operator.
+- **Tailscale reaches home as one egress pod** (**H-087**) — the tailscale container in
+  `TS_TAILNET_TARGET_IP` mode with a two-port ClusterIP Service in front of it, so
+  `VLLM_BASE_URL` points at a cluster DNS name exactly where compose puts
+  `host.docker.internal`. **Nothing in `headroom/` changes, `config/routing.yaml` is
+  untouched, no CRD is installed and no route is advertised into the cluster.**
+- **`deploy/k8s/eksctl/cluster.yaml`** — two `t3.medium` managed nodes in the data layer's
+  own VPC and public subnets (H-075 inherited: there is no NAT gateway), the OIDC provider,
+  and one IRSA service account whose policy is asserted to grant **exactly** what
+  `aws_iam_role.gateway_task` granted on ECS. Committed *and* generated: `make k8s-config`
+  rewrites it from `deploy/aws/data`'s outputs, and the runbook's Day 1 expects `git diff`
+  to be empty — which is how "is the data layer still the one this was configured against"
+  becomes a step rather than a hope.
+- **`deploy/k8s/render_config.py`** — the *"exact command that generates it"* §P10 asks
+  for. Reads `terraform output -json` from local state and makes no AWS call; its own
+  `REQUIRED_OUTPUTS` list is held to `deploy/aws/data/outputs.tf` by a test, which is the
+  keyless half of the check Terraform performs for `deploy/aws/compute` (H-074).
+- **`scripts/load_loop.py`** (**H-090**) — the instrument behind "zero dropped requests",
+  and the part worth reading is `classify()` rather than the loop. Three outcomes: a 402 or
+  429 carrying `x-headroom-error-source: gateway` is **shed** (the product working), a 2xx
+  is **ok** — and under `--stream` only if the stream reached its terminal marker — and
+  *everything else*, including a connection with no status line at all, is **dropped**.
+  `max_gap_ms` sits beside the counts because a rollout that dropped nothing and was
+  unreachable for nine seconds has an error count of zero and is still an outage.
+- **Two `t3.medium` nodes, and the arithmetic that says the pods fit** (**H-089**).
+  `test_every_pod_this_chart_schedules_fits_on_the_node_group_it_targets` reads the instance
+  type out of the eksctl config and the requests out of `values.yaml`, models EKS's
+  allocatable pessimistically, and checks both the cluster-wide sum *with the surge pod* and
+  the per-node case the `preferred` anti-affinity leaves open. A Deployment whose pods do not
+  fit does not fail — it sits in `Pending` with nothing red anywhere, which is H-082's
+  problem in Kubernetes clothes.
+- **The HPA ships and ships off**, with the two prerequisites for turning it on written
+  beside it (no `metrics-server`; a node group that cannot grow). The Deployment omits
+  `replicas` entirely when the HPA is enabled, so Helm and the HPA never fight over one
+  field.
+- **`migrations/` runs as a `pre-install,pre-upgrade` hook Job** in the gateway's own image
+  — §P9's "same runner everywhere" one runtime along. Against the schema Phase 9 already
+  applied it reads `up to date`, which is the confirmation that catches a chart pointed at
+  the wrong database before any traffic reaches it.
+- **The data layer's one change**: two Kubernetes discovery tags on the public subnets and
+  one new output (`public_subnet_azs`). In place, two resources changed, nothing replaced —
+  and without `kubernetes.io/role/elb` a `Service` of type LoadBalancer is created, finds no
+  eligible subnet, and stays `<pending>` with the reason only in a `describe` event.
+- **`deploy/k8s/README.md`** — the runbook: three days, seventeen sections, every command in
+  dependency order with its expected output, and the cost stated before every paid step. Day
+  1 opens with the two things Phase 9 left open (the cost-allocation tag retry, H-080 as
+  amended, and `02-cost-allocation-tags.png`), because H-080 puts the retry *"at the start of
+  P10's first session, before the cluster exists"*.
+- **`docs/evidence/p10-eks/README.md`** — a twenty-three-item capture list with provenance
+  discipline, per P6–P9, plus the two rows it inherits from Phase 9.
+- **Tests: 1334 → 1390 keyless**, 2 live-marked and deselected, 0 skipped. Two new files:
+  `test_deploy_k8s` (36) and `test_load_loop` (20). **No existing test changed.**
+- **CI's sixth job grows a third thing it can honestly check**: `helm lint`, `helm template |
+  kubeconform -strict`, and the two `fail` guards asserted **as refusals** — a guard that
+  stopped guarding is otherwise invisible.
+
+**Deferred**
+
+- **The window itself, and everything downstream of it** — invariant 2. The chart lints and
+  renders, the cluster config is generated from the live data layer, the load loop is
+  verified against compose; what has not happened is `eksctl create cluster`, the install,
+  the rolling upgrade, the failover demo, the screenshots, the teardown, the empty checks,
+  and the billing table. Those are the operator's, in order, in `deploy/k8s/README.md`.
+- **A7's estimate-versus-actual table** — the runbook projects **$17–19** for a three-day
+  window against A7's **$20–25**, and the actual goes in the spend line below after the run.
+  **`docs/evidence/p9-aws/18-billing.png` is still open too**, and for the same reason it has
+  been since Phase 9: three of the four cost-allocation tag keys had not been offered for
+  activation when that session ended. Runbook §1 retries; §17 captures both.
+- **An Ingress controller, cert-manager, metrics-server, Prometheus, a service mesh, a
+  GitOps controller, a Cluster Autoscaler.** Each is defensible and each would be another
+  Helm release in a window whose job is to show one application deployed correctly. Named in
+  the runbook's closing table rather than omitted quietly.
+- **HTTPS.** There is no domain, so there is no certificate, and the security control is the
+  `/32` — which is what §P9 asked for and what this inherits. The cost is the same one: the
+  root admin token crosses the operator's own connection in the clear.
+- **The `expired_releases` alarm, a `provider_open_at` timing mark, per-key budgets,
+  concurrency limits, prompt-cache tier pricing, latency-based breaker tripping** — still
+  deferred from Phases 3, 4, 4b, 6, 8 and 9; untouched.
+
+**Deviations**
+
+1. **One load balancer, not two.** §P9 published the gateway *and* the console on one ALB;
+   this phase publishes only the gateway and reaches the console with `kubectl
+   port-forward`. It is cheaper ($0.54/day) and the door is stronger (IAM and RBAC rather
+   than an IP allow-list in front of a cleartext listener), and the cost is a screenshot
+   whose address bar says `localhost`. Said out loud in the evidence README rather than
+   left to be noticed. **H-085.**
+2. **`t3.medium`, not the smallest thing available.** §P10 says "2 small managed nodes". A
+   `t3.small` cannot hold two gateway pods plus the surge pod of a rolling upgrade, and the
+   failure mode is a `Pending` pod rather than an error. The arithmetic is in the suite.
+   **H-089.**
+3. **The data layer is modified, by two subnet tags and one output.** Phase 9's two-root
+   split promised that *compute's destroy* would not touch data; it never promised the data
+   root would not be edited (H-082's own deviation 5 made the same point). This is an
+   in-place update the runbook plans, plans, and checks. **H-088.**
+4. **`scripts/` gains a third file** (`load_loop.py`), under the same rule as the first two
+   (H-054's): it drives the public HTTP API and writes no SQL.
+5. **`--model` and `--dialect` on the load loop.** The brief asks for a load loop for the
+   rolling upgrade; the same instrument is pointed at the vLLM chain for the Day 3 kill
+   demo, which turns the P6/P7 demo from a thing you watch into a thing with a number. Two
+   flags, one classifier, and "zero dropped" therefore means the same thing in both
+   captures.
+6. **The chart's probes are `httpGet`, where compose and ECS use a shell command.** Same
+   endpoint, same port, same meaning; different idiom per runtime. The endpoint is pinned to
+   `headroom/api/main.py` and `ui/app/api/healthz/route.ts` by a test, so the shape being
+   different cannot become the path being wrong.
+7. **Additions the plan's Phase 10 text does not enumerate**, all additive: the migration
+   hook Job, the PodDisruptionBudget, the tailscale egress Deployment, `values.schema.json`,
+   `deploy/k8s/render_config.py`, `make helm-check` / `k8s-config` / `load-loop`, and three
+   rows added to `docs/evidence/README.md`'s index — which had been missing `p8-experiments`
+   and `p9-aws` since those phases closed.
+
+---
+
+**Gate** — *the chart in-repo with lint clean; the evidence set committed; the cluster
+provably gone; `deploy/k8s/README.md` runbook complete enough that a stranger could repeat
+it.*
+
+**Two of the four are met here; the other two are the operator's.** The cluster cannot be
+provably gone before it exists, and the evidence set is a capture list until there is a
+window to capture. What follows is everything that could be verified without an AWS account
+or a cluster.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+175 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 170 source files
+
+$ make test
+================ 1390 passed, 2 deselected, 1 warning in 22.28s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1392 tests collected (1390 deselected) in 0.21s
+
+$ uv run pytest -q -v | grep -c SKIPPED
+0
+```
+
+Per-file counts for the two new files:
+
+```
+36 tests/test_deploy_k8s.py     20 tests/test_load_loop.py
+```
+
+```
+$ make tf-check
+terraform fmt -check -recursive deploy/
+terraform -chdir=deploy/aws/data validate -no-color
+Success! The configuration is valid.
+terraform -chdir=deploy/aws/compute validate -no-color
+Success! The configuration is valid.
+
+$ make helm-check
+==> Linting deploy/k8s/headroom
+[INFO] Chart.yaml: icon is recommended
+1 chart(s) linted, 0 chart(s) failed
+
+helm template headroom deploy/k8s/headroom | kubeconform -strict -summary -kubernetes-version 1.31.0
+Summary: 6 resources found parsing stdin - Valid: 6, Invalid: 0, Errors: 0, Skipped: 0
+
+helm template headroom deploy/k8s/headroom --set gateway.service.type=LoadBalancer \
+  --set gateway.service.loadBalancerSourceRanges={203.0.113.7/32} \
+  --set vllm.enabled=true --set vllm.targetIP=100.64.0.1 --set autoscaling.enabled=true \
+  | kubeconform -strict -summary -kubernetes-version 1.31.0
+Summary: 9 resources found parsing stdin - Valid: 9, Invalid: 0, Errors: 0, Skipped: 0
+```
+
+The console's own checks, unchanged in shape and unchanged in count — nothing in `ui/`
+moved this phase:
+
+```
+$ make ui-check
+ℹ tests 31        ℹ pass 31        ℹ fail 0
+
+$ make ui-e2e
+  8 passed (2.0s)
+```
+
+### THE CHART'S THREE REFUSALS, EXECUTED
+
+A guard that stopped guarding is invisible: the chart renders, installs, and publishes an
+admin API to nobody or to everybody. So all three are run rather than described.
+
+```
+$ helm template hr deploy/k8s/headroom --set gateway.service.type=LoadBalancer
+Error: execution error at (headroom/templates/gateway-service.yaml:2:4):
+gateway.service.type is LoadBalancer with no loadBalancerSourceRanges: refusing to publish
+the gateway to 0.0.0.0/0. Set gateway.service.loadBalancerSourceRanges
+(deploy/k8s/README.md section 4)
+
+$ helm template hr deploy/k8s/headroom --set vllm.enabled=true
+Error: execution error at (headroom/templates/vllm-egress.yaml:4:4):
+vllm.enabled is true but vllm.targetIP is empty: there is nowhere to forward to.
+`tailscale status` prints the address of the machine running the two vLLM containers
+(deploy/k8s/README.md section 5).
+
+$ helm template hr deploy/k8s/headroom --set gateway.service.loadbalancerSourceRanges={1.2.3.4/32}
+Error: values don't meet the specifications of the schema(s) in the following chart(s):
+headroom:
+- at '/gateway/service': additional properties 'loadbalancerSourceRanges' not allowed
+```
+
+The third is the one that would otherwise be silent. A mistyped key merges in as a new
+value, leaves the real one empty, and the template's own guard never sees it — which is
+`config/routing.yaml`'s `extra="forbid"` argument (H-014) arriving in a values file.
+
+### THE LOAD LOOP — verified before it was handed over
+
+H-081's rule: *a gate step that has never been executed is a gate step that fails at the
+gate.* Against the compose stack over HTTP, with a tenant and a key provisioned through
+`/admin/*`:
+
+```
+### non-streamed, 15 s, 4 in flight
+{"label": "smoke-plain",  "requests": 561, "ok": 561, "shed": 0, "dropped": 0,
+ "latency_ms": {"p50": 5.85, "p95": 8.95, "p99": 10.91}, "max_gap_ms": 109.9, "incidents": []}
+exit=0
+
+### streamed — the harder test: an in-flight stream is what a terminating pod can break
+{"label": "smoke-stream", "requests": 566, "ok": 566, "shed": 0, "dropped": 0,
+ "latency_ms": {"p50": 5.35, "p95": 8.11, "p99": 12.91}, "max_gap_ms": 108.0, "incidents": []}
+exit=0
+```
+
+**And the two runs that prove the instrument can say something other than zero.** A zero
+from a loop that cannot count is not a measurement.
+
+```
+### a tenant given a cap of $0.000001, then made to hit it
+HTTP/1.1 402 Payment Required
+x-headroom-error-source: gateway
+
+{"label": "smoke-shed", "requests": 50, "ok": 0, "shed": 50, "dropped": 0,
+ "by_status": {"402": 50}}
+exit=0
+
+### the same loop against a port with nothing listening on it
+{"label": "smoke-nothing-there", "requests": 40, "ok": 0, "dropped": 40,
+ "max_gap_ms": 4024.1,
+ "first_incident": {"t_s": 0.027, "kind": "dropped", "status": null,
+                    "detail": "ConnectError: All connection attempts failed"}}
+exit=1
+```
+
+Fifty deliberate refusals score `shed` and exit 0; forty connections that went nowhere score
+`dropped`, take `max_gap_ms` to the whole window, and exit 1. That is the discrimination the
+whole claim rests on, checked against the real gateway rather than against a fixture.
+
+### THE CLUSTER CONFIG — generated from the live data layer
+
+`deploy/k8s/eksctl/cluster.yaml` is committed and was produced by the generator's own
+template from `terraform output -json` against the operator's standing Phase 9 state — so
+the runbook's Day 1 `git diff --stat deploy/k8s/eksctl/cluster.yaml` is a real check rather
+than a ceremony. Verified to regenerate byte-identically after `ruff format` touched the
+generator.
+
+One honest wrinkle, recorded because the runbook depends on it: `public_subnet_azs` is a
+**new** output and outputs only reach state on an `apply`, so the generator will refuse
+until the operator runs runbook §2 — which is exactly the order §2 puts them in, and the
+refusal names the step. The committed file's two zones were read out of the existing state
+file rather than out of an output that does not exist yet.
+
+### THE SABOTAGE RUNS — seven, each reverted from a file copy
+
+Green on the first attempt is when a suite deserves the most suspicion, and this phase's
+tests protect against failures that are *silent by construction*: a chart that renders
+perfectly and configures the wrong thing. All seven were restored from pre-sabotage copies
+— never with `git checkout --`, which ate an hour of uncommitted work in Phase 7 — and every
+file was diffed afterwards.
+
+```
+A  the chart stops setting a variable the ECS task definition sets   RED
+   test_the_chart_sets_every_variable_the_ecs_task_definition_sets
+B  DYNAMODB_ENDPOINT_URL is set on the cluster "for parity"          RED
+   test_the_deployed_gateway_is_not_told_about_an_emulator
+C  the gateway asks for the 2048 MiB its Fargate task had            RED
+   test_every_pod_this_chart_schedules_fits_on_the_node_group_it_targets
+D  the load balancer's source-range guard is deleted                 RED (see below)
+   test_a_load_balancer_cannot_be_rendered_without_source_ranges
+E  the subnet tag names a cluster nobody creates                     RED
+   test_the_subnet_tag_names_the_cluster_the_eksctl_config_creates
+F  the header the load loop classifies on is renamed                 RED
+   test_the_marker_the_loop_reads_is_the_one_the_gateway_writes
+G  the pods' IAM role gains an action the ECS task role never had    RED
+   test_the_pods_iam_role_grants_what_the_ecs_task_role_granted_and_nothing_more
+```
+
+```
+=== every file identical to its pre-sabotage copy? ===
+  identical  deploy/aws/data/variables.tf
+  identical  deploy/k8s/eksctl/cluster.yaml
+  identical  deploy/k8s/headroom/templates/_helpers.tpl
+  identical  deploy/k8s/headroom/templates/gateway-service.yaml
+  identical  deploy/k8s/headroom/values.yaml
+  identical  scripts/load_loop.py
+```
+
+**Sabotage D passed on the first run, and that is the most useful thing in this section.**
+The test read the raw template and asserted the string `headroom.requireSourceRanges`
+appeared in it. Deleting the guard left the string in place — three lines below, in the
+comment that explains the guard (*"the template refuses to render a LoadBalancer without
+them at all (see `headroom.requireSourceRanges`)"*). So the test was finding the prose
+*about* the rule and reporting it as the rule: **H-072's lesson, in a file whose own
+docstring quotes H-072**, and invisible to anything except breaking the thing. Fixed by
+reading through `code_only()` — which strips `#` lines *and* Helm's `{{/* … */}}` blocks,
+because a block comment never reaches a manifest — and the same treatment was then applied
+to every other raw-text assertion in the file rather than only to the one that was caught.
+
+### One footgun, found by the first `helm lint`
+
+`.helmignore` looks like a `.gitignore` and is not one. Helm's matcher **inverts** the
+meaning of a leading `!`: where git reads `!foo` as "and keep foo after all", helm reads it
+as "ignore everything that does **not** match foo". A single `!values.*.yaml.example` line
+therefore excluded `Chart.yaml` and the whole `templates/` directory, and `helm lint`
+answered:
+
+```
+[ERROR] templates/: Chart.yaml file is missing
+[ERROR] : unable to load chart
+```
+
+— which names neither the file that caused it nor the rule that did. Recorded in
+`.helmignore` itself, where the next person to reach for a negation will read it.
+
+### What the operator still has to run
+
+`deploy/k8s/README.md`, §1–§17, across three days. §P10's gate clauses map to it as:
+
+| Gate clause | Runbook |
+|---|---|
+| the chart in-repo with lint clean | met here — `make helm-check`, and CI's sixth job |
+| `kubectl get pods/svc/events` | §4, §6, §12 |
+| a rolling `helm upgrade` with zero dropped requests | §8 — the load loop, `--stream`, ten minutes |
+| the dashboard served from the cluster | §9 — port-forward, and `04` names the node |
+| the two-vLLM failover pointed at the cluster gateway | §11 — tailscale reaches home, measured not watched |
+| `helm uninstall`, `eksctl delete cluster` | §13 then §14, **in that order** |
+| per-service empty checks (tombstones lie) | §15, and §16 after the data layer |
+| billing estimate-vs-actual, closing A7 | §17, with Phase 9's `18-billing.png` beside it |
+
+**Assumed-facts register (§0.4)**
+
+- **A7 — the estimate is written down and the actual is the operator's.** *"EKS + Helm on 2
+  small nodes for 3 days lands ≈ $20–25."* The runbook's table projects **$17–19** from list
+  price: $2.40/day control plane, $2.00/day for two `t3.medium`, $0.54/day for the load
+  balancer, $0.11/day of EBS, and the data layer's $0.53/day carried from Phase 9. Both
+  outcomes are publishable and the table in §17 gets filled in either way. The other half of
+  A7 — *"cost-allocation tags activated in Billing"* — is runbook §1, retried at the start of
+  each day, and it is what `Layer` needs to be active for if the table is to separate the
+  cluster from the data layer it is borrowing.
+- **A1 — the property holds on a third runtime, and is asserted the same way.** No
+  `DYNAMODB_ENDPOINT_URL` anywhere under `deploy/k8s/`, so `headroom/db/dynamo.py` resolves
+  the regional endpoint and signs — now with an IRSA role rather than a task role. Nothing in
+  `headroom/db/{dynamo,budgets,buckets}.py` changed. The verification is the first
+  conditional write from a pod, at runbook §7.
+- **A6 — due at runbook §3, before the cluster exists rather than on the day of the demo.**
+  Both vLLM instances serving with the known-good parser flags, *and* the same two ports
+  reachable on the machine's tailnet address — which is the half `docs/vllm.md` has never had
+  to check, and the half that usually fails (a host firewall, not tailscale).
+- **A2, A3, A4, A5** — not due at this gate, none touched. A4 and A5 stay VERIFIED: this
+  phase changed no byte of the passthrough, and all 1390 tests that prove them are green.
+
+**Spend — $0.00 in this session.** No AWS resource was created, no cluster exists, and no
+provider API was called; the load loop's 1,217 requests all went to the MockProvider on a
+container on the operator's own machine. Against §0.6's **$20–25** for P10: the runbook
+projects **$17–19** for a three-day window, of which ~$1.60 is the data layer that has been
+running since Phase 9. The actual figure goes in this entry after the operator's run,
+whichever way it lands — and so does `docs/evidence/p9-aws/18-billing.png`, which has been
+waiting on the same tag keys since 2026-08-11.
+
+---

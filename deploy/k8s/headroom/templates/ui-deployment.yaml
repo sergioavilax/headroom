@@ -1,0 +1,91 @@
+{{- if .Values.ui.enabled }}
+{{- $component := "ui" -}}
+# The operator console. A client of `/admin/*` and nothing else (H-054), and handed no
+# secret at all — not even by reference (H-055).
+#
+# Its whole environment is one variable and it is a URL, exactly as in `docker-compose.yml`
+# and in the ECS task definition. On this cluster the URL is the gateway's ClusterIP
+# service, which is the Kubernetes spelling of Phase 9's Cloud Map name: service discovery
+# rather than a trip out through the load balancer, so the front door stays at one source
+# address.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "headroom.fullname" . }}-ui
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.ui.replicaCount }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+      {{- with .Values.ui.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      # No service account of its own, and no IRSA annotation anywhere near it. The
+      # console makes no AWS call, and a role attached "just in case" is a permission
+      # nobody can later argue was needed — `deploy/aws/compute/iam.tf`'s rule, unchanged.
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ui.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ui.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ui
+          image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
+          imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ui.containerPort }}
+              protocol: TCP
+          env:
+            - name: HEADROOM_GATEWAY_URL
+              value: http://{{ include "headroom.fullname" . }}-gateway:{{ .Values.gateway.service.port }}
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}
+          # The console's own liveness, which deliberately does *not* probe the gateway:
+          # it would otherwise take a healthy console out of rotation during a gateway
+          # rollout — which is the exact minute somebody is watching it. The same rule
+          # `docker-compose.yml` and the Phase 9 target group both state.
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: {{ .Values.ui.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.ui.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.ui.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.ui.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: {{ .Values.ui.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.ui.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.ui.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.ui.probes.liveness.failureThreshold }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}
