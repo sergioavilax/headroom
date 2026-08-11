@@ -7084,3 +7084,115 @@ is **not** `latest`: a schema set from a newer Kubernetes accepts fields this ch
 without anyone deciding to.
 
 ---
+
+## Phase 10 — the §8 drop, found and fixed mid-window (2026-08-11)
+
+A pre-teardown session on `claude/p10-eks` while the cluster was still up. The operator ran
+§8 twice, both runs read non-zero, and the evidence went into the branch before anything was
+diagnosed — which is what made this session a find-fix-verify rather than a guess. The verify
+is still the operator's: run 3, against a live cluster, with the commands in §8.
+
+### Shipped
+
+**The finding.** A rolling `helm upgrade` dropped exactly one in-flight streamed request per
+replaced pod. Run 1 at `preStopSleepSeconds: 5` — 8331 requests, 1 dropped at t=87s. Run 2
+with the sleep tripled to 15 — 8326 requests, 2 dropped, one per termination. Every drop read
+`RemoteProtocolError: Server disconnected without sending a response.`, and `max_gap_ms`
+stayed at 258-402 ms across both, so there was no outage window at any point: purely
+connection-level, and **the sleep length was irrelevant**.
+
+**The red herring, killed first.** The terminating pods exit in `Error`, not `Completed`,
+which pointed hard at the entrypoint — `uv run --no-sync uvicorn …`, with `uv` at PID 1 and
+possibly eating SIGTERM. Reproduced against compose, it is innocent on every count: `uv`
+catches SIGTERM (bit 15 in `/proc/1/status`'s `SigCgt`), forwards it, and propagates the
+child's status; uvicorn logs its full graceful shutdown; `Application shutdown complete`
+means the lifespan ran and the H-027 ledger drain fired. The 143 is uvicorn's
+`Server.capture_signals()` deliberately re-raising the signal it shut down for, and
+Kubernetes renders any non-zero exit as `Error`. Cosmetic. The runbook now says so where an
+operator will read it, because it is the kind of clue that costs an afternoon.
+
+**The actual cause.** A pod is sent SIGTERM and removed from Endpoints at the same instant.
+The preStop sleep covers the *new connection* race while kube-proxy catches up and has no
+reach whatsoever over a connection that already exists — conntrack pins an established flow
+to the pod it was given to. A client holding keep-alive connections spends the entire sleep
+talking to the pod that is about to stop, and loses whatever it had written when uvicorn
+closes them.
+
+**The fix — a lame-duck drain (H-091).** `preStop` touches a sentinel file *before* it
+sleeps; a pod that has seen the sentinel answers every response with `Connection: close`;
+clients retire those connections themselves during the sleep and open the next one against a
+pod Endpoints has already moved them to. `headroom/api/drain.py` is the whole of it — a
+latching `DrainSwitch` and a `DrainMiddleware` added *inside* `RequestContextMiddleware` so
+the outermost middleware stays the one whose docstring requires it. One values key,
+`gateway.lifecycle.drainFilePath`, feeds both the hook and `HEADROOM_DRAIN_FILE`, so the two
+halves cannot disagree about where the sentinel lives.
+
+**Reproduced on a laptop, at the cost of one insight** — `scripts/endpoints_proxy.py` and
+`scripts/rollout_repro.sh`. Two gateway containers sharing one database, a sixty-line
+kube-proxy that pins established connections and points new ones at the replacement, the
+real load loop across the switch. The first version measured **zero drops on the broken
+build**, and that null result is the finding: `httpcore` checks whether a pooled socket has
+become readable before it reuses one, so on loopback the server's FIN always wins and the
+client quietly opens a new connection. The race window is one RTT. With 2 ms of emulated
+latency on the close path:
+
+```
+baseline   12150 requests   2 dropped   t=17.0s   RemoteProtocolError: Server disconnected…
+baseline   12142 requests   1 dropped   t=17.0s   ReadError
+baseline   12372 requests   1 dropped   t=17.0s   RemoteProtocolError: Server disconnected…
+drain      12087 requests   0 dropped
+drain      12108 requests   0 dropped
+drain      12359 requests   0 dropped
+```
+
+Three for three, against three for three, and the last line of each arm is from the committed
+scripts rather than from a scratch copy.
+
+**The instrument lesson (H-092).** §11's first run inherited `--timeout 15.0`, the
+mock-tuned default, against 27B inference that takes 12-16 s to first token — and scored
+**fourteen legitimate completions as `dropped`**. Run 2 with `--timeout 60`, GPU killed
+mid-run: 92/92, `dropped: 0`. Both files stay committed. The runbook now passes `--timeout`
+explicitly in both §8 and §11, and the flag's `--help` carries the story so the next person
+to point the loop somewhere new reads it while they are choosing.
+
+**Two smaller §11 fixes.** The Terminal C watch used `jq '.rows[]'` against `/admin/usage`,
+which answers a bare array — it printed nothing, silently. Now `.[]`.
+
+### Deferred
+
+**Run 3 is the operator's, and it is not optional.** Everything above is a mechanism proved
+keylessly and a race reproduced at 2 ms on loopback. The claim §P10 makes is about a rolling
+upgrade in us-east-1, and it is unproven until §8 reads `dropped: 0` there. The exact
+commands are in `deploy/k8s/README.md` §8 under "Run 3", including the part that is easy to
+get wrong: the upgrade that *rolls the fix out* is measured by the old build, so the run that
+counts is the upgrade after it, with draining pods on both sides.
+
+**The residual is real and named.** A connection idle in a client's pool for the whole drain
+window and first reused in the milliseconds after SIGTERM is still broken, because nothing
+ever handed it a `Connection: close` to act on. No server-side change closes that. If run 3
+catches one, that is the residual and it goes in the log in those words rather than being
+re-run until it flatters.
+
+### Deviations
+
+**A `docker-compose.yml` change in a Kubernetes fix.** `HEADROOM_DRAIN_FILE` is now set for
+the compose gateway too. It changes nothing locally — nothing writes the sentinel — and it is
+what makes the cluster's race reproducible on a laptop, which is the difference between a fix
+and a plausible fix. Called out because it touches a file no other part of this work needed.
+
+**Two new files in `scripts/`.** The repro rig, under the same rule as the other three: it
+drives the public HTTP API, writes no SQL, and spends nothing. It is a diagnostic rather than
+a test, so it is not in the pytest gate; what *is* in the gate is the mechanism it exercises
+(`tests/test_drain.py`, nine tests) and the chart-to-code agreement it depends on
+(`tests/test_deploy_k8s.py`, three more).
+
+### The keyless gate
+
+```
+uv run ruff check .          All checks passed!
+uv run ruff format --check . 178 files already formatted
+uv run mypy                  Success: no issues found in 172 source files
+uv run pytest                1402 passed, 2 deselected, 1 warning in 22.12s
+```
+
+---

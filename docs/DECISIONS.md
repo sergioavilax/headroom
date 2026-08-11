@@ -5781,3 +5781,169 @@ is failing continuously prints a summary rather than a transcript. And the exit 
 claim: **0 if nothing was dropped, 1 otherwise.**
 
 ---
+
+## H-091 — The rolling upgrade's last dropped request is a keep-alive race, and more sleep cannot reach it (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §8 measured what H-090 built the instrument for, and the answer was not zero. Two
+runs, ten minutes each, four streamed requests in flight:
+
+```
+run 1  preStopSleepSeconds=5    8331 requests   1 dropped   t=87s          max_gap 402 ms
+run 2  preStopSleepSeconds=15   8326 requests   2 dropped   t=77s, t=83s   max_gap 258 ms
+```
+
+Both runs dropped exactly one request per replaced pod, and every drop read
+`RemoteProtocolError: Server disconnected without sending a response.` `max_gap_ms` stayed in
+the low hundreds throughout, so there was no outage window at any point — H-090's second number
+earning its place by ruling something out. **Tripling the sleep changed nothing**, and that is
+the whole diagnosis in one observation: a knob that does not move the number is not attached to
+the problem.
+
+**What it was not.** The old pods exit in `Error`, not `Completed`, which looks like a container
+that never shut down gracefully at all — and the image's entrypoint is
+`uv run --no-sync uvicorn …`, so the obvious suspect was `uv` sitting at PID 1 and eating
+SIGTERM. Reproduced against compose, that suspect is innocent on every count:
+
+```
+$ docker stop -t 40 headroom-gateway-1
+INFO:  Shutting down
+INFO:  Waiting for application shutdown.
+INFO:  Application shutdown complete.          ← the H-027 ledger drain ran
+INFO:  Finished server process [9]
+$ docker inspect -f '{{.State.ExitCode}}' headroom-gateway-1
+143
+```
+
+`uv` catches SIGTERM (`SigCgt` in `/proc/1/status` has bit 15 set), forwards it to the child,
+and propagates its status. uvicorn runs its full graceful shutdown. The lifespan's
+`gateway.aclose()` fires — that is the "Application shutdown complete" line, and it is H-027's
+promise being kept. The 143 is uvicorn's `Server.capture_signals()` deliberately re-raising the
+signal it shut down for, so that a parent sees "terminated by SIGTERM" the way Unix expects;
+Kubernetes renders any non-zero exit as `Error`. **The status is cosmetic and the clue was a red
+herring** — written down because it is the kind of clue that costs an afternoon, and because the
+runbook now says so where an operator will read it.
+
+**What it is.** A pod is sent SIGTERM and removed from Endpoints at the same instant. The preStop
+sleep exists for the gap that opens on the *new connection* side while kube-proxy catches up. It
+has no reach at all over a connection that already exists: conntrack pins an established flow to
+the pod it was given to, Endpoints has no say in it, and so a client holding keep-alive
+connections spends the entire sleep sending requests to the pod that is about to stop. When
+SIGTERM finally lands, uvicorn closes those connections, and whatever the client had already
+written onto one is answered by a FIN.
+
+That is why the sleep length is irrelevant. It is not a window in which anything gets fixed; it
+is a window in which the same doomed connections stay busy.
+
+**Reproduced, at the cost of one insight.** A first laptop rig — two gateway containers, a
+sixty-line kube-proxy that pins established connections and points new ones at the replacement,
+the real load loop across the switch — measured **zero drops** on the build that drops one per
+pod in us-east-1. That null result is itself the finding: `httpcore` checks whether a pooled
+socket has become readable before it reuses it, so on loopback the server's FIN always wins the
+race and the client quietly opens a new connection instead. **The race window is one RTT.** With
+2 ms of emulated RTT on the close path the rig reproduces the cluster exactly, error string and
+all:
+
+```
+RTT 0 ms   baseline   12111 requests   0 dropped                    ← the instrument, not the gateway
+RTT 2 ms   baseline   12150 requests   2 dropped   t=17.0s   RemoteProtocolError: Server disconnected…
+RTT 2 ms   baseline   12142 requests   1 dropped   t=17.0s   ReadError
+RTT 2 ms   baseline   12135 requests   2 dropped   t=17.0s   RemoteProtocolError: Server disconnected…
+```
+
+**Decision — a lame-duck drain: `preStop` touches a sentinel, and a draining pod answers
+`Connection: close`.** The client reads the header, retires that connection itself, and opens the
+next one — which Endpoints has by then pointed at a healthy pod. By the time SIGTERM arrives
+there is nothing left to break, and the sleep is finally doing work: it is the window in which
+pooled connections retire themselves, one response at a time. Same rig, same 2 ms:
+
+```
+RTT 2 ms   drain      12087 requests   0 dropped
+RTT 2 ms   drain      12108 requests   0 dropped
+RTT 2 ms   drain      12074 requests   0 dropped
+```
+
+Three for three, against three for three.
+
+**Why this layer.** `Connection: close` is the only signal in HTTP/1.1 that means "retire this
+connection", and the only one a client acts on *before* the connection goes away — every other
+candidate is the client inferring something after the fact. It is a hop-by-hop header and an
+ASGI app is not generally supposed to set one; uvicorn is explicit about this one, reading the
+app's response headers and setting `keep_alive = False` on `connection: close` in both of its
+HTTP implementations. Middleware and not a route, because it has to apply to every response a
+draining pod produces, including the ones no handler wrote.
+
+**Why a sentinel file.** A route would need a credential, and an uncredentialled localhost-only
+route is a new piece of security surface bought for a `touch`. SIGUSR1 would have to survive
+`uv run`'s signal forwarding, which is one more thing to be sure of. A file is what `preStop` can
+already write with the shell it already runs — and one values key feeds both the hook and the
+container's `HEADROOM_DRAIN_FILE`, so the two cannot disagree about where it lives.
+
+The switch **latches**: once the sentinel has been seen the answer is yes forever. A pod in its
+preStop hook is not coming back, and a switch that could flip off would turn a deleted file into
+silently resumed keep-alives.
+
+**The residual, stated rather than rounded away.** A connection that sits idle in a client's pool
+for the whole drain window and is first reused in the milliseconds after SIGTERM is still broken,
+because nothing ever handed it a `Connection: close` to act on. Busy pools do not have such
+connections — every one of them gets a response, and every response retires it — so the race is
+narrowed to a window that requires a client to be idle and active at once. No server-side change
+closes it completely. The honest claim is "no drops measured", not "no drop possible".
+
+**Alternatives considered.** *Raise the sleep again* — run 2 already falsified that, and a knob
+that does not move the number wants removing, not turning. *`--timeout-graceful-shutdown`* —
+bounds how long uvicorn waits for in-flight work, which is a different property; nothing here was
+still in flight, and the logs above show the shutdown completing in well under a second.
+*Lower `--timeout-keep-alive`* — closes idle connections sooner, and under continuous load no
+connection is ever idle long enough for it to fire. *An exec-form entrypoint so uvicorn is PID 1*
+— fixes nothing, because signal delivery was never broken; it would cost `uv run`'s environment
+resolution to buy a cosmetic exit code. *Retry in the client* — correct, and not ours to ship:
+the drop lands in somebody else's httpx, and a gateway cannot require its callers to be
+well-behaved. *Declare it irreducible at the server* — the honest answer right up until the rig
+reproduced it, and not afterwards.
+
+**Consequences.** `headroom/api/drain.py`: one file, two small classes, added to the middleware
+stack *inside* `RequestContextMiddleware` so the outermost middleware stays the one whose
+docstring requires it. `docker-compose.yml` sets `HEADROOM_DRAIN_FILE` as well, so the laptop and
+the cluster differ in the number of pods and nothing else — which is what makes the rig runnable
+by anyone with Docker (`scripts/endpoints_proxy.py`, `scripts/rollout_repro.sh`). The chart's
+preStop hook grew a `touch` before its `sleep`, `values.yaml` grew `drainFilePath`, and
+`deploy/k8s/README.md` §8 now tells the operator that `Error` on a terminating pod is expected
+and what it means.
+
+---
+
+## H-092 — A load loop's default timeout is an assumption about the model behind it (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §11 points H-090's loop at the operator's two 4090s instead of at the MockProvider,
+and changes `--model` and `--dialect` to do it. It did not change `--timeout`, which defaults to
+15 seconds — a number sized against a mock whose p99 is under 100 ms. Non-streamed 27B inference
+on those GPUs takes 12-16 seconds to first token. The first run scored **fourteen legitimate
+completions as `dropped`**, and the failover demo appeared to have failed.
+
+It had not. Run 2 with `--timeout 60`, GPU killed mid-run: **92 requests, 92 ok, 0 dropped.** Both
+files are committed — `15a-failover-loop-run1-timeout15.json` beside `15-failover-loop.json` —
+because a phase log that keeps only the run that worked is a phase log nobody can check.
+
+**Decision.** The runbook sets `--timeout` explicitly wherever the loop is pointed at a real
+model, and the flag's `--help` now says what the default is tuned to and what a wrong one does to
+a measurement. The default itself stays at 15 seconds: it is right for the mock chain, which is
+what the loop is used against everywhere except this one section, and a default sized for the
+slowest imaginable backend would stop H-090's negative control — a port with nothing listening,
+40 requests, 40 dropped — from ever firing in reasonable time.
+
+**The general shape, which is why this has a number.** H-090 built an instrument careful enough
+to tell a budget refusal from an outage, and then the one parameter that decides what counts as
+an answer at all was left at a value nobody had re-derived for the system under test. **Per-run
+caps are sized empirically, never guessed** is invariant 5, and it is about money; this is the
+same scar one axis over. An instrument measures the instrument unless every constant in it has
+been checked against the thing it is pointed at.
+
+**Consequences.** `scripts/load_loop.py`'s `--timeout` help text carries the story, so the next
+person to point the loop somewhere new reads it at the moment they are choosing. §11's command
+passes `--timeout 60`. The evidence README keeps both runs and says which is which.
+
+---

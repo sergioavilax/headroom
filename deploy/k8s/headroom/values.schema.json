@@ -98,7 +98,10 @@
         "lifecycle": {
           "type": "object",
           "additionalProperties": false,
-          "properties": { "preStopSleepSeconds": { "type": "integer", "minimum": 0 } }
+          "properties": {
+            "drainFilePath": { "type": "string", "minLength": 1 },
+            "preStopSleepSeconds": { "type": "integer", "minimum": 0 }
+          }
         },
         "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
         "podAntiAffinity": { "type": "string", "enum": ["preferred", "off"] },

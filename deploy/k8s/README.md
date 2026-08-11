@@ -507,12 +507,15 @@ docker push "$GATEWAY_REPO:p10"
 > the evidence README.
 
 **Terminal A — the loop.** Ten minutes, four requests in flight, streamed, which is the
-harder test: an in-flight stream is what a terminating pod is most able to break.
+harder test: an in-flight stream is what a terminating pod is most able to break. `--timeout`
+is explicit because the default is tuned to the mock provider and a timeout is an assumption
+about the model behind it (H-092); against `mock-` models 15 s is right, and saying so here
+is what stops §11's mistake being made twice.
 
 ```bash
 uv run python scripts/load_loop.py \
   --base-url "$GATEWAY" --key "$MOCK_KEY" \
-  --duration-s 600 --concurrency 4 --interval-ms 200 --stream \
+  --duration-s 600 --concurrency 4 --interval-ms 200 --stream --timeout 15 \
   --label "rolling-upgrade" --out /tmp/p10-load-loop.json
 ```
 
@@ -534,6 +537,14 @@ kubectl -n headroom get pods -w
 *Expected in C:* a third pod appears and becomes Ready before an old one is touched
 (`maxSurge: 1`, `maxUnavailable: 0`), then the same again. At no point are fewer than two
 pods Ready.
+
+> **The terminating pods exit `Error`, and that is correct.** It looks exactly like a
+> container that never shut down gracefully, and it is not: uvicorn re-raises the signal it
+> shut down for so that a parent sees "terminated by SIGTERM" the way Unix expects, the
+> process therefore exits 143, and Kubernetes renders any non-zero exit as `Error`. The
+> shutdown itself is clean and the H-027 ledger drain runs — `kubectl -n headroom logs
+> <old-pod> --previous | tail -4` shows `Application shutdown complete` if you want to see
+> it. H-091 has the full autopsy; it cost an afternoon of suspecting the entrypoint.
 
 *Expected in A*, when the ten minutes are up:
 
@@ -564,6 +575,66 @@ helm history headroom -n headroom
 ```
 
 → `09-load-loop.json`, `10-rollout.txt`, `11-helm-history.txt`
+
+### What the first two runs found, and what changed because of it
+
+They did not read zero, and the paragraph above is why they are still here:
+
+```
+run 1  preStopSleepSeconds=5    8331 requests   1 dropped   t=87s          max_gap 402 ms
+run 2  preStopSleepSeconds=15   8326 requests   2 dropped   t=77s, t=83s   max_gap 258 ms
+```
+
+One drop per replaced pod, every one of them
+`RemoteProtocolError: Server disconnected without sending a response.`, and **tripling the
+sleep changed nothing** — which is the whole diagnosis. The sleep covers the race on the
+*new connection* side while kube-proxy catches up; it has no reach at all over a connection
+that already exists, because conntrack pins an established flow to the pod it was given to
+and Endpoints has no say. A client holding keep-alive connections spends the entire sleep
+talking to the pod that is about to stop, and loses whatever it had written when uvicorn
+closes them.
+
+So `preStop` now touches a sentinel file before it sleeps, and a pod that has seen that
+sentinel answers every response with `Connection: close`. Clients retire those connections
+themselves, during the sleep, one response at a time — and open the next one against a pod
+Endpoints has already moved them to. H-091 has the argument and the alternatives; the two
+values are `gateway.lifecycle.drainFilePath` and `gateway.lifecycle.preStopSleepSeconds`.
+
+**It is reproducible without a cluster**, which is what stopped this being guesswork. Two
+gateway containers, a sixty-line kube-proxy that pins established connections, the same load
+loop across the switch — and one round trip of emulated latency, without which the race
+cannot fire at all on loopback because `httpcore` notices the server's FIN before it reuses
+the socket:
+
+```bash
+scripts/rollout_repro.sh baseline   # 1-2 dropped, RemoteProtocolError, at the SIGTERM instant
+scripts/rollout_repro.sh drain      # 0 dropped
+```
+
+### Run 3 — the same measurement, against the fix
+
+Build and push a new image (the drain lives in the gateway, so `p10` is not it), then run
+§8 again unchanged:
+
+```bash
+docker build -t "$GATEWAY_REPO:p10-drain" --build-arg WITH_EMBED=1 .
+docker push "$GATEWAY_REPO:p10-drain"
+
+helm upgrade headroom deploy/k8s/headroom \
+  -n headroom -f deploy/k8s/values.aws.yaml \
+  --set image.tag=p10-drain --wait --timeout 10m
+```
+
+The upgrade that rolls the fix out is itself measured by the *old* build, so run 3 is the
+upgrade *after* it — pods on both sides of that rollout have to be draining pods for the
+claim to mean anything. Roll `p10-drain` on, let it settle, then start the loop in Terminal A
+and upgrade back to `p10` in Terminal B: same chart, same values, two draining pods being
+replaced by two draining pods.
+
+*Expected:* `dropped: 0`, `incidents: []`, `max_gap_ms` in the low hundreds, exit code 0.
+**If it is not zero, that is the result** — the residual H-091 names is a connection idle for
+the whole drain window and first reused in the milliseconds after SIGTERM, and a run that
+catches one has found the thing the decision record says it cannot rule out.
 
 ## 9. The dashboard, served from the cluster — **$0.00**
 
@@ -638,9 +709,18 @@ active device.
 uv run python scripts/load_loop.py \
   --base-url "$GATEWAY" --key "$MOCK_KEY" \
   --model cyankiwi/Qwen3.6-27B-AWQ-INT4 --dialect openai \
-  --duration-s 420 --concurrency 2 --interval-ms 1000 \
+  --duration-s 420 --concurrency 2 --interval-ms 1000 --timeout 60 \
   --label "vllm-failover" --out /tmp/p10-failover-loop.json
 ```
+
+> **`--timeout 60` is not decoration.** The default is 15 seconds, which is sized against a
+> mock whose p99 is under 100 ms; non-streamed 27B inference on the operator's 4090s takes
+> 12-16 seconds to first token. The first run of this section left the default alone and
+> scored **fourteen legitimate completions as `dropped`**, and the failover demo appeared to
+> have failed. It had not — run 2 with `--timeout 60` read 92/92 with a GPU killed mid-run.
+> Both files are committed, `15a-…-run1-timeout15.json` beside `15-failover-loop.json`,
+> because a phase log that keeps only the run that worked is one nobody can check (H-092).
+> If you point this loop at anything else, re-derive the number first.
 
 > §7a's `loops` key is minted with **no** `allowed_models`, deliberately, so it can reach
 > the vLLM chain here as well as the mock chain in §8. A key scoped to `mock-*` would answer
@@ -658,8 +738,9 @@ docker start vllm-a          # or the full `docker run` from docs/vllm.md
 **Terminal C — watch the hops arrive.**
 
 ```bash
+# `/admin/usage` answers a bare array, not an envelope — `.rows[]` silently prints nothing.
 watch -n2 "curl -sS '$GATEWAY/admin/usage?limit=5' -H 'Authorization: Bearer $ADMIN' \
-  | jq -c '.rows[] | {provider, failover_hops, failover_from, failover_error, outcome}'"
+  | jq -c '.[] | {provider, failover_hops, failover_from, failover_error, outcome}'"
 curl -sS "$GATEWAY/admin/providers" -H "Authorization: Bearer $ADMIN" | jq
 ```
 
