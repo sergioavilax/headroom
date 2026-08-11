@@ -7844,3 +7844,59 @@ adds is that the gap is now **enforced by a test** rather than carried in a defe
 **Spend — $0.00.** No provider API was called, no AWS resource was created, and every
 request in the cold-clone run above went to the MockProvider on the operator's own machine.
 Against §0.6's $20 project cap the running total is unchanged at **≈ $8.08–8.12**.
+
+### CI
+
+CI on PR-11 ([run 31548028948](https://github.com/sergioavilax/headroom/actions/runs/31548028948))
+on `3f5fc70`, all **six** jobs green on the first run:
+
+```
+$ gh run view 31548028948 --json status,conclusion,headSha,jobs
+completed  success  sha=3f5fc70
+  success  lint + typecheck
+  success  pytest (postgres + dynamodb-local service containers)
+  success  terraform validates, the Lambda packages, and the chart renders
+  success  ui lint + typecheck + unit tests + build
+  success  ui browser smoke (chromium, stub gateway)
+  success  gateway and ui images build and serve
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 173 source files
+pytest (…service containers) | ===== 1447 passed, 2 deselected, 1 warning in 34.29s =====
+terraform … | Summary: 6 resources found parsing stdin - Valid: 6, Invalid: 0, Errors: 0
+terraform … | Summary: 9 resources found parsing stdin - Valid: 9, Invalid: 0, Errors: 0
+terraform … | both guards fired
+ui lint + typecheck + unit tests + build | ℹ tests 31  ℹ pass 31
+ui browser smoke (chromium, stub gateway) |   8 passed (5.6s)
+gateway and ui images build and serve | gateway healthy
+gateway and ui images build and serve | console healthy
+```
+
+**1447 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of every contract suite executed against the service containers
+rather than skipping (H-012).
+
+**All 32 doc tests ran on the runner**, which is the half that matters for this particular
+file:
+
+```
+$ gh run view 31548028948 --log | grep -c "test_docs.py::.*PASSED"
+32
+```
+
+Thirty-two rather than thirty-one, and the extra one is
+`test_the_claimed_test_count_is_the_number_this_session_collected` — the check that skips
+loudly on a partial run and therefore only ever proves itself somewhere the whole keyless
+suite is collected. **The README's stated test count is now verified on a machine the
+operator does not own, on every pull request**, which is the strongest form the claim can
+take. Nothing in this file reads a network, a model, or an account: every artifact it
+recomputes from is in the repo.
+
+**Zero annotations across all six jobs** (`check-runs/{id}/annotations` is empty for every
+one), and the only `deprecat` line in the whole log is still the
+`StarletteDeprecationWarning` from `fastapi.testclient` that Phase 0 deliberately left
+visible.
+
+No workflow file changed in this phase — the sixth job's three tools, the chart's two
+refusals, and both image smokes are Phase 9's and Phase 10's, running unchanged over a PR
+that touched no code they cover.
