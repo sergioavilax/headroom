@@ -1,0 +1,22 @@
+{{- if .Values.gateway.podDisruptionBudget.enabled }}
+{{- $component := "gateway" -}}
+# The Deployment's `maxUnavailable: 0` protects a *rollout*. This protects everything
+# else: a node drain, a managed-node-group upgrade, a `kubectl delete node`. Without it,
+# draining the one node carrying both gateway pods is an outage that no amount of care in
+# the rollout strategy would have prevented.
+#
+# `minAvailable: 1` rather than `maxUnavailable: 0`: the second spelling would make a
+# drain block forever if the pods could not be rescheduled, which on a two-node cluster is
+# a real possibility and a worse failure than a brief single-replica window.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "headroom.fullname" . }}-gateway
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.gateway.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+{{- end }}

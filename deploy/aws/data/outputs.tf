@@ -20,6 +20,17 @@ output "public_subnet_ids" {
   value       = aws_subnet.public[*].id
 }
 
+output "public_subnet_azs" {
+  description = <<-EOT
+    The availability zone of each public subnet, in the same order as `public_subnet_ids`.
+
+    Added in Phase 10 for `deploy/k8s/render_config.py`: eksctl's `vpc.subnets.public` map
+    is keyed by zone, and the alternative would be an `aws ec2 describe-subnets` call in a
+    generator that is otherwise entirely offline. Terraform already knows, so it says.
+  EOT
+  value       = aws_subnet.public[*].availability_zone
+}
+
 output "private_subnet_ids" {
   description = "Where RDS and the rollup Lambda go: no default route, no way out."
   value       = aws_subnet.private[*].id

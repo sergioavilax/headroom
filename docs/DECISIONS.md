@@ -5270,3 +5270,514 @@ it is. And the two alarm artifacts a reader might think contradict each other �
 spotted.
 
 ---
+
+## H-085 — One load balancer, instance targets, and the console reached by kubectl (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** BUILD_PLAN §P10 asks for the cluster's equivalent of Phase 9's ALB —
+*"locked to the operator's /32 like P9"* — and leaves the form open (*"LoadBalancer
+service / ingress"*). Phase 9 published two listeners on one ALB: 8080 for the gateway,
+3001 for the console, one source address. The literal translation is two `Service`
+objects of type `LoadBalancer`, which is two load balancers at $0.54/day each.
+
+Underneath that sits the question this phase is actually measured on. §P10 also asks for
+*"a rolling `helm upgrade` with zero dropped requests"*, and **whether that is achievable
+is decided by how the load balancer's targets are registered**, not by the rollout
+strategy. A load balancer targeting *pods* has to deregister one and register another on
+every replacement, and the window between "Kubernetes stopped sending it traffic" and "the
+load balancer noticed" is exactly where requests are dropped.
+
+**Decision — one internet-facing Network Load Balancer, fronting the gateway only.**
+
+`gateway.service.type: LoadBalancer` with `loadBalancerSourceRanges` set to the operator's
+`/32`, and the two legacy annotations that make the AWS cloud controller manager — which
+EKS already runs, on the managed control plane — provision an NLB with **instance**
+targets:
+
+```yaml
+service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+```
+
+No AWS Load Balancer Controller, no CRDs, no second IRSA role, no second Helm release.
+
+**Decision — `externalTrafficPolicy: Cluster`, and this is the load-bearing half.**
+
+With instance targets and a `Cluster` policy, the NLB's target set is *the two nodes*, and
+kube-proxy on either node forwards to a Ready pod on either node. So replacing a pod
+changes an `Endpoints` object and changes **nothing** about the load balancer: no
+registration, no deregistration delay, no interval in which the NLB is still sending
+traffic to something Kubernetes has already given up on. The rollout's zero-drop property
+then reduces to three things the chart controls directly — `maxUnavailable: 0`, a readiness
+probe, and a `preStop` sleep long enough for kube-proxy to catch up.
+
+`Local` would preserve the client IP and would make each node's health depend on whether a
+gateway pod happens to be scheduled there — which, on a two-node cluster with two replicas,
+is precisely the state a rolling upgrade passes through.
+
+**Decision — the console is a ClusterIP service, reached with `kubectl port-forward`.**
+
+Phase 9 put it behind the ALB because ECS has no other way to reach a task's port.
+Kubernetes has one, and it is better on both axes that matter here: it costs nothing, and
+the credential guarding it is the cluster's own IAM and RBAC rather than an IP allow-list
+in front of a cleartext listener. The console holds the root admin token for a session
+(H-055), so the stronger door is the right one.
+
+The cost is stated rather than hidden: **this phase's dashboard screenshots have
+`localhost` in the address bar.** `04-pods-svc.txt` names the node each pod is on, so
+"served from the cluster" stays checkable; a second load balancer would have bought a
+hostname in a screenshot for $1.62 across the window.
+
+**A LoadBalancer with no source ranges is refused at render time.**
+`headroom.requireSourceRanges` calls Helm's `fail` when `service.type` is `LoadBalancer`
+and `loadBalancerSourceRanges` is empty. That is `var.home_cidr`'s rule one runtime over —
+no default, because a default of `0.0.0.0/0` publishes a tenant-and-key control plane the
+first time somebody forgets a flag, and a default of somebody's old address fails closed in
+a way that reads like a networking problem. It fires at `helm template`, which is a command
+the runbook runs before `helm install`.
+
+**Alternatives considered.** *Two LoadBalancer services, translating Phase 9 literally* —
+$1.62 across the window to publish a console that shows nothing `curl` will not.
+*An Ingress plus the AWS Load Balancer Controller* — the production answer, and the right
+one for a cluster with several services and a hostname; here it is an IAM policy, an IRSA
+service account, a Helm release, a set of CRDs and an ALB, to put two ports behind one
+address that a `Service` already does. It is also the *fallback* this design documents, so
+the move is a values edit rather than a chart change. *`ip` target mode* — the modern
+default with the LB controller, and it puts pod registration back on the rollout path,
+which is the thing being measured. *NodePort plus a security-group rule* — free, needs no
+controller at all, and it is the documented fallback if the CCM does not provision;
+rejected as the primary because "the ALB-equivalent" is what §P10 asks for and a node's
+public IP is not one.
+
+**Consequences.** The one thing in this phase that no keyless check can verify is whether
+this EKS version still provisions a legacy NLB without the AWS Load Balancer Controller —
+the same position `CREATE EXTENSION vector` held in Phase 9, and the runbook treats it the
+same way: a named expected output, a `describe svc` to read the events, three causes in
+likelihood order, and a fallback. The two annotations live in the generated
+`values.aws.yaml` and **no template in this chart mentions AWS**, which is what keeps the
+alternative a configuration change. And `docs/evidence/p10-eks/`'s teardown order exists
+because of this decision: `helm uninstall` before `eksctl delete cluster`, because the
+controller that deletes this load balancer lives in the control plane, and deleting the
+cluster first orphans it.
+
+---
+
+## H-086 — Three secrets by hand, and no operator to fetch them (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** BUILD_PLAN §0.2 invariant 3 names the mechanism for this phase by hand:
+*"`.env` locally, Secrets Manager on AWS, **Kubernetes Secrets on EKS** — set by the human,
+out of band, leading-space CLI calls."* The phase brief adds the question worth asking
+anyway: External Secrets Operator *"is allowed only if you argue it earns its complexity in
+a 3-day demo"*.
+
+Four credentials exist: the three Phase 9 put in Secrets Manager, and one new one — the
+tailscale auth key the egress proxy joins the tailnet with (H-087).
+
+**Decision — the operator creates two Kubernetes Secrets by hand, and the chart names them.**
+
+```
+ kubectl -n headroom create secret generic headroom-secrets \
+   --from-literal=DATABASE_URL=… --from-literal=HEADROOM_ADMIN_TOKEN=… \
+   --from-literal=ANTHROPIC_API_KEY=…
+```
+
+fetched from Secrets Manager in the same shell, with a leading space, exactly as the Phase
+9 runbook's §4 put them there. The gateway reads them through `valueFrom.secretKeyRef`,
+which is the Kubernetes spelling of the ECS task definition's `secrets` block and has the
+same property: the value is not in the object a `kubectl get deploy -o yaml` prints.
+
+**Decision — the chart declares no `kind: Secret` at all, and that is the strong form.**
+
+H-077 made invariant 3 structural on AWS by having Terraform create secret *containers* and
+never a version. The equivalent here is stronger: there is no template that could render a
+Secret, and `values.schema.json`'s `additionalProperties: false` refuses any key it does not
+know — so `secrets` has exactly `existingSecret` and `keys`, and there is **nowhere a value
+could be written**. Not in a values file, not in a `--set`, not in a rendered manifest.
+`test_the_chart_declares_no_secret_and_has_nowhere_to_put_one` asserts both halves, because
+"there is nowhere" is a property that one helpful template would end.
+
+**Decision — External Secrets Operator is not installed, and here is the argument.**
+
+ESO would be a second Helm release, a set of CRDs, an IRSA role with
+`secretsmanager:GetSecretValue`, a `ClusterSecretStore`, and an `ExternalSecret` per secret
+— to replace one command that runs once, in a window that lasts three days, operated by one
+person who already has the credentials in their shell. It earns its complexity when secrets
+**rotate**, when **more than one person** deploys, or when *"who typed that"* is a question
+somebody has to answer. None of those is true here.
+
+There is a sharper version of the same argument. ESO's benefit is that the value never
+passes through a human's terminal; its cost is that a *fourth* system now holds a path to
+the credentials, and the failure mode of a misconfigured `ClusterSecretStore` is a pod that
+starts with an empty environment variable. Installing it to look thorough is the same shape
+as making the Phase 9 rollup a cron task to save $0.48/day and calling the Lambda gap
+closed — decoration in the opposite direction. **What production adds is stated in the
+runbook instead**, in the paragraph that also says what a Kubernetes Secret actually is:
+base64 in etcd, not encryption.
+
+**Decision — the tailscale key is ephemeral, pre-approved, and tagged.** Ephemeral so the
+device disappears from the tailnet when the pod does, which is what stops this phase leaving
+something on somebody's network after §14. Pre-approved because a pod cannot click a button.
+Tagged, so the ACL grants it the two ports it needs rather than everything the operator's own
+user can reach.
+
+**Alternatives considered.** *External Secrets Operator* — above. *The Secrets Store CSI
+driver with the AWS provider* — the same shape, one layer lower, plus a volume mount and a
+`SecretProviderClass`; it also mounts secrets as files, which would mean the gateway reading
+its configuration from a path instead of the environment it reads everywhere else — code
+written for a deployment, which H-077 declined. *A `Secret` template in the chart fed by
+`--set`* — puts the value in `helm get values`, in the release's own stored manifest, and in
+one shell history; strictly worse than the command it replaces. *EKS Pod Identity plus the
+gateway reading Secrets Manager itself at startup* — genuinely good, and it is a change to
+`headroom/` in a deploy phase.
+
+**Consequences.** The three secret **key names** are now a fourth place the gateway's
+environment-variable names have to be spelled correctly —
+`test_the_chart_sets_every_variable_the_ecs_task_definition_sets` is what keeps compose, the
+ECS task definition and this chart in step. Rotating a secret means re-running one `kubectl
+create secret` and restarting the deployment; the runbook says so. And the namespace is
+created by `eksctl` rather than by Helm, because the IAM service account it makes in §4 has
+to land somewhere — which is why §5 can create secrets before §6 installs anything.
+
+---
+
+## H-087 — Tailscale reaches home as one egress pod, not as a route into the cluster (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** BUILD_PLAN §P10 asks for *"the two-vLLM failover demo pointed at the cluster
+gateway (tailscale reaches home)"*. Four words of specification for the only part of this
+phase with no precedent anywhere in the repo: a pod in `us-east-1` opening a TCP connection
+to a container on the operator's desk.
+
+The constraint that rules most designs out is invariant 7. `headroom/` is not changed to
+serve a deploy phase — that is the rule Phase 9 kept when it read its alarms off a log line
+the gateway had emitted since Phase 1, and the rule H-028 kept when it refused to
+re-serialise a request body to close a real metering gap. Whatever reaches home has to leave
+`VLLM_BASE_URL` meaning what it means in `docker-compose.yml`: a URL the gateway dials.
+
+**Decision — one `Deployment` running the tailscale container in egress-proxy mode, with a
+ClusterIP `Service` in front of it carrying both vLLM ports.**
+
+```yaml
+TS_TAILNET_TARGET_IP: 100.x.y.z   # the machine the two vLLM containers publish on
+TS_USERSPACE: "false"             # the DNAT below is an iptables rule
+capabilities: { add: [NET_ADMIN], drop: [ALL] }
+```
+
+Every connection arriving at the pod's own IP is forwarded to that tailnet address, port for
+port. The Service publishes 8010 and 8011 — `vllm_a` and `vllm_b`, the standing two-instance
+topology `docs/vllm.md` documents — and the chart sets
+`VLLM_BASE_URL=http://…-vllm:8010` and `VLLM_B_BASE_URL=http://…-vllm:8011`.
+
+**So `config/routing.yaml` is unchanged, `headroom/` is unchanged, and the demo is a `docker
+kill` at home and nothing at all in the cluster.** The gateway dials a name; that the name
+resolves to a proxy rather than to `host.docker.internal` is a fact about the deployment.
+
+**Both instances are on one machine, so one proxy serves both** — which is what makes a
+single pod and a two-port Service the whole of it. A second home host would be a second
+Deployment, not a redesign.
+
+**Decision — kernel networking, one capability, no host path.** `TS_USERSPACE=false` is
+required rather than preferred: the forward *is* an iptables DNAT rule, and userspace mode
+has no netfilter to write one into. What userspace mode offers instead is a SOCKS5 and an
+HTTP proxy — and using those would mean setting `HTTP_PROXY` on the gateway container, which
+routes *all* its outbound HTTP through the tailnet unless a `NO_PROXY` list is maintained
+against every provider it might ever call. That is configuration written for a deployment,
+and it fails silently and in the worst direction: an Anthropic request quietly leaving
+through somebody's home connection.
+
+**Decision — no probe on the egress pod.** The only probe worth writing would open a TCP
+connection to 8010, which is a probe of the operator's home network over the internet. A pod
+that went `NotReady` because a 4090 was restarting would remove the vLLM path from DNS at
+exactly the moment the demo is about restarting a 4090 — and the gateway already has the
+right instrument for a provider that will not answer, which is H-052's circuit breaker.
+`strategy: Recreate` for the same family of reason: two pods carrying one tailnet hostname
+produce a second device with a `-1` suffix and a moment where either could serve.
+
+**Alternatives considered.** *The Tailscale Kubernetes Operator* — the right answer for a
+cluster that lives longer than three days: an `ExternalName` Service with a
+`tailscale.com/tailnet-fqdn` annotation, and the operator builds the proxy for you. It is a
+Helm release, a set of CRDs, and an OAuth client, for a Deployment and a Service.
+*A subnet router at home advertising the LAN, plus tailscale on every node* — a DaemonSet
+with `NET_ADMIN` and `hostNetwork`, one tailnet device per node, and cluster-wide routing
+changes; it makes every pod able to reach the operator's house, which is a much larger grant
+than the gateway needs. *A SOCKS5 or HTTP proxy plus `HTTP_PROXY` on the gateway* — above.
+*Publishing the vLLM instances on the internet behind a home IP* — no. *Give up and run the
+failover demo against the mock chain* — `scripts/chaos_smoke.py` already does exactly that
+from outside, and it would drop the half of §P8.H3 that needed real hardware.
+
+**Consequences.** The tailnet path is the one thing in this phase that depends on the
+operator's *house* rather than on AWS, so the runbook pre-flights it on Day 1 rather than
+discovering it on Day 3 — and names the failure that actually happens, which is not
+tailscale but the Windows host firewall declining inbound connections on the Tailscale
+interface for ports Docker has published on `0.0.0.0`. `vllm.enabled` defaults to **false**,
+so `helm template` with no values needs no tailnet and no auth key, and the chart renders in
+CI. And the egress pod is the one component here with no equivalent in Phase 9, which is why
+`14-tailnet-path.txt` is a capture of its own: a curl from inside the cluster reaching a
+model on a desk is the whole claim in one line.
+
+---
+
+## H-088 — The chart's defaults are local; AWS is generated, and the cluster config is committed (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P10 asks for *"a Helm chart for the gateway + ui: values for image, secrets
+refs, resource requests, HPA optional-off"*, *"EKS via eksctl (2 small managed nodes), config
+file committed"*, and — the clause that decides the shape of all of it — *"design how the
+chart consumes the data layer's identifiers (values file the operator fills from terraform
+output — provide the exact command that generates it)"*.
+
+There are now **three** descriptions of one gateway: `docker-compose.yml`,
+`deploy/aws/compute/ecs.tf`, and this chart. Nothing in any toolchain compares them, and a
+variable added to one and not the others produces a gateway that starts, serves, and behaves
+differently in one environment, silently.
+
+**Decision — the shipped `values.yaml` is the *local* configuration, and it names no cloud.**
+
+`helm template deploy/k8s/headroom` with no `-f` renders a chart that installs on any
+cluster and reaches nothing outside it: ClusterIP services, no annotations, no tailnet,
+placeholder image repositories. That is what lets CI lint and render it keylessly, and it is
+the same split `config/routing.yaml` already makes — the committed file names things, the
+environment supplies values. `test_the_defaults_name_no_cloud_at_all` holds it.
+
+**Decision — `deploy/k8s/render_config.py` writes both environment files from
+`terraform output -json`, and `make k8s-config` is the command §P10 asks for.**
+
+- `deploy/k8s/eksctl/cluster.yaml` — **committed**, because §P10 says so and because
+  committing it makes drift visible: the runbook's Day 1 regenerates it and expects
+  `git diff` to be **empty**, which is the answer to *"is the data layer still the one this
+  cluster was configured against"*. It carries VPC, subnet and security-group ids and two
+  table ARNs — identifiers rather than credentials, and the same class of thing
+  `docs/evidence/p9-aws/01-data-outputs.txt` already publishes.
+- `deploy/k8s/values.aws.yaml` — **gitignored**, because it carries the operator's home
+  CIDR and a tailnet address. Exactly `terraform.tfvars`'s rule, one directory over.
+
+The generator reads only *published outputs*, never state internals, and its own
+`REQUIRED_OUTPUTS` list is checked against `deploy/aws/data/outputs.tf` by
+`test_every_data_layer_output_the_k8s_config_reads_is_one_the_data_layer_publishes` — the
+keyless half of the check Terraform performs for `deploy/aws/compute` (H-074). It reads
+local state and makes no AWS call, which is what lets Claude Code run it under invariant 2.
+
+**Decision — the two Kubernetes subnet tags go in the *data* root's Terraform.**
+
+`kubernetes.io/cluster/headroom = shared` and `kubernetes.io/role/elb = 1` on the two public
+subnets. `eksctl` tags subnets it creates and does not tag subnets it is handed, so on an
+existing VPC this is somebody's job; putting it in Terraform makes it a reviewable line
+rather than an `aws ec2 create-tags` nobody records, and means the tags are destroyed with
+the subnets. It is the data layer's **one** change in this phase, it is an in-place update,
+and the runbook expects `Plan: 0 to add, 2 to change, 0 to destroy` and says to stop if it
+says anything else.
+
+Without the second tag, a `Service` of type LoadBalancer is created, the cloud controller
+manager finds no eligible subnet, and `EXTERNAL-IP` stays `<pending>` for as long as anyone
+is willing to watch it — with the reason only in a `kubectl describe svc` event.
+
+**Decision — `values.schema.json`, with `additionalProperties: false`.**
+
+Helm validates every `install`, `upgrade`, `template` and `lint` against it. The strictness
+is the point rather than tidiness: a mistyped `loadbalancerSourceRanges` would otherwise
+merge in as a new key, leave the real one empty, and publish an admin API to nobody or to
+everybody depending on which template read it. This is H-014's `extra="forbid"` one runtime
+over — the loader refuses, rather than a reviewer noticing. Its trap is the mirror image and
+has its own test: a value added to `values.yaml` without a schema entry makes helm refuse to
+render the chart at all, so `test_the_schema_knows_every_value_the_chart_ships` catches it on
+the pull request instead of at `helm install`.
+
+**Decision — a `pre-install,pre-upgrade` hook Job runs the migrations.** BUILD_PLAN §P9's
+standard applied one runtime along: the same runner everywhere, same code local and prod. It
+costs a few seconds at the front of an upgrade and costs no requests — the old pods are still
+serving — and against the schema Phase 9 already applied it reads `up to date`, which is the
+confirmation that would catch a chart pointed at the wrong database *before* any traffic
+reached it.
+
+**Alternatives considered.** *A values file the operator fills in by hand* — the brief's own
+phrasing, and it is a dozen identifiers copied by eye at the start of a long session.
+*Reading the data layer's state directly rather than its outputs* — fewer moving parts, and
+it reaches past the published interface H-074 made a point of. *A `values.aws.yaml` committed
+with the home CIDR redacted* — a redacted file is a file somebody eventually un-redacts.
+*Two charts, one per component* — the gateway and the console are installed together,
+upgraded together and torn down together; two releases would be two things to keep in step
+for no separation anybody wants. *A `Chart.yaml` dependency on a community chart* — nothing
+here is generic enough to be worth someone else's abstraction.
+
+**Consequences.** Adding a value now means touching three files — `values.yaml`, the
+schema, and a template — which is the intended friction and the same shape H-021's storage
+interface has. `helm lint` runs in CI along with `helm template | kubeconform`, which is the
+whole of what a machine can say about a chart it will never install; the two `fail` guards
+are asserted *as refusals* in the same job, because a guard that stopped guarding is
+invisible. And one footgun is recorded in `.helmignore` itself, because it cost the first
+lint of this chart: **helm inverts gitignore's `!`** — where git reads `!foo` as "keep foo
+after all", helm reads it as "ignore everything that does *not* match foo", so one negation
+line excluded `Chart.yaml` and the entire templates directory and the error read
+`[ERROR] templates/: Chart.yaml file is missing`.
+
+---
+
+## H-089 — Two fixed nodes, an HPA that ships off, and the arithmetic that says the pods fit (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P10 fixes the node group — *"2 small managed nodes"* — and asks for *"HPA
+optional-off"*. Neither is a free choice once the numbers are written down, and the number
+that decides both is what a rolling upgrade needs at its moment of maximum demand.
+
+**Decision — `t3.medium` × 2, and `t3.small` is too small.**
+
+A `t3.small` is half the price and has 2 GiB, of which roughly 1.5 GiB is schedulable. The
+gateway image carries CPU torch and `bge-small-en-v1.5`'s weights (L6), and a rolling upgrade
+with `maxSurge: 1` puts **three** gateway pods in the cluster at once. The failure mode of
+getting this wrong is not an error: it is a pod in `Pending`, a rollout that never completes,
+and a `helm upgrade --wait` that times out fifteen minutes later pointing at nothing in
+particular.
+
+So the arithmetic is done in the suite rather than in somebody's head.
+`test_every_pod_this_chart_schedules_fits_on_the_node_group_it_targets` reads the instance
+type out of `deploy/k8s/eksctl/cluster.yaml` and the requests out of `values.yaml`, models
+EKS's allocatable pessimistically (1800m and 3300 MiB against a nominal 2000m and 4096 MiB —
+the kubelet reserve is `255Mi + 11Mi × max_pods` plus a 100Mi eviction threshold) and the
+DaemonSets that are already there, and asserts two separate things:
+
+1. the whole demand fits across the node group, **counting the surge pod**;
+2. **two gateway pods fit on one node** — because the anti-affinity is `preferred`, so during
+   an upgrade one node carries two, and a cluster-wide sum that balanced would still deadlock.
+
+The sabotage is the realistic one: raising the gateway's memory request to the 2048 MiB its
+Fargate task had turns clause 2 red.
+
+**Decision — requests are small and limits are not, deliberately.** 250m/512Mi requested,
+1000m/1536Mi allowed. The baseline gateway is a couple of hundred megabytes; the CPU torch
+model behind the semantic cache is most of a gigabyte the first time a tenant asks for it.
+Requesting the burst would mean paying for nodes sized for a feature this demo never enables,
+and forbidding it would mean an OOM kill mid-embedding for anyone who did.
+
+**Decision — the HPA template ships, and `autoscaling.enabled` is `false`.**
+
+Off is the only honest setting for this cluster, and for three reasons rather than one:
+
+- An HPA needs `metrics-server`. EKS does not install it and this chart does not bring it, so
+  an HPA enabled here does not fail — it reports `<unknown>/70%` forever, which is the least
+  useful way for a feature to be broken.
+- The node group is two fixed nodes with no Cluster Autoscaler and no Karpenter, so an HPA's
+  real ceiling is whatever fits. **Scaling into `Pending` is not scaling.**
+- Nothing in this phase measures throughput, so a scaling rule would be a knob with no
+  reading behind it. §P8's discipline, applied to a feature rather than to an experiment.
+
+The template exists so that turning it on is a values change rather than a chart change, and
+the two prerequisites are written beside it. One interaction is worth having in the chart
+rather than being rediscovered: when the HPA is enabled the Deployment omits `replicas`
+entirely rather than setting it to `minReplicas`, because a chart that wrote both would hand
+Helm and the HPA the same field to fight over — every `helm upgrade` would scale the fleet
+back down before the HPA scaled it up again. `test_the_hpa_ships_off_and_does_not_fight_helm_over_the_replica_count`
+pins it.
+
+**Decision — two gateway replicas, `preferred` anti-affinity, and a PodDisruptionBudget.**
+Two, because `maxUnavailable: 0` on a single replica still has a window with no Ready pod
+behind the Service — the replacement has to become Ready before the original goes. It is also
+the configuration `gateway_desired_count`'s own comment wanted on ECS and did not buy: H-018
+fixed the auth cache's 5-second TTL as a *cross-process* bound, and one process cannot
+demonstrate a cross-process bound. `preferred` rather than `required`, because a required rule
+would make the surge pod unschedulable on a two-node cluster and turn a safety property into a
+deadlock. The PDB covers what the rollout strategy cannot — a node drain, a managed node group
+upgrade — with `minAvailable: 1` rather than `maxUnavailable: 0`, because the second spelling
+blocks a drain forever if the pods cannot be rescheduled.
+
+**Alternatives considered.** *`t3.small` × 3* — the same money, three nodes to hold one pod
+each, and no room for the surge. *One `t3.large`* — cheaper than two mediums and it makes
+`podAntiAffinity` meaningless and a node failure total. *A Cluster Autoscaler so the HPA has
+somewhere to scale into* — a second controller, an IAM role, and node churn during the exact
+window the zero-drop measurement runs in. *Enable the HPA and install metrics-server to make
+it real* — a third Helm release to make a knob turn in a phase that measures nothing it would
+affect. *Skip the HPA template entirely* — §P10 asks for it, and "we did not write it" is a
+worse answer than "here it is, here is why it is off, and here is what turning it on needs".
+
+**Consequences.** The two allocatable constants in `tests/test_deploy_k8s.py` are `t3.medium`'s
+and the test says so: a different instance type needs different numbers, not a different
+assertion. The node group is `minSize: 2, maxSize: 2` — deliberately not a range, because a
+node group that can grow is a bill that can grow, and nothing in this window wants more nodes.
+And the cluster runs no Ingress controller, no cert-manager, no Prometheus, no service mesh and
+no GitOps controller; each is defensible and each would be another Helm release in a three-day
+window whose job is to show one application deployed correctly.
+
+---
+
+## H-090 — "Zero dropped requests" is a definition before it is a number (Phase 10)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P10 asks for *"a rolling `helm upgrade` with ZERO dropped requests measured by a
+background load loop you provide (script in-repo, output captured)"*.
+
+A zero is only worth reading if the instrument could have produced something else. This
+gateway makes that harder than it looks, because it has two deliberate ways of refusing
+traffic that are the *product working*: a **402** when a tenant is over its cap (H-032) and a
+**429** when it is over its limit (H-038). A loop that scored those as failures would report a
+budget gate as an outage. A loop that scored every non-2xx as fine would report a zero it had
+not earned.
+
+**Decision — three outcomes, and the asymmetry between them is the whole design.**
+
+| | | |
+|---|---|---|
+| **ok** | a 2xx — and under `--stream`, one whose stream reached its terminal marker | |
+| **shed** | a 402 or 429 **carrying `x-headroom-error-source: gateway`** | the gateway meant it |
+| **dropped** | everything else | |
+
+`shed` requires *positive evidence* that the gateway meant it; everything else falls to
+`dropped`. That includes a transport failure with no status line at all — which is the shape a
+dropped request really has across a load balancer, and the case a classifier written around
+status codes forgets — and it includes a **200 whose stream stopped early**, because the status
+line is spent before a mid-stream fault and a caller counting statuses would score half an
+answer as a success. H-008 makes the gateway say so with a terminal error event; this is the
+first thing outside the test suite to read it.
+
+The marker is trustworthy only because of H-038, which stripped the whole `x-headroom-*`
+namespace from every upstream response so that a provider cannot forge one. That decision was
+made two phases before anything needed it; this is what needed it.
+
+**Decision — `max_gap_ms`, because a count cannot see a stall.** A rollout that dropped nothing
+and was unreachable for nine seconds has an error count of zero and is still an outage. The gap
+is the longest stretch of the run with no successful response — **including the stretch before
+the first success and after the last**, so a loop that never recovered reports the whole window
+rather than a small number.
+
+**Decision — `mock-` models by default, and `--model` / `--dialect` for the kill demo.** What a
+rolling upgrade can break is the *gateway's* availability; a provider's own latency and error
+rate in the middle of the measurement is noise from somebody else's system. Cost: $0.00. The
+same three outcomes then point at the operator's vLLM chain for the Day 3 failover demo, which
+is what turns the P6/P7 demo from a thing you watch into a thing with a number.
+
+**Verified before it was handed over**, which is H-081's rule and the reason it exists:
+
+```
+compose stack, 15 s, 4 in flight, streamed : 566 requests, 566 ok, 0 dropped, max_gap 108 ms
+a tenant over its cap                      :  50 requests,  50 shed, 0 dropped, exit 0
+a port with nothing listening              :  40 requests,   0 ok, 40 dropped, max_gap 4024 ms, exit 1
+```
+
+The third line is the one that matters. It is the negative control: without it, "zero dropped"
+is satisfied by an instrument that cannot count.
+
+**Alternatives considered.** *`hey`, `vegeta`, `k6` or `wrk`* — better load generators, and all
+of them classify by status code, which is exactly the distinction this gateway needs made and
+none of them can make: a 402 from a budget gate and a 502 from a dead pod are the same colour.
+*Count only non-2xx* — see above, in both directions. *Score a shed request as a drop, to be
+conservative* — sounds rigorous and makes the number a function of whether anyone was near a cap.
+*Measure from inside the cluster with a Job* — removes the load balancer from the path, which is
+where a rolling upgrade actually drops requests. *Report only a rate* — a rate hides a stall, and
+a stall is what `maxUnavailable: 0` is supposed to prevent.
+
+**Consequences.** `scripts/` gains a third file under the same rule as the first two (H-054's):
+it drives the public HTTP API and writes no SQL. `classify()` is a pure function and is tested
+across every outcome the gateway can produce, including the two easy to get backwards —
+`tests/test_load_loop.py`, which also pins the header name to `headroom/api/proxy.py` and the
+terminal marker to the dialect, because renaming either would silently reclassify every
+deliberate refusal as a dropped request and turn a clean rollout into a failed one with nothing
+red anywhere. The incident list is bounded at two hundred and the counts are not, so a run that
+is failing continuously prints a summary rather than a transcript. And the exit code is the
+claim: **0 if nothing was dropped, 1 otherwise.**
+
+---

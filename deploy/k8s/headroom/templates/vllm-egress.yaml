@@ -1,0 +1,124 @@
+{{- if .Values.vllm.enabled }}
+{{- $component := "vllm-egress" -}}
+{{- if not .Values.vllm.targetIP }}
+{{- fail "vllm.enabled is true but vllm.targetIP is empty: there is nowhere to forward to. `tailscale status` prints the address of the machine running the two vLLM containers (deploy/k8s/README.md section 5)." }}
+{{- end }}
+# ── How a pod in us-east-1 reaches a 4090 on the operator's desk ──────────────
+#
+# BUILD_PLAN §P10: "the two-vLLM failover demo pointed at the cluster gateway (tailscale
+# reaches home)". This is that sentence, as one Deployment and one Service.
+#
+# The tailscale container's `TS_TAILNET_TARGET_IP` is its egress-proxy mode: the pod joins
+# the tailnet as an ordinary device, and an iptables DNAT rule forwards every connection
+# arriving at the pod's own IP to that tailnet address, port for port. The Service in front
+# of it publishes 8010 and 8011 — the two ports the operator's vLLM containers are already
+# published on (docs/vllm.md's standing two-instance topology) — so the gateway's
+# `VLLM_BASE_URL` and `VLLM_B_BASE_URL` are a cluster DNS name where compose puts
+# `host.docker.internal`.
+#
+# Nothing in `headroom/` changes, nothing is advertised into the cluster's routing, no
+# proxy environment variable is set on the gateway, and no CRD is installed. The home side
+# advertises nothing either: it is already a tailnet device, and this pod dials *out* to
+# it.
+#
+# ── Kernel networking, and why it is not optional here ────────────────────────
+# `TS_USERSPACE=false` plus `NET_ADMIN`. The DNAT above is an iptables rule, and userspace
+# mode has no netfilter to write it into — it offers a SOCKS5 and an HTTP proxy instead,
+# which would mean teaching the gateway about a proxy. That is configuration written for
+# a deployment rather than the code that ships, which is the trade H-077 declined.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "headroom.fullname" . }}-vllm
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    # Recreate, not RollingUpdate. Two pods carrying the same tailnet hostname at once
+    # produce a second device with a `-1` suffix and a moment where either could serve —
+    # which is a confusing thing to be looking at during a failover demo.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      containers:
+        - name: tailscale
+          image: "{{ .Values.vllm.image.repository }}:{{ .Values.vllm.image.tag }}"
+          imagePullPolicy: {{ .Values.vllm.image.pullPolicy }}
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vllm.authKeySecret.name }}
+                  key: {{ .Values.vllm.authKeySecret.key }}
+            - name: TS_TAILNET_TARGET_IP
+              value: {{ .Values.vllm.targetIP | quote }}
+            - name: TS_HOSTNAME
+              value: {{ .Values.vllm.hostname | quote }}
+            - name: TS_USERSPACE
+              value: "false"
+            # The container's default is to persist tailscaled's state in a Kubernetes
+            # Secret it creates for itself, which needs RBAC this chart would otherwise
+            # have to grant. Emptied, so state goes to the directory below instead — and
+            # losing it on a restart costs nothing, because the auth key is ephemeral and
+            # the device is meant to be disposable.
+            - name: TS_KUBE_SECRET
+              value: ""
+            - name: TS_STATE_DIR
+              value: /tmp/tailscale
+            # The cluster's DNS is CoreDNS and must stay CoreDNS: accepting the tailnet's
+            # DNS would put MagicDNS in front of `...-gateway.headroom.svc` resolution for
+            # this pod. It has no names to look up anyway — it was handed an address.
+            - name: TS_ACCEPT_DNS
+              value: "false"
+          resources:
+            {{- toYaml .Values.vllm.resources | nindent 12 }}
+          securityContext:
+            capabilities:
+              # The one capability, and it is what the DNAT rule needs. Everything else is
+              # dropped; the container is not privileged and mounts no host path.
+              add: ["NET_ADMIN"]
+              drop: ["ALL"]
+          volumeMounts:
+            - name: state
+              mountPath: /tmp/tailscale
+          # No readiness or liveness probe, deliberately. The only probe worth writing
+          # would open a TCP connection to 8010 — which is a probe of the operator's home
+          # network, over the internet, and a pod that went NotReady because a 4090 was
+          # being restarted would remove the vLLM path from DNS exactly when the demo is
+          # about restarting a 4090. The gateway already has the right instrument for a
+          # provider that will not answer, and it is H-052's circuit breaker.
+      volumes:
+        - name: state
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "headroom.fullname" . }}-vllm
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    # Two ports, one per instance, and the numbers are the ones on the operator's desk:
+    # `vllm_a` on 8010 and `vllm_b` on 8011 (docs/vllm.md). `config/routing.yaml` chains
+    # a to b, so the failover demo is `docker kill vllm-a` at home and nothing at all here.
+    - name: vllm-a
+      port: {{ .Values.vllm.ports.a }}
+      targetPort: {{ .Values.vllm.ports.a }}
+      protocol: TCP
+    - name: vllm-b
+      port: {{ .Values.vllm.ports.b }}
+      targetPort: {{ .Values.vllm.ports.b }}
+      protocol: TCP
+{{- end }}

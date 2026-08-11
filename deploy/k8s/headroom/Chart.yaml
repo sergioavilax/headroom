@@ -1,0 +1,31 @@
+apiVersion: v2
+name: headroom
+description: The Headroom gateway and its operator console, as they run on EKS.
+type: application
+
+# The chart's own version, bumped when the templates change. Deliberately not the
+# gateway's: a chart that fixed a probe timeout has not shipped a new gateway, and
+# conflating the two makes `helm history` a worse record than it should be.
+version: 0.1.0
+
+# What is inside the image, and it matches `pyproject.toml`'s `version`. A `helm upgrade`
+# that changes only `image.tag` leaves this alone, which is correct and is why the runbook
+# reads the *tag* out of `kubectl get deploy -o jsonpath` rather than reading this.
+appVersion: "0.1.0"
+
+# Every API this chart uses has been stable since well before 1.30: `apps/v1`,
+# `autoscaling/v2` (1.23), `policy/v1` PodDisruptionBudget (1.21). The floor is stated so
+# `helm install` refuses on a cluster too old rather than failing on a missing kind.
+kubeVersion: ">=1.30.0-0"
+
+home: https://github.com/sergioavilax/headroom
+sources:
+  - https://github.com/sergioavilax/headroom
+
+keywords:
+  - llm
+  - gateway
+  - proxy
+
+maintainers:
+  - name: Sergio Avila

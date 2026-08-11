@@ -40,6 +40,15 @@ crash.*.log
 kubeconfig
 *.kubeconfig
 
+# Phase 10's Helm values (`make k8s-config`). `deploy/k8s/values.aws.yaml` carries the
+# operator's home CIDR and a tailnet address — machine-specific facts, exactly like the
+# tfvars above, and out of git for the same reason. The `.example` beside it is what a
+# reader sees, and `deploy/k8s/eksctl/cluster.yaml` IS committed: it holds VPC, subnet and
+# security-group ids and two table ARNs, which are identifiers rather than credentials and
+# are already published in `docs/evidence/p9-aws/01-data-outputs.txt`.
+deploy/k8s/values.*.yaml
+!deploy/k8s/values.*.yaml.example
+
 # agent / editor / os
 .claude/
 .idea/

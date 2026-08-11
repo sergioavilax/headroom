@@ -498,4 +498,38 @@ make chaos-smoke BASE_URL=… KEY=…   # the P6 fault vocabulary at a running g
 Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-073 … H-081. Evidence, with its
 provenance discipline, in [docs/evidence/p9-aws/](docs/evidence/p9-aws/).
 
+## On Kubernetes, using the managed services rather than replacing them
+
+The same two images on EKS, with a Helm chart in [`deploy/k8s/`](deploy/k8s/) and a
+three-day runbook in [`deploy/k8s/README.md`](deploy/k8s/README.md). **The data layer is
+not rebuilt as pods**: the cluster goes in the VPC the Terraform above built, its node group
+wears the security group that opens Postgres, and its pods reach DynamoDB through an IRSA
+role scoped to the same two tables the ECS task role was. Using managed services from
+Kubernetes is the realistic architecture, and a Postgres StatefulSet would be a demo of
+Kubernetes rather than a deployment of this.
+
+**The chart's environment is checked against the ECS task definition, not described as
+similar to it.** `tests/test_deploy_k8s.py` parses `deploy/aws/compute/ecs.tf` and asserts
+every variable it sets is a variable the chart sets — including the one that is
+*absent* — so three descriptions of one gateway (compose, ECS, Helm) cannot drift in
+silence. The chart declares no `kind: Secret` and has no field a value could be written
+into; the three credentials arrive in a Secret created by hand from Secrets Manager.
+
+**"Zero dropped requests" is a definition before it is a number.**
+[`scripts/load_loop.py`](scripts/load_loop.py) scores a request `shed` only on positive
+evidence that the gateway meant it — a 402 or 429 carrying `x-headroom-error-source:
+gateway` — and everything else `dropped`, including a connection with no status line and a
+200 whose stream never reached its terminal marker. `max_gap_ms` sits beside the counts,
+because a rollout that dropped nothing and was unreachable for nine seconds has an error
+count of zero and is still an outage.
+
+```bash
+make helm-check       # helm lint + template + kubeconform; no cluster, no credentials
+make k8s-config HOME_CIDR=…/32     # render the eksctl config and values from Terraform
+make load-loop BASE_URL=… KEY=… DURATION=600 STREAM=1
+```
+
+Argued in [docs/DECISIONS.md](docs/DECISIONS.md) H-085 … H-090; the capture list is
+[docs/evidence/p10-eks/](docs/evidence/p10-eks/).
+
 MIT licensed.

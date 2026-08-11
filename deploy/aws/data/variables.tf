@@ -35,6 +35,23 @@ variable "vpc_cidr" {
   default     = "10.42.0.0/16"
 }
 
+variable "eks_cluster_name" {
+  description = <<-EOT
+    The name of the Phase 10 EKS cluster, used only to build the
+    `kubernetes.io/cluster/<name>` tag on the public subnets.
+
+    It lives here rather than in `deploy/k8s/` because the *subnets* are this root's and
+    the tag has to be on them before a `Service` of type LoadBalancer can find anywhere to
+    go. Nothing else in this root reads it, and the cluster itself is created by `eksctl`
+    from `deploy/k8s/eksctl/cluster.yaml` — which
+    `tests/test_deploy_k8s.py::test_the_subnet_tag_names_the_cluster_the_eksctl_config_creates`
+    holds to the same string, because a tag naming a cluster that does not exist is a tag
+    that does nothing and says nothing about having done nothing.
+  EOT
+  type        = string
+  default     = "headroom"
+}
+
 variable "db_instance_class" {
   description = <<-EOT
     RDS instance class. `db.t4g.micro` is the smallest Graviton class Postgres 16 offers
