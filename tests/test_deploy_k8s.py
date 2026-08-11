@@ -196,6 +196,42 @@ def test_the_deployed_gateway_is_not_told_about_an_emulator() -> None:
         assert DYNAMODB_ENDPOINT_ENV not in code_only(path.read_text(encoding="utf-8")), path
 
 
+def test_the_gateway_is_told_its_region_under_both_names() -> None:
+    """The first cluster smoke's failure, pinned (H-094).
+
+    `AWS_REGION` is the documented name; `AWS_DEFAULT_REGION` is the one this botocore's
+    environment resolution actually reads. ECS Fargate injects both, so Phase 9 never had
+    to know the difference — Kubernetes injects neither, and the pod failed with
+    `NoRegionError` while `AWS_REGION` sat right there in the manifest.
+
+    `headroom/db/dynamo.py` now resolves either name itself, so this is belt as well as
+    braces. It stays because deleting the belt is exactly the edit that would look safe.
+    """
+    for name in ("AWS_REGION", "AWS_DEFAULT_REGION"):
+        assert f"name: {name}" in TEMPLATE_CODE, (
+            f"the chart never sets {name}: on Kubernetes nothing else will, and the pod "
+            f"fails with NoRegionError pointing at whichever name it does set"
+        )
+    assert VALUES["aws"]["region"], "one values key feeds both names, so they cannot disagree"
+
+
+def test_dropping_all_capabilities_leaves_the_egress_pod_the_two_it_needs() -> None:
+    """H-093, the other first-contact bug: `drop: ["ALL"]` is right and it is not free.
+
+    `containerboot` creates `/dev/net/tun` when the node's image does not expose it,
+    which needs `MKNOD` — a capability in Docker's default set, so nothing before
+    Kubernetes had to name it. Dropping ALL and adding back only `NET_ADMIN` gives a
+    CrashLoopBackOff (x7, at first install) whose message is about a TUN device.
+    """
+    egress = code_only((TEMPLATES / "vllm-egress.yaml").read_text(encoding="utf-8"))
+    assert 'drop: ["ALL"]' in egress, "the egress pod should still start from nothing"
+    for capability in ("NET_ADMIN", "MKNOD"):
+        assert capability in egress, (
+            f"the tailscale egress pod is not granted {capability}, and with drop-ALL "
+            f"beside it that is a CrashLoopBackOff rather than a lint failure"
+        )
+
+
 def test_the_dynamodb_tables_are_the_names_the_gateway_defaults_to() -> None:
     assert VALUES["aws"]["budgetsTable"] == DEFAULT_BUDGETS_TABLE
     assert VALUES["aws"]["bucketsTable"] == DEFAULT_BUCKETS_TABLE

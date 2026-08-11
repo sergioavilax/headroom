@@ -177,6 +177,49 @@ def test_the_loop_spends_nothing() -> None:
     assert 'prefix: "mock-"' in routing
 
 
+# --- the key, before the first request --------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["", "   ", "\t\n"])
+def test_a_key_that_is_not_a_key_is_refused_before_anything_is_measured(key: str) -> None:
+    """H-095, and the run that paid for it: 8122 requests, 8122 dropped, every one of them
+    `Illegal header value b'Bearer '` — a fresh terminal in which `$MOCK_KEY` had never
+    been exported. Client-side, nothing reached the cluster, nothing was harmed. What it
+    produced was ten minutes and a summary that read exactly like a total outage.
+
+    `parser.error` exits 2, which is neither the 0 of a clean run nor the 1 of a real
+    drop: a script that shells this out can tell "I asked wrong" from "it broke".
+
+    `--duration-s` is bounded only so that *removing the guard* makes this test fail
+    rather than hang: the default is 0, which means "until Ctrl-C", and that is exactly
+    what an unguarded empty key gets you — found by sabotaging this guard and watching
+    the run never come back.
+    """
+    with pytest.raises(SystemExit) as raised:
+        load_loop.main(
+            ["--base-url", "http://gateway.invalid", "--key", key, "--duration-s", "0.1"]
+        )
+
+    assert raised.value.code == 2
+
+
+def test_a_real_key_survives_the_check_with_its_whitespace_trimmed() -> None:
+    """A key pasted with a trailing newline is a key, and must not become a refusal — the
+    guard is against nothing at all, not against clumsy copying."""
+    assert load_loop.checked_key("  hk_abc123\n") == "hk_abc123"
+
+
+def test_the_refusal_says_which_variable_and_where_to_get_it() -> None:
+    """An error that only says "empty" sends an operator to the flag rather than to the
+    export they skipped, at the one moment they are already under time pressure."""
+    with pytest.raises(ValueError) as raised:
+        load_loop.checked_key("")
+
+    message = str(raised.value)
+    assert "Illegal header value" in message, "the symptom they will have already seen"
+    assert "deploy/k8s/README.md" in message, "and where the key is minted"
+
+
 def test_the_marker_the_loop_reads_is_the_one_the_gateway_writes() -> None:
     """Rename the header in `headroom/api/proxy.py` and this loop silently reclassifies
     every deliberate refusal as a dropped request — turning a clean rollout into a failed
