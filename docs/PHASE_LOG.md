@@ -6150,3 +6150,52 @@ for P9 infrastructure: the runbook projects **$3–4** from list price for one d
 stack, with the data layer then running at **~$0.53/day** until Phase 10 destroys it. The
 actual figure goes in this entry after the operator's run, whichever way it lands.
 
+### CI
+
+CI on PR-9 ([run 31450971052](https://github.com/sergioavilax/headroom/actions/runs/31450971052)),
+all **six** jobs green on the first run:
+
+```
+$ gh run view 31450971052 --json conclusion,jobs
+success
+lint + typecheck: success
+pytest (postgres + dynamodb-local service containers): success
+ui lint + typecheck + unit tests + build: success
+ui browser smoke (chromium, stub gateway): success
+terraform validates, and the Lambda package builds: success
+gateway and ui images build and serve: success
+```
+
+**The sixth job is new and is the whole of what CI can honestly say about a deployment it
+will never perform.** `terraform fmt -check`, `init -backend=false`, and `validate` over
+both roots, plus `make lambda-build` — no AWS credential is read anywhere in the workflow
+(`grep -c AWS_ACCESS` over the log returns `0`), the providers come from the registry, and
+`validate` reads no data source. Everything *else* about the deployment is asserted by
+`tests/test_deploy_aws.py` in the `test` job, which holds the `.tf` files to the constants
+the gateway actually uses. Invariant 2 gives the apply to the human; this is the part a
+machine can check.
+
+Building the Lambda package here is not ceremony either: a handler that grew an import of
+`fastapi`, or an `asyncpg` with no wheel for the runtime, now fails on the pull request
+rather than at the apply.
+
+**One annotation, fixed in-branch.** The first run carried a deprecation notice —
+`hashicorp/setup-terraform@v3` targets Node 20 and the runner forces it onto 24. Bumped to
+`v4.0.1`, which is the same class of fix Phase 0 applied to `checkout` and `setup-uv`, and
+for the same reason: an annotation nobody acts on is an annotation nobody reads.
+
+**And one real defect the first run did not catch, fixed in the same push.**
+`aws_security_group.service` carried an inline `egress` block *and* three standalone
+`aws_vpc_security_group_ingress_rule` resources. Both `validate` and `plan` accept that;
+the AWS provider is explicit that it does not survive contact with a second apply, because
+an inline rule set is authoritative and revokes what it does not know about. The group now
+has **no** inline rules at all — the self-referencing ingress (the console reaching the
+gateway) is what forced standalone rules in the first place, and mixing the two styles on
+one group is a rule that vanishes silently on the apply after the one that worked. Every
+other group in both roots is pure-inline; this one is pure-standalone, and the file says
+why.
+
+The `image` job continues to build the **default** gateway image, not the deploy variant:
+`WITH_EMBED=1` is a multi-gigabyte download per run for a build only `docker push` uses,
+and its verification is the hand-run recorded above.
+

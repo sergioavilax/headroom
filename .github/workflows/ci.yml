@@ -164,7 +164,11 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
-      - uses: hashicorp/setup-terraform@v3
+      # v4, not v3: v3 targets Node 20 and the runner forces it onto 24 with a deprecation
+      # annotation. The same class of thing Phase 0 fixed in-branch for `checkout` and
+      # `setup-uv`, and worth fixing for the same reason — an annotation nobody acts on is
+      # an annotation nobody reads.
+      - uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: 1.15.8
           # Without this the action wraps `terraform` in a script that swallows the exit
