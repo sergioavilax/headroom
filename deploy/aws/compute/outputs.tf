@@ -29,7 +29,7 @@ output "gateway_log_group" {
 }
 
 output "rollup_function_name" {
-  description = "aws lambda invoke --function-name this fires the rollup by hand."
+  description = "The name to pass to aws lambda invoke --function-name, to fire the rollup by hand."
   value       = aws_lambda_function.rollup.function_name
 }
 

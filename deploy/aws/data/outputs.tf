@@ -26,7 +26,7 @@ output "private_subnet_ids" {
 }
 
 output "workload_security_group_id" {
-  description = "Join this to be allowed to reach Postgres. Computes tasks and Lambda do."
+  description = "Join this to be allowed to reach Postgres. The compute tasks and the Lambda do."
   value       = aws_security_group.workload.id
 }
 

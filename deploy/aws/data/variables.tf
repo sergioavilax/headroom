@@ -30,7 +30,7 @@ variable "phase" {
 }
 
 variable "vpc_cidr" {
-  description = "The VPCs address space. /16, carved into two public and two private /20s."
+  description = "The VPC address space. /16, carved into two public and two private /20s."
   type        = string
   default     = "10.42.0.0/16"
 }

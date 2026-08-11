@@ -123,6 +123,11 @@ resource "aws_vpc_endpoint" "dynamodb" {
 # empty. The alternative (an ingress rule here naming compute's task group) is the shape
 # that makes a targeted destroy fail with `DependencyViolation` at the worst moment.
 
+# `computes tasks` is the charset strip's missing apostrophe (H-082) and it stays: a
+# security group's description is immutable in AWS, so re-wording it is a *replacement* of
+# a group that RDS's own group references and that this phase's `No changes` plan depends
+# on. A typo is cheaper than replacing a standing group to fix one. It goes when the data
+# layer does, at the end of Phase 10.
 resource "aws_security_group" "workload" {
   name        = "${var.project}-workload"
   description = "Anything in this VPC that may talk to Postgres. Joined by computes tasks and Lambda."

@@ -65,8 +65,10 @@ locals {
 # the bar "would actually page" should be set at.
 
 resource "aws_cloudwatch_metric_alarm" "five_xx_rate" {
-  alarm_name        = "${var.project}-5xx-rate"
-  alarm_description = "More than ${var.alarm_5xx_percent} of requests answered 5xx over five minutes (evaluated above ${var.alarm_5xx_min_requests} requests)."
+  alarm_name = "${var.project}-5xx-rate"
+  # "percent" spelled out: `%` is outside the charset AWS accepts in a description, and the
+  # strip that enforced that charset took the sign with it (H-082).
+  alarm_description = "More than ${var.alarm_5xx_percent} percent of requests answered 5xx over five minutes (evaluated above ${var.alarm_5xx_min_requests} requests)."
 
   comparison_operator = "GreaterThanOrEqualToThreshold"
   threshold           = var.alarm_5xx_percent
@@ -159,7 +161,7 @@ resource "aws_cloudwatch_log_metric_filter" "provider_failures" {
 
 resource "aws_cloudwatch_metric_alarm" "provider_down" {
   alarm_name        = "${var.project}-provider-down"
-  alarm_description = "${var.alarm_provider_failures} or more provider failures in five minutes timeouts, unreachable upstreams, upstream 5xx, or a tripped breaker."
+  alarm_description = "${var.alarm_provider_failures} or more provider failures in five minutes: timeouts, unreachable upstreams, upstream 5xx, or a tripped breaker."
 
   namespace           = local.metric_namespace
   metric_name         = aws_cloudwatch_log_metric_filter.provider_failures.metric_transformation[0].name

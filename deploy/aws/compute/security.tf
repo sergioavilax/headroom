@@ -18,7 +18,7 @@ resource "aws_security_group" "alb" {
   vpc_id      = local.data.vpc_id
 
   ingress {
-    description = "Gateway listener, from the operators network only"
+    description = "Gateway listener, from the home CIDR only"
     from_port   = var.gateway_port
     to_port     = var.gateway_port
     protocol    = "tcp"
@@ -26,7 +26,7 @@ resource "aws_security_group" "alb" {
   }
 
   ingress {
-    description = "Console listener, from the operators network only"
+    description = "Console listener, from the home CIDR only"
     from_port   = var.ui_port
     to_port     = var.ui_port
     protocol    = "tcp"
@@ -61,7 +61,7 @@ resource "aws_security_group" "alb" {
 # two roots is pure-inline; this one is pure-standalone.
 resource "aws_security_group" "service" {
   name        = "${var.project}-service"
-  description = "Fargate tasks: reachable from the ALB, and from each other on the gateways port."
+  description = "Fargate tasks: reachable from the ALB, and from each other on the gateway port."
   vpc_id      = local.data.vpc_id
 
   tags = { Name = "${var.project}-service" }
@@ -77,7 +77,7 @@ resource "aws_vpc_security_group_egress_rule" "service_all" {
 
 resource "aws_vpc_security_group_ingress_rule" "service_from_alb_gateway" {
   security_group_id            = aws_security_group.service.id
-  description                  = "The gateways container port, from the load balancer"
+  description                  = "The gateway container port, from the load balancer"
   from_port                    = 8000
   to_port                      = 8000
   ip_protocol                  = "tcp"
@@ -86,7 +86,7 @@ resource "aws_vpc_security_group_ingress_rule" "service_from_alb_gateway" {
 
 resource "aws_vpc_security_group_ingress_rule" "service_from_alb_ui" {
   security_group_id            = aws_security_group.service.id
-  description                  = "The consoles container port, from the load balancer"
+  description                  = "The console container port, from the load balancer"
   from_port                    = 3000
   to_port                      = 3000
   ip_protocol                  = "tcp"
@@ -119,7 +119,7 @@ resource "aws_security_group" "endpoints" {
   vpc_id      = local.data.vpc_id
 
   ingress {
-    description     = "HTTPS from anything wearing the workload group in practice, the Lambda"
+    description     = "HTTPS from anything wearing the workload group: in practice, the Lambda"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
