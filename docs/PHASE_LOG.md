@@ -7020,3 +7020,67 @@ whichever way it lands — and so does `docs/evidence/p9-aws/18-billing.png`, wh
 waiting on the same tag keys since 2026-08-11.
 
 ---
+
+### CI
+
+CI on PR-12, all **six** jobs green on the first run
+([run 31460210153](https://github.com/sergioavilax/headroom/actions/runs/31460210153)),
+and green again on the branch head after the one annotation it carried was cleared
+([run 31460377415](https://github.com/sergioavilax/headroom/actions/runs/31460377415), on
+`6ad2322`):
+
+```
+$ gh run view 31460377415 --json status,conclusion,jobs
+status=completed conclusion=success sha=6ad2322
+  success  lint + typecheck
+  success  pytest (postgres + dynamodb-local service containers)
+  success  terraform validates, the Lambda packages, and the chart renders
+  success  ui lint + typecheck + unit tests + build
+  success  ui browser smoke (chromium, stub gateway)
+  success  gateway and ui images build and serve
+
+1390 passed, 2 deselected, 1 warning in 38.32s
+```
+
+**The sixth job grew a third thing it can honestly check**, and the parts worth naming
+because they are the parts that could have been ceremony:
+
+```
+1 chart(s) linted, 0 chart(s) failed
+Summary: 6 resources found parsing stdin - Valid: 6, Invalid: 0, Errors: 0, Skipped: 0
+Summary: 9 resources found parsing stdin - Valid: 9, Invalid: 0, Errors: 0, Skipped: 0
+both guards fired
+```
+
+`helm lint` catches a chart that is not a chart. `helm template` catches a template that
+does not render. **`kubeconform -strict` catches the one neither of them looks at**: a
+`maxUnavaialble` typo renders perfectly, applies cleanly, and is silently ignored by a real
+cluster. Both shapes are rendered — the local default and the full AWS one with the load
+balancer, the tailscale proxy and the HPA all on — because the LoadBalancer branch is the
+one a default render never reaches and it is the one with a guard in it. And `both guards
+fired` is the two `fail` refusals asserted **as refusals**: a guard that stopped guarding
+would otherwise install cleanly and publish an admin API to `0.0.0.0/0` with nothing red
+anywhere.
+
+No AWS credential is read anywhere in the workflow, no cluster is contacted, and
+`kubeconform` fetches schemas from a public index rather than from an API server. Invariant
+2 gives the apply, the `eksctl` and the `helm install` to the human; this is the part a
+machine can check.
+
+**One annotation, fixed in-branch — the third time this repo has had this exact one.**
+`azure/setup-helm@v4.3.1` targets Node 20 and the runner forces it onto 24. Bumped to
+`v5.0.1`, which is the same class of fix Phase 9 applied to `hashicorp/setup-terraform`
+(v3 → v4.0.1) and Phase 0 to `checkout` and `setup-uv`, for the same reason. Confirmed on
+the branch head rather than assumed: `check-runs/{id}/annotations` is **empty for every one
+of the six jobs**, and the only remaining `deprecat` line in the whole log is the
+`StarletteDeprecationWarning` from `fastapi.testclient` that Phase 0 deliberately left
+visible.
+
+`kubeconform` is installed by `curl` and a pinned release tag rather than by an action, so
+the job's two tool installs are symmetric and neither adds a third-party Node runtime to
+the workflow. `KUBE_VERSION` is pinned to `1.31.0` in both the workflow and the Makefile and
+is **not** `latest`: a schema set from a newer Kubernetes accepts fields this chart's own
+`kubeVersion` floor does not promise are there, so the check would drift more permissive
+without anyone deciding to.
+
+---
