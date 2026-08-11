@@ -6558,4 +6558,43 @@ had not been offered for activation when the session ended. It lands with
 `docs/evidence/p9-aws/18-billing.png`, and this line gets the number then, whichever way it
 falls.
 
+### CI, on the closing head
+
+Checked on the branch head rather than assumed, the way the entry above's annotation fix
+was: [run 31456533329](https://github.com/sergioavilax/headroom/actions/runs/31456533329)
+on `8ef4d1a`, all **six** jobs green.
+
+```
+$ gh run view 31456533329 --json status,conclusion,jobs
+status=completed conclusion=success sha=8ef4d1a
+  success  lint + typecheck
+  success  pytest (postgres + dynamodb-local service containers)
+  success  terraform validates, and the Lambda package builds
+  success  ui lint + typecheck + unit tests + build
+  success  ui browser smoke (chromium, stub gateway)
+  success  gateway and ui images build and serve
+```
+
+```
+1334 passed, 2 deselected, 1 warning in 35.34s
+8 passed (6.0s)
+```
+
+Three things worth checking rather than inferring, and all three hold. The **new charset
+tests really ran on a runner** — both roots' parametrisations and the runbook's region
+check appear by name in the `pytest` job's log, which matters for a test whose whole
+purpose is to run somewhere the operator is not. **Zero annotations** across all six jobs
+(`check-runs/{id}/annotations` is empty for every one), so nothing about this push
+re-opened the deprecation the entry above closed. And the only `deprecat` line in 3,890
+lines of log is still the `StarletteDeprecationWarning` from `fastapi.testclient` that
+Phase 0 deliberately left visible.
+
+The sixth job is the one this phase's two failed applies argue about, and it is worth being
+precise about what it now does and does not catch. `terraform fmt -check`,
+`init -backend=false`, and `validate` over both roots still say nothing about whether AWS
+will accept the configuration — that is the gap H-082 exists for. What closes it is in the
+`test` job instead, keylessly, as an assertion about strings: an apostrophe or an em dash
+in a description now fails on the pull request, in milliseconds, rather than halfway
+through creating a VPC.
+
 ---
