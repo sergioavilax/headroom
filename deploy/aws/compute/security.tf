@@ -51,20 +51,28 @@ resource "aws_security_group" "alb" {
 # A public IP with no inbound rule except from the load balancer is a host with an egress
 # path, not an exposed host — and this group is where that claim is made true.
 
+# **This group has no inline rules at all, and that is deliberate.** One of its ingress
+# rules is self-referencing (the console reaching the gateway), which an inline block
+# cannot express without `self = true` — and the AWS provider is explicit that a security
+# group carrying inline blocks must not also be the target of standalone rule resources:
+# the inline set is authoritative, so it revokes anything it does not know about on the
+# next apply. Mixing the two styles on one group is a rule that disappears silently on the
+# second `terraform apply`, which is the worst time to find out. Every other group in these
+# two roots is pure-inline; this one is pure-standalone.
 resource "aws_security_group" "service" {
   name        = "${var.project}-service"
   description = "Fargate tasks: reachable from the ALB, and from each other on the gateway's port."
   vpc_id      = local.data.vpc_id
 
-  egress {
-    description = "Providers, ECR, CloudWatch Logs, Secrets Manager, and Postgres."
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = { Name = "${var.project}-service" }
+}
+
+resource "aws_vpc_security_group_egress_rule" "service_all" {
+  security_group_id = aws_security_group.service.id
+  description       = "Providers, ECR, CloudWatch Logs, Secrets Manager, and Postgres."
+  # With `-1` the port range must be omitted entirely rather than set to 0–0.
+  ip_protocol = "-1"
+  cidr_ipv4   = "0.0.0.0/0"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "service_from_alb_gateway" {
