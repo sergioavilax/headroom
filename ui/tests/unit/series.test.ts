@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  DAY_MS,
   NO_PROVIDER,
   SERIES_SLOTS,
   barPath,
   colourFor,
+  dayLabel,
   niceCeiling,
   seriesColours,
   timeSlots,
+  utcDayMs,
 } from "../../lib/series.ts";
 
 /**
@@ -79,4 +82,37 @@ test("a bar is rounded at the data end and square at the baseline", () => {
 test("a bar shorter than its radius does not become a lens", () => {
   const path = barPath(0, 0, 20, 2, 4);
   assert.equal((path.match(/a4 4/g) ?? []).length, 0);
+});
+
+/**
+ * Phase 9's history view draws days, and a day is the one time unit where the browser's
+ * locale can silently move a bar. `daily_rollups.day` is the **UTC** day of the request's
+ * arrival; a console that let the engine parse the string, or that formatted it in the
+ * viewer's zone, would put yesterday's spend on the wrong column for half the planet —
+ * and it would look like a data problem rather than a parsing one.
+ */
+
+test("a rollup day is UTC midnight, whatever the browser thinks a day is", () => {
+  assert.equal(utcDayMs("2026-08-11"), Date.UTC(2026, 7, 11));
+  // The property that matters: a day is exactly one slot wide, with no hour lost or
+  // gained at a DST boundary — 2026-03-29 is the European spring-forward Sunday.
+  assert.equal(utcDayMs("2026-03-30") - utcDayMs("2026-03-29"), DAY_MS);
+  assert.equal(utcDayMs("2026-11-02") - utcDayMs("2026-11-01"), DAY_MS);
+});
+
+test("a day slot maps back to the day string the API sent", () => {
+  const day = "2026-08-11";
+  assert.equal(new Date(utcDayMs(day)).toISOString().slice(0, 10), day);
+  // `timeSlots` at day width lands on UTC midnight, which is what lets the chart look a
+  // rollup up by its own day key rather than by a rounded local timestamp.
+  const slots = timeSlots(utcDayMs(day) + 61_000, 3, DAY_MS);
+  assert.equal(slots.at(-1), utcDayMs(day));
+  assert.equal(slots[0], utcDayMs("2026-08-09"));
+});
+
+test("a day is labelled in UTC, not in the reader's zone", () => {
+  // Any offset west of UTC would render 2026-08-01 as "31 Jul" if the formatter were left
+  // to the local zone; the label pins the zone instead of hoping.
+  assert.equal(dayLabel("2026-08-01"), "1 Aug");
+  assert.equal(dayLabel("2026-12-31"), "31 Dec");
 });

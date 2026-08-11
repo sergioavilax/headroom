@@ -11,6 +11,7 @@ import json
 from decimal import Decimal
 
 from headroom.api.usage import MAX_BUCKETS
+from headroom.core.ledger import MAX_ROLLUP_DAYS, LedgerQuery
 from headroom.providers.mock import MockScript
 from headroom.providers.mock_scripts import REASONING_MODEL, openai_reasoning_stream_chunks
 
@@ -406,3 +407,71 @@ async def test_the_series_filters_by_tenant_like_everything_else(
 
     assert sum(point["requests"] for point in mine) == 2
     assert someone_else == []
+
+
+# --- the daily rollups (Phase 9) ------------------------------------------------------
+
+
+async def test_the_rollups_route_is_not_swallowed_by_the_request_id_route(
+    gateway: GatewayHarness,
+) -> None:
+    """FastAPI matches in declaration order, so `/rollups` has to be declared above
+    `/{request_id}` — otherwise it is a route that never runs and `rollups` is read as a
+    request id nobody has. The failure looks like a 404 from the ledger, which is exactly
+    the wrong place to go looking."""
+    response = await gateway.admin("GET", "/admin/usage/rollups")
+
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+async def test_the_rollups_route_needs_the_root_admin_token(gateway: GatewayHarness) -> None:
+    response = await gateway.admin("GET", "/admin/usage/rollups", authenticate=False)
+
+    assert response.status_code == 401
+
+
+async def test_there_is_no_route_that_fires_the_rollup(gateway: GatewayHarness) -> None:
+    """Read-only like everything else here, and deliberately so.
+
+    The schedule is EventBridge's and a manual run is `aws lambda invoke`. A POST would be
+    a way to make the gateway's own database do arbitrary aggregate work from the internet
+    side of a load balancer — which is the thing `ui/lib/proxy.ts` names as its example of
+    what the console must never relay.
+    """
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        response = await gateway.admin(method, "/admin/usage/rollups")
+        assert response.status_code == 405, method
+
+
+async def test_a_rollup_row_is_a_days_total_with_the_stamp_that_says_how_fresh_it_is(
+    gateway: GatewayHarness,
+) -> None:
+    await seed(gateway, count=3)
+    rows = await gateway.ledger.list_entries(LedgerQuery())
+    [written] = await gateway.ledger.write_daily_rollup(rows[0].started_at.date())
+
+    [row] = (await gateway.admin("GET", "/admin/usage/rollups")).json()
+
+    assert row["day"] == written.day.isoformat()
+    assert row["tenant_id"] == gateway.tenant.id
+    assert row["requests"] == 3
+    # Money as a string, here as everywhere else it leaves the process.
+    assert Decimal(row["usd_cost"]) == Decimal("0.0000345")
+    assert row["computed_at"] is not None
+    # The counts that say how much of the picture the sums are missing (H-025's rule).
+    assert row["unpriced_requests"] == 0
+    assert row["cache_avoided_unknown"] == 0
+
+
+async def test_a_rollup_window_bounded_beyond_a_year_is_refused(
+    gateway: GatewayHarness,
+) -> None:
+    """`limit` is days, not rows, and a year plus a leap day is the published ceiling."""
+    ok = await gateway.admin("GET", "/admin/usage/rollups", params={"limit": str(MAX_ROLLUP_DAYS)})
+    too_many = await gateway.admin(
+        "GET", "/admin/usage/rollups", params={"limit": str(MAX_ROLLUP_DAYS + 1)}
+    )
+
+    assert ok.status_code == 200
+    assert too_many.status_code == 422

@@ -20,6 +20,7 @@ plan and nothing to escape.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -27,6 +28,7 @@ import asyncpg
 
 from headroom.core.ledger import (
     SERIES_BUCKETS,
+    DailyRollup,
     LedgerEntry,
     LedgerQuery,
     LedgerStore,
@@ -183,6 +185,97 @@ _DISPOSITIONS = """
 #: this repo controls. Converting to UTC first, truncating, and converting back makes
 #: the grain deterministic — and identical to what `InMemoryLedgerStore` computes.
 _BUCKET_START = "(date_trunc($8::text, started_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')"
+
+# --- the nightly rollup (Phase 9) --------------------------------------------------
+
+#: Midnight UTC of the parameter day, and of the day after it. `$1::date::timestamptz`
+#: would be wrong in a way that only shows up on a server whose timezone is not UTC: it
+#: resolves midnight *in the session's zone*. Casting to a naive `timestamp` first and
+#: then declaring it UTC is the same discipline `_BUCKET_START` follows, and it means a
+#: rollup computed by the Lambda and one computed from a psql session in Europe cover
+#: the same 24 hours.
+_DAY_START = "(($1::date)::timestamp AT TIME ZONE 'UTC')"
+_DAY_END = "(($1::date + 1)::timestamp AT TIME ZONE 'UTC')"
+
+#: The aggregate, in the column order `_ROLLUP_INSERT` writes. Positional, so the two
+#: lists are read side by side — and `_DISPOSITIONS` is spliced in verbatim rather than
+#: restated so that "what counts as a hit" cannot differ between a total, a series
+#: point, and a rollup.
+_ROLLUP_SELECT = f"""
+    SELECT $1::date,
+           tenant_id,
+           count(*),
+           coalesce(sum(input_tokens), 0),
+           coalesce(sum(output_tokens), 0),
+           coalesce(sum(reasoning_tokens), 0),
+           coalesce(sum(usd_cost), 0),
+           count(*) FILTER (WHERE usd_cost IS NULL),
+           count(*) FILTER (WHERE outcome <> 'ok'),
+           {_DISPOSITIONS}
+      FROM usage_ledger
+     -- Half-open on the request's own arrival time, in UTC. Never on `created_at`: a
+     -- row the fire-and-forget writer drained at 00:00:02 belongs to the day the
+     -- request happened, not to the day the INSERT landed (H-027's delivery gap).
+     WHERE started_at >= {_DAY_START}
+       AND started_at <  {_DAY_END}
+  GROUP BY tenant_id
+"""
+
+_ROLLUP_COLUMNS = """
+    day, tenant_id, requests, input_tokens, output_tokens, reasoning_tokens,
+    usd_cost, unpriced_requests, errored_requests,
+    cache_hits_exact, cache_hits_semantic, cache_misses, cache_bypasses, cache_disabled,
+    cache_avoided_usd, cache_avoided_unknown, failover_requests, computed_at
+"""
+
+_ROLLUP_INSERT = f"""
+INSERT INTO daily_rollups (
+    day, tenant_id, requests, input_tokens, output_tokens, reasoning_tokens,
+    usd_cost, unpriced_requests, errored_requests,
+    cache_hits_exact, cache_hits_semantic, cache_misses, cache_bypasses, cache_disabled,
+    cache_avoided_usd, cache_avoided_unknown, failover_requests
+)
+{_ROLLUP_SELECT}
+RETURNING {_ROLLUP_COLUMNS}
+"""
+
+#: `dense_rank` rather than a row `LIMIT`, because a day is several rows when several
+#: tenants were busy and "the last 90 days" must not silently become "the last 22 days
+#: and four tenants". Ranked descending, taken from the top, then read back in order.
+_ROLLUP_LIST = f"""
+    SELECT {_ROLLUP_COLUMNS} FROM (
+        SELECT *, dense_rank() OVER (ORDER BY day DESC) AS day_rank
+          FROM daily_rollups
+         WHERE ($1::uuid IS NULL OR tenant_id = $1::uuid)
+           AND ($2::date IS NULL OR day >= $2::date)
+           AND ($3::date IS NULL OR day <  $3::date)
+    ) ranked
+    WHERE day_rank <= $4
+    ORDER BY day ASC, tenant_id ASC
+"""
+
+
+def _rollup(row: asyncpg.Record) -> DailyRollup:
+    return DailyRollup(
+        day=row["day"],
+        tenant_id=str(row["tenant_id"]),
+        requests=row["requests"],
+        input_tokens=row["input_tokens"],
+        output_tokens=row["output_tokens"],
+        reasoning_tokens=row["reasoning_tokens"],
+        usd_cost=row["usd_cost"],
+        unpriced_requests=row["unpriced_requests"],
+        errored_requests=row["errored_requests"],
+        cache_hits_exact=row["cache_hits_exact"],
+        cache_hits_semantic=row["cache_hits_semantic"],
+        cache_misses=row["cache_misses"],
+        cache_bypasses=row["cache_bypasses"],
+        cache_disabled=row["cache_disabled"],
+        cache_avoided_usd=row["cache_avoided_usd"],
+        cache_avoided_unknown=row["cache_avoided_unknown"],
+        failover_requests=row["failover_requests"],
+        computed_at=row["computed_at"],
+    )
 
 
 class PostgresLedgerStore(LedgerStore):
@@ -351,6 +444,36 @@ class PostgresLedgerStore(LedgerStore):
             )
             for row in rows
         ]
+
+    async def write_daily_rollup(self, day: date) -> list[DailyRollup]:
+        async with self.pool.connection() as conn, conn.transaction():
+            # Delete then insert, rather than upsert. Two reasons, and the second is the
+            # one that decides it. A day's rollup must equal what the ledger says about
+            # that day *unconditionally* — including when the ledger has fewer rows than
+            # last time, which this repo's own Postgres fixture arranges every `make
+            # test` (H-029). And a tenant that had traffic on a re-run day and none on
+            # the corrected one leaves no orphan behind. Both statements are in one
+            # transaction, so no reader ever observes the empty moment between them.
+            await conn.execute("DELETE FROM daily_rollups WHERE day = $1::date", day)
+            rows = await conn.fetch(_ROLLUP_INSERT, day)
+        # Sorted by tenant, in both implementations. `INSERT … SELECT … GROUP BY`
+        # returns its rows in whatever order the aggregate produced them, and a contract
+        # suite that compared two unordered lists would pass or fail on the plan.
+        return sorted((_rollup(row) for row in rows), key=lambda rollup: rollup.tenant_id)
+
+    async def list_rollups(
+        self,
+        *,
+        tenant_id: str | None = None,
+        since: date | None = None,
+        until: date | None = None,
+        limit: int = 90,
+    ) -> list[DailyRollup]:
+        async with self.pool.connection() as conn:
+            rows = await conn.fetch(
+                _ROLLUP_LIST, _uuid_or_none(tenant_id), since, until, max(limit, 0)
+            )
+        return [_rollup(row) for row in rows]
 
     async def aclose(self) -> None:
         if self._owns_pool:

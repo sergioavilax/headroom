@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -538,6 +539,174 @@ async def test_an_unknown_grain_is_refused_by_both_stores(ledger: LedgerStore) -
         await ledger.series(LedgerQuery(), bucket="week")
 
 
+# --- the daily rollup (Phase 9) --------------------------------------------------------
+#
+# The rollup is what a scheduled Lambda writes and what the console's history view reads,
+# and it is the only *derived* table in this schema. Two properties carry the weight, and
+# both are asserted against Postgres and the dict in the same run:
+#
+#   * **A rollup equals what `totals` says about the same day.** They are the same
+#     question over different windows, so a disagreement means one of them is wrong about
+#     a NULL, a filter, or a disposition — silently, in a number a human reads as a bill.
+#   * **A day is replaced, never accumulated into.** That is what makes re-running safe,
+#     which is what makes it safe to fire by hand at a gate and to retry after a failed
+#     schedule.
+
+DAY = T0.date()
+
+
+async def test_a_rollup_says_what_totals_say_about_the_same_day(ledger: LedgerStore) -> None:
+    """The load-bearing one. Two code paths, one answer, or the table is a second truth."""
+    await ledger.record(entry("hr_1"))
+    await ledger.record(entry("hr_2", minutes=5, cache_disposition="cache_hit_exact"))
+    await ledger.record(entry("hr_3", minutes=9, outcome="upstream_error", failover_hops=1))
+
+    written = await ledger.write_daily_rollup(DAY)
+    [live] = await ledger.totals(LedgerQuery(tenant_id=TENANT_A))
+
+    assert len(written) == 1
+    rollup = written[0]
+    assert rollup.day == DAY
+    assert rollup.tenant_id == TENANT_A
+    assert (rollup.requests, rollup.usd_cost) == (live.requests, live.usd_cost)
+    assert (rollup.input_tokens, rollup.output_tokens) == (live.input_tokens, live.output_tokens)
+    assert rollup.errored_requests == live.errored_requests
+    assert rollup.failover_requests == live.failover_requests
+    assert rollup.cache_hits_exact == live.cache_hits_exact
+    assert rollup.unpriced_requests == live.unpriced_requests
+    assert rollup.computed_at is not None
+
+
+async def test_a_rollup_sums_only_the_rows_that_had_a_cost(ledger: LedgerStore) -> None:
+    """H-025's rule survives the aggregation: NULL is skipped *and* counted."""
+    await ledger.record(entry("hr_priced"))
+    await ledger.record(entry("hr_unknown", minutes=1, usd_cost=None, cost_status="usage_unknown"))
+
+    [rollup] = await ledger.write_daily_rollup(DAY)
+
+    assert rollup.requests == 2
+    assert rollup.usd_cost == Decimal("0.0000115")
+    assert rollup.unpriced_requests == 1
+
+
+async def test_a_rollup_counts_the_savings_it_could_not_add_up(ledger: LedgerStore) -> None:
+    """`cache_avoided_unknown`, one table over. A count, because a zero sums invisibly."""
+    await ledger.record(
+        entry(
+            "hr_known",
+            cache_disposition="cache_hit_semantic",
+            cache_avoided_usd=Decimal("0.0000115"),
+        )
+    )
+    await ledger.record(
+        entry("hr_unknown", minutes=1, cache_disposition="cache_hit_exact", cache_avoided_usd=None)
+    )
+
+    [rollup] = await ledger.write_daily_rollup(DAY)
+
+    assert rollup.cache_avoided_usd == Decimal("0.0000115")
+    assert rollup.cache_avoided_unknown == 1
+
+
+async def test_the_day_is_utc_and_it_is_the_requests_own_arrival(ledger: LedgerStore) -> None:
+    """A row at 23:30Z and one at 00:30Z are different days, whatever the server's zone.
+
+    `started_at`, never `created_at`: the writer is fire-and-forget with a drain queue, so
+    a request that arrived before midnight can land its row after it — and it belongs to
+    the day it happened.
+    """
+    late = datetime(2026, 6, 1, 23, 30, tzinfo=UTC)
+    early = datetime(2026, 6, 2, 0, 30, tzinfo=UTC)
+    await ledger.record(replace(entry("hr_late"), started_at=late))
+    await ledger.record(replace(entry("hr_early"), started_at=early))
+
+    [first] = await ledger.write_daily_rollup(late.date())
+    [second] = await ledger.write_daily_rollup(early.date())
+
+    assert (first.day, first.requests) == (late.date(), 1)
+    assert (second.day, second.requests) == (early.date(), 1)
+
+
+async def test_a_day_with_no_requests_gets_no_row(ledger: LedgerStore) -> None:
+    """Absent, not a row of zeros — the `UsageBucket` rule, one table over."""
+    assert await ledger.write_daily_rollup(DAY) == []
+    assert await ledger.list_rollups() == []
+
+
+async def test_running_the_rollup_twice_replaces_the_day_rather_than_doubling_it(
+    ledger: LedgerStore,
+) -> None:
+    """The property the whole schedule rests on: firing it again is safe, always."""
+    await ledger.record(entry("hr_1"))
+    await ledger.write_daily_rollup(DAY)
+
+    # A row that arrived after the first run — the late-drain case the handler's
+    # two-day window exists for.
+    await ledger.record(entry("hr_2", minutes=1))
+    await ledger.write_daily_rollup(DAY)
+
+    rollups = await ledger.list_rollups()
+    assert len(rollups) == 1
+    assert rollups[0].requests == 2
+    assert rollups[0].usd_cost == Decimal("0.000023")
+
+
+async def test_each_tenant_gets_its_own_row_for_a_day(ledger: LedgerStore) -> None:
+    await ledger.record(entry("hr_a"))
+    await ledger.record(entry("hr_b", tenant_id=TENANT_B, key_id=KEY_B, minutes=1))
+
+    written = await ledger.write_daily_rollup(DAY)
+
+    assert [row.tenant_id for row in written] == sorted([TENANT_A, TENANT_B])
+    assert all(row.requests == 1 for row in written)
+
+
+async def test_rollups_come_back_oldest_day_first(ledger: LedgerStore) -> None:
+    for offset in (2, 0, 1):
+        await ledger.record(entry(f"hr_{offset}", days=offset))
+        await ledger.write_daily_rollup(DAY + timedelta(days=offset))
+
+    days = [row.day for row in await ledger.list_rollups()]
+    assert days == [DAY, DAY + timedelta(days=1), DAY + timedelta(days=2)]
+
+
+async def test_the_rollup_window_is_half_open_on_the_day(ledger: LedgerStore) -> None:
+    """`since <= day < until`, matching `LedgerQuery` so adjacent ranges cannot overlap."""
+    for offset in range(3):
+        await ledger.record(entry(f"hr_{offset}", days=offset))
+        await ledger.write_daily_rollup(DAY + timedelta(days=offset))
+
+    window = await ledger.list_rollups(since=DAY, until=DAY + timedelta(days=2))
+    assert [row.day for row in window] == [DAY, DAY + timedelta(days=1)]
+
+
+async def test_a_limit_keeps_the_most_recent_days_not_the_most_recent_rows(
+    ledger: LedgerStore,
+) -> None:
+    """The `dense_rank` property: "the last two days" is two days, not two rows.
+
+    Three days, two tenants busy on each. A row limit would return two rows and call it
+    two days of history, which is the shape of a chart that quietly loses a tenant.
+    """
+    for offset in range(3):
+        await ledger.record(entry(f"hr_a{offset}", days=offset))
+        await ledger.record(entry(f"hr_b{offset}", tenant_id=TENANT_B, key_id=KEY_B, days=offset))
+        await ledger.write_daily_rollup(DAY + timedelta(days=offset))
+
+    recent = await ledger.list_rollups(limit=2)
+
+    assert len(recent) == 4
+    assert {row.day for row in recent} == {DAY + timedelta(days=1), DAY + timedelta(days=2)}
+
+
+async def test_rollups_filter_by_tenant(ledger: LedgerStore) -> None:
+    await ledger.record(entry("hr_a"))
+    await ledger.record(entry("hr_b", tenant_id=TENANT_B, key_id=KEY_B, minutes=1))
+    await ledger.write_daily_rollup(DAY)
+
+    assert [row.tenant_id for row in await ledger.list_rollups(tenant_id=TENANT_B)] == [TENANT_B]
+
+
 # --- Postgres-only proofs ------------------------------------------------------------------
 
 
@@ -583,6 +752,48 @@ async def test_the_stored_cost_keeps_twelve_decimal_places(
 
     row = await postgres_ledger.get("hr_1")
     assert row is not None and row.usd_cost == Decimal("0.000000000001")
+
+
+async def test_a_rollup_shrinks_when_the_day_it_summarises_does(
+    postgres_ledger: LedgerStore,
+) -> None:
+    """The half of "replace, never accumulate" that only raw SQL can set up.
+
+    `LedgerStore` has no delete — a ledger row is an invoice line and nothing removes one
+    — so the growth case is all the contract suite above can reach. The shrink case is
+    not hypothetical here: this repo's own Postgres fixture runs `TRUNCATE usage_ledger,
+    virtual_keys, tenants CASCADE` on every `make test`, and a rollup that accumulated
+    would go on reporting a day the ledger no longer has anything to say about.
+    """
+    await postgres_ledger.record(entry("hr_1"))
+    await postgres_ledger.record(entry("hr_2", minutes=1))
+    [before] = await postgres_ledger.write_daily_rollup(DAY)
+    assert before.requests == 2
+
+    conn = await asyncpg.connect(DATABASE.url, timeout=10)
+    try:
+        await conn.execute("DELETE FROM usage_ledger WHERE request_id = $1", "hr_2")
+    finally:
+        await conn.close()
+
+    [after] = await postgres_ledger.write_daily_rollup(DAY)
+    assert after.requests == 1
+    assert len(await postgres_ledger.list_rollups()) == 1
+
+
+async def test_a_rollup_cannot_outlive_the_tenant_it_attributes_spend_to(
+    postgres_ledger: LedgerStore,
+) -> None:
+    """`ON DELETE RESTRICT` on `daily_rollups` too — H-022's rule, seventh migration."""
+    await postgres_ledger.record(entry("hr_1"))
+    await postgres_ledger.write_daily_rollup(DAY)
+
+    conn = await asyncpg.connect(DATABASE.url, timeout=10)
+    try:
+        with pytest.raises(asyncpg.ForeignKeyViolationError):
+            await conn.execute("DELETE FROM tenants WHERE id = $1", TENANT_A)
+    finally:
+        await conn.close()
 
 
 async def test_the_control_plane_store_and_the_ledger_share_a_database(

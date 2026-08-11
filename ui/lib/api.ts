@@ -181,6 +181,35 @@ export type SeriesPoint = {
   failover_requests: number;
 };
 
+/**
+ * One (UTC day, tenant) row of `daily_rollups`, written by the nightly Lambda (Phase 9).
+ *
+ * Field-for-field `Totals` minus the model split, plus the day and the stamp — because it
+ * *is* a total, over a fixed window, computed once instead of on every poll.
+ * `computed_at` is the operational field: the gap between it and `day` is how late the
+ * schedule ran, and a stale one is how a schedule that stopped firing announces itself.
+ */
+export type Rollup = {
+  day: string;
+  tenant_id: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  usd_cost: string;
+  unpriced_requests: number;
+  errored_requests: number;
+  cache_hits_exact: number;
+  cache_hits_semantic: number;
+  cache_misses: number;
+  cache_bypasses: number;
+  cache_disabled: number;
+  cache_avoided_usd: string;
+  cache_avoided_unknown: number;
+  failover_requests: number;
+  computed_at: string | null;
+};
+
 export type Budget = {
   scope: string;
   scope_kind: string;

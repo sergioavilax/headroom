@@ -28,7 +28,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from headroom.core.budgets import (
@@ -56,6 +56,7 @@ from headroom.core.cache import (
 )
 from headroom.core.ledger import (
     SERIES_BUCKETS,
+    DailyRollup,
     LedgerEntry,
     LedgerQuery,
     LedgerStore,
@@ -292,11 +293,13 @@ class InMemoryLedgerStore(LedgerStore):
     implementation of it.
     """
 
-    __slots__ = ("_entries",)
+    __slots__ = ("_entries", "_rollups")
 
     def __init__(self) -> None:
         #: Insertion-ordered by request id. The unique index, by hand.
         self._entries: dict[str, LedgerEntry] = {}
+        #: Phase 9's `daily_rollups`, keyed by its primary key.
+        self._rollups: dict[tuple[date, str], DailyRollup] = {}
 
     async def record(self, entry: LedgerEntry) -> None:
         # `ON CONFLICT (request_id) DO NOTHING`, in Python. A retried write after a
@@ -385,6 +388,77 @@ class InMemoryLedgerStore(LedgerStore):
         # exists to show.
         buckets.sort(key=lambda point: point.bucket_start)
         return buckets[-query.limit :] if query.limit else []
+
+    async def write_daily_rollup(self, day: date) -> list[DailyRollup]:
+        # `DELETE FROM daily_rollups WHERE day = $1`, then the INSERT…SELECT — in that
+        # order and atomically, exactly as the SQL does it, so a day with fewer rows
+        # than last time comes out smaller rather than stale.
+        for key in [key for key in self._rollups if key[0] == day]:
+            del self._rollups[key]
+        groups: dict[str, list[LedgerEntry]] = {}
+        for entry in self._entries.values():
+            if entry.started_at.astimezone(UTC).date() == day:
+                groups.setdefault(entry.tenant_id, []).append(entry)
+        computed_at = _now()
+        written = [
+            DailyRollup(
+                day=day,
+                tenant_id=tenant_id,
+                requests=len(rows),
+                input_tokens=sum(row.input_tokens or 0 for row in rows),
+                output_tokens=sum(row.output_tokens or 0 for row in rows),
+                reasoning_tokens=sum(row.reasoning_tokens or 0 for row in rows),
+                usd_cost=sum(
+                    (row.usd_cost for row in rows if row.usd_cost is not None), Decimal(0)
+                ),
+                unpriced_requests=sum(1 for row in rows if row.usd_cost is None),
+                errored_requests=sum(1 for row in rows if row.outcome != "ok"),
+                cache_hits_exact=_disposed(rows, "cache_hit_exact"),
+                cache_hits_semantic=_disposed(rows, "cache_hit_semantic"),
+                cache_misses=_disposed(rows, "cache_miss"),
+                cache_bypasses=_disposed(rows, "cache_bypass"),
+                cache_disabled=_disposed(rows, "cache_disabled"),
+                cache_avoided_usd=_avoided(rows),
+                cache_avoided_unknown=sum(
+                    1
+                    for row in rows
+                    if row.cache_disposition in _HIT_DISPOSITIONS and row.cache_avoided_usd is None
+                ),
+                failover_requests=sum(1 for row in rows if row.failover_hops > 0),
+                computed_at=computed_at,
+            )
+            for tenant_id, rows in groups.items()
+        ]
+        # Sorted by tenant, in both implementations. `INSERT … SELECT … GROUP BY`
+        # returns its rows in whatever order the aggregate produced them, and a contract
+        # suite that compared two unordered lists would pass or fail on the plan.
+        written.sort(key=lambda rollup: rollup.tenant_id)
+        for rollup in written:
+            self._rollups[(rollup.day, rollup.tenant_id)] = rollup
+        return written
+
+    async def list_rollups(
+        self,
+        *,
+        tenant_id: str | None = None,
+        since: date | None = None,
+        until: date | None = None,
+        limit: int = 90,
+    ) -> list[DailyRollup]:
+        matched = [
+            rollup
+            for rollup in self._rollups.values()
+            if (tenant_id is None or rollup.tenant_id == tenant_id)
+            and (since is None or rollup.day >= since)
+            and (until is None or rollup.day < until)
+        ]
+        # `dense_rank() OVER (ORDER BY day DESC) <= $4`, in Python: the most recent
+        # `limit` *days*, whatever number of rows those days happen to hold.
+        keep = set(sorted({rollup.day for rollup in matched}, reverse=True)[: max(limit, 0)])
+        return sorted(
+            (rollup for rollup in matched if rollup.day in keep),
+            key=lambda rollup: (rollup.day, rollup.tenant_id),
+        )
 
     def _matching(self, query: LedgerQuery) -> list[LedgerEntry]:
         return [entry for entry in self._entries.values() if _matches(entry, query)]

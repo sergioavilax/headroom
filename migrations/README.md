@@ -35,8 +35,9 @@ rationale and its costs are in [docs/DECISIONS.md](../docs/DECISIONS.md) H-003.
 | `0004_rate_limits.sql` | 4b | `requests_per_min`, `tokens_per_min` on `tenants` and `virtual_keys` |
 | `0005_response_cache.sql` | 5 | `CREATE EXTENSION vector`; `response_cache`; cache policy on `tenants`; the avoided-cost columns on `usage_ledger` |
 | `0006_ledger_failover.sql` | 6 | `failover_from`, `failover_error` on `usage_ledger`, plus a partial index on the rows that hopped |
+| `0007_daily_rollups.sql` | 9 | `daily_rollups` — one row per (UTC day, tenant), written by the nightly rollup Lambda and read by the console's history view |
 
-All five are applied, so all five are immutable: a change is `0006_*.sql`.
+All seven are applied, so all seven are immutable: a change is `0008_*.sql`.
 
 **Budgets themselves are not here, and neither are token buckets.** Per-tenant caps,
 their counters, their live reservations, and the buckets' `tat` values live on
@@ -81,5 +82,19 @@ between them describe only who served and what happened *last*, and the operatio
 question is why the request left where it was routed (H-051). Additive, nullable, and the
 index is partial: the overwhelming majority of rows have nothing to say here.
 
+`0007` is the first table in this schema that holds **derived** data: every column of
+`daily_rollups` is recomputable from `usage_ledger` alone. That is why the writer
+replaces a day wholesale rather than accumulating into it, why re-running the rollup is
+a no-op on an unchanged ledger, and why nothing on the gateway's request path writes
+here. It exists so the console's history view can ask for ninety days without a
+ninety-day scan on every poll, and so Phase 9 has a Lambda with a reason to exist
+(H-073). Two properties are inherited rather than re-decided: money is `NUMERIC(24, 12)`
+at the ledger's own scale, and every sum ships beside a count of the rows it could not
+include (`unpriced_requests`, `cache_avoided_unknown`) — H-025's rule, because a rollup
+that folded NULL into zero would understate a day nobody can re-check once the window
+has passed.
+
 `make up` applies migrations inside the gateway container once the stack is healthy;
-`make migrate` applies them from the host against `DATABASE_URL`.
+`make migrate` applies them from the host against `DATABASE_URL`. On AWS the *same*
+runner applies them, as a one-off ECS task on the gateway's own task definition — same
+image, same code, same `DATABASE_URL` — which is what `deploy/aws/README.md` §5 runs.
