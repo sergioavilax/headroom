@@ -49,6 +49,7 @@ __all__ = [
     "DynamoClient",
     "buckets_table_name",
     "budgets_table_name",
+    "configured_region",
     "dynamodb_endpoint_url",
 ]
 
@@ -70,8 +71,22 @@ BUCKETS_TABLE_ENV: Final = "HEADROOM_BUCKETS_TABLE"
 DEFAULT_BUCKETS_TABLE: Final = "headroom_buckets"
 
 #: Region when nothing states one. Only reached on the emulator path — a real
-#: deployment has a region from its environment or its task metadata.
+#: deployment states a region under one of the two names below, and a real deployment
+#: that states none must fail loudly rather than be given a guess.
 _DEFAULT_REGION: Final = "us-east-1"
+
+#: **Two names for one region, and botocore only reads the second.** ``AWS_REGION`` is
+#: the name every AWS runtime *documents*; ``AWS_DEFAULT_REGION`` is the name this
+#: botocore's environment resolution actually consults (``configprovider.py``:
+#: ``'region': ('region', 'AWS_DEFAULT_REGION', …)``). On ECS Fargate the difference is
+#: invisible, because the agent injects both. Kubernetes injects neither, and Phase 10's
+#: first cluster smoke found out how that reads: ``NoRegionError`` **with ``AWS_REGION``
+#: set in the pod**, which sends an operator to look at the manifest that is already
+#: correct. The chart now sets both names (H-094) — and so that no fourth runtime has to
+#: know that, this module resolves the region itself, under either name, and hands it to
+#: the client explicitly. Order matters only if the two disagree, which nothing sets up;
+#: ``AWS_REGION`` leads because it is the name a human writes on purpose.
+_REGION_ENV_NAMES: Final = ("AWS_REGION", "AWS_DEFAULT_REGION")
 
 #: Ignored by DynamoDB Local, which never validates a *signature*. Present so a
 #: developer with no AWS configuration at all can run `make up && make test`.
@@ -117,15 +132,36 @@ def buckets_table_name() -> str:
     return os.environ.get(BUCKETS_TABLE_ENV) or DEFAULT_BUCKETS_TABLE
 
 
+def configured_region() -> str | None:
+    """The region this environment states, under either of the two names, or ``None``.
+
+    Whitespace is not a region: a shell that exported an unset variable hands boto3 an
+    empty string, which is a different failure from having said nothing at all and a
+    worse one to read.
+    """
+    for name in _REGION_ENV_NAMES:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return None
+
+
 def _client_kwargs(endpoint_url: str | None) -> dict[str, Any]:
     """Constructor arguments for the DynamoDB client. See the module docstring."""
     kwargs: dict[str, Any] = {"config": _BOTO_CONFIG}
+    region = configured_region()
     if endpoint_url is not None:
         kwargs["endpoint_url"] = endpoint_url
-        kwargs.setdefault("region_name", os.environ.get("AWS_REGION") or _DEFAULT_REGION)
+        kwargs["region_name"] = region or _DEFAULT_REGION
         if not os.environ.get("AWS_ACCESS_KEY_ID"):
             kwargs["aws_access_key_id"] = _EMULATOR_CREDENTIALS
             kwargs["aws_secret_access_key"] = _EMULATOR_CREDENTIALS
+    elif region is not None:
+        # Explicit, so the runtime does not have to guess which name botocore reads.
+        # Still *only* when the environment stated one: a real deployment with no region
+        # anywhere must raise `NoRegionError` rather than quietly address `us-east-1`,
+        # which is invariant 3's shape for configuration as well as for credentials.
+        kwargs["region_name"] = region
     return kwargs
 
 

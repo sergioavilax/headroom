@@ -52,7 +52,32 @@ resource "aws_subnet" "public" {
   availability_zone       = local.azs[count.index]
   map_public_ip_on_launch = true
 
-  tags = { Name = "${var.project}-public-${local.azs[count.index]}" }
+  # ── The two Kubernetes tags, added in Phase 10 ──────────────────────────────
+  #
+  # Both are discovery tags read by things that are not Terraform, which is why they are
+  # here rather than in the cluster's own configuration:
+  #
+  #   * `kubernetes.io/cluster/<name>` is how EKS and the cloud controller manager
+  #     recognise a subnet as belonging to a cluster. `shared` rather than `owned`,
+  #     because these subnets outlive the cluster and are destroyed by the data root.
+  #   * `kubernetes.io/role/elb` is how a `Service` of type LoadBalancer finds somewhere
+  #     public to put itself. Without it the service is created, the cloud controller
+  #     manager finds no eligible subnet, and `EXTERNAL-IP` stays `<pending>` for as long
+  #     as anyone is willing to watch it - with the reason only in a `kubectl describe
+  #     svc` event, which is not where anybody looks first.
+  #
+  # `eksctl` tags subnets it creates itself and does not tag subnets it is handed, so on
+  # an existing VPC this is the operator's job. Putting it in Terraform makes it a
+  # reviewable line rather than a `create-tags` somebody runs once and nobody records -
+  # and it means the tags are destroyed with the subnets at the end of Phase 10.
+  #
+  # This is the data layer's one change in Phase 10, and it is an in-place update: the
+  # subnet is not replaced, the VPC is not touched, and RDS never notices.
+  tags = {
+    Name                                            = "${var.project}-public-${local.azs[count.index]}"
+    "kubernetes.io/cluster/${var.eks_cluster_name}" = "shared"
+    "kubernetes.io/role/elb"                        = "1"
+  }
 }
 
 resource "aws_subnet" "private" {

@@ -21,6 +21,7 @@ from fastapi import FastAPI
 
 from headroom.api import admin, budgets, cache, limits, providers, proxy, usage
 from headroom.api.admin import AdminError, admin_error_handler
+from headroom.api.drain import DrainMiddleware
 from headroom.api.gateway import build_gateway
 from headroom.api.middleware import RequestContextMiddleware
 from headroom.core.log import configure_logging
@@ -49,6 +50,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Added first, so it ends up *inside* the context middleware — `add_middleware` inserts at
+# the front, and the front of that list is the outside of the stack. That is the right way
+# round: the drain switch only stamps a header on responses that already exist, and moving
+# it outward would put it in front of the one middleware whose docstring says it has to see
+# everything (Phase 10 §8, docs/DECISIONS.md H-091).
+app.add_middleware(DrainMiddleware)
 # Outermost, so every response carries a request id and no code path can run without a
 # RequestContext — including the ones that fail before reaching a route.
 app.add_middleware(RequestContextMiddleware)

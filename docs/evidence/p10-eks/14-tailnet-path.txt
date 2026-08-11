@@ -1,0 +1,6 @@
+boot: 2026/08/11 06:46:22 Startup complete, waiting for shutdown signal
+2026/08/11 13:51:22 control: map response long-poll timed out!
+2026/08/11 13:51:22 Received error: PollNetMap: Post "https://controlplane.tailscale.com/machine/map": context canceled
+2026/08/11 13:51:27 control: netmap: got new dial plan from control
+2026/08/11 13:51:27 health(warnable=not-in-map-poll): ok
+{"object":"list","data":[{"id":"cyankiwi/Qwen3.6-27B-AWQ-INT4","object":"model","created":1786469846,"owned_by":"vllm","root":"cyankiwi/Qwen3.6-27B-AWQ-INT4","parent":null,"max_model_len":4096,"permission":[{"id":"modelperm-90a204356b7a7d16","object":"model_permission","created":1786469846,"allow_create_engine":false,"allow_sampling":true,"allow_logprobs":true,"allow_search_indices":false,"allow_view":true,"allow_fine_tuning":false,"organization":"*","group":null,"is_blocking":false}]}]}pod "tailnet-check" deleted from headroom namespace

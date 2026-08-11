@@ -1,0 +1,42 @@
+{{- if .Values.ui.enabled }}
+{{- $component := "ui" -}}
+{{- include "headroom.requireSourceRanges" (dict "service" .Values.ui.service "component" "ui") -}}
+# ClusterIP, and that is a decision rather than a default.
+#
+# Phase 9 put the console behind the ALB because ECS has no other way to reach a task's
+# port. Kubernetes has one — `kubectl port-forward svc/...-ui 3001:3001` — and it is
+# better on both axes that matter here: it costs nothing (a second load balancer is
+# $0.54/day), and the credential guarding it is the cluster's own IAM and RBAC rather than
+# an IP allow-list in front of a cleartext listener. The console holds the root admin
+# token for a session (H-055); the stronger door is the right one.
+#
+# The cost, stated: the dashboard screenshots in this phase's evidence are taken through a
+# port-forward, so the address bar says `localhost`. The pods are in the cluster either
+# way, and `kubectl get pods -o wide` in the same capture set says which node served them.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "headroom.fullname" . }}-ui
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+  {{- with .Values.ui.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.ui.service.type }}
+  {{- if ne .Values.ui.service.type "ClusterIP" }}
+  externalTrafficPolicy: Cluster
+  {{- end }}
+  {{- with .Values.ui.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.ui.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

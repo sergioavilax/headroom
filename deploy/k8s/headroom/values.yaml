@@ -1,0 +1,369 @@
+# Headroom's chart defaults.
+#
+# ── These defaults are the LOCAL ones, and that is deliberate ──────────────────
+# `helm template deploy/k8s/headroom` with no `-f` renders a chart that installs on any
+# cluster and reaches nothing outside it: ClusterIP services, no cloud annotations, no
+# tailnet, placeholder image repositories. Every AWS-specific value lives in
+# `deploy/k8s/values.aws.yaml`, which `make k8s-config` generates from the data layer's
+# Terraform outputs and which git never sees (it carries the operator's home CIDR).
+#
+# That split is what lets CI lint and render this chart keylessly, and it is the same
+# rule `config/routing.yaml` follows: the committed file names things, the environment
+# supplies the values.
+#
+# ── No secret has a home in this file ──────────────────────────────────────────
+# There is no `secrets.databaseUrl`, no `secrets.anthropicApiKey`, and no template that
+# renders a `kind: Secret`. The three credentials arrive in a Secret the operator creates
+# by hand from Secrets Manager (README §3), and the chart names it. So invariant 3 is
+# structural here rather than remembered: there is no field a value could be written into,
+# which is `values.schema.json`'s `additionalProperties: false` doing the work
+# `extra="forbid"` does for `config/routing.yaml` (H-014).
+
+# -----------------------------------------------------------------------------------
+# Naming
+# -----------------------------------------------------------------------------------
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -----------------------------------------------------------------------------------
+# Images
+# -----------------------------------------------------------------------------------
+
+image:
+  # The ECR repository the runbook pushed in Phase 9 (`terraform -chdir=deploy/aws/data
+  # output -raw gateway_repository_url`). The placeholder below is not a working image;
+  # it is a name that renders, so `helm template` needs no account.
+  repository: headroom/gateway
+  # ECR tags are mutable, so `latest` re-pushed under the same tag needs the Deployment's
+  # pod template to change before Kubernetes will pull it. `make k8s-config` writes an
+  # immutable tag instead, which is also what makes `helm rollback` mean something.
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# -----------------------------------------------------------------------------------
+# The Secret the operator creates, and the keys inside it
+# -----------------------------------------------------------------------------------
+#
+# `kubectl create secret generic headroom-secrets --from-literal=...` — README §3. The
+# key names are the environment variables the gateway reads, unchanged from
+# `docker-compose.yml` and from the ECS task definition's `secrets` block, so the three
+# environments differ in *where the value comes from* and in nothing else.
+
+secrets:
+  existingSecret: headroom-secrets
+  keys:
+    databaseUrl: DATABASE_URL
+    adminToken: HEADROOM_ADMIN_TOKEN
+    anthropicApiKey: ANTHROPIC_API_KEY
+
+# -----------------------------------------------------------------------------------
+# The data layer (Phase 9's Terraform, still standing)
+# -----------------------------------------------------------------------------------
+#
+# RDS is reached through the `DATABASE_URL` secret above. DynamoDB is reached by name,
+# and the names below are `headroom/db/dynamo.py`'s own defaults — passed explicitly all
+# the same, because a deployment should not rest on a default staying put.
+#
+# Note what is NOT here: `DYNAMODB_ENDPOINT_URL`. Its absence is how
+# `headroom/db/dynamo.py` resolves the regional endpoint and signs with the pod's IRSA
+# role instead of an emulator's dummy credential — the same single line of difference
+# that made assumption A1's second half a real verification on ECS, now on EKS.
+
+aws:
+  region: us-east-1
+  budgetsTable: headroom_budgets
+  bucketsTable: headroom_buckets
+
+# The IAM role the gateway's pods assume, through the OIDC provider `eksctl` creates.
+# `create: false` because `deploy/k8s/eksctl/cluster.yaml` declares the service account
+# and eksctl makes it — role, trust policy, annotation and all — as part of
+# `eksctl create cluster`. A ServiceAccount this chart also created would fight it.
+serviceAccount:
+  create: false
+  name: headroom-gateway
+  annotations: {}
+
+# -----------------------------------------------------------------------------------
+# The gateway
+# -----------------------------------------------------------------------------------
+
+gateway:
+  # Two, and it is the setting the whole zero-dropped-requests demo rests on: with
+  # `maxUnavailable: 0` there is always a Ready pod behind the Service while the other is
+  # replaced. It is also the configuration `gateway_desired_count`'s own comment wanted on
+  # ECS and did not buy — H-018 fixed the auth cache's 5-second TTL as a *cross-process*
+  # bound, and one process cannot demonstrate a cross-process bound.
+  replicaCount: 2
+
+  # The port inside the container, unchanged since Phase 0 and the same number compose and
+  # the ECS task definition use.
+  containerPort: 8000
+
+  logLevel: INFO
+
+  # BUILD_PLAN L6: the deploy image is built with `--build-arg WITH_EMBED=1` and carries
+  # `BAAI/bge-small-en-v1.5`'s weights. These two say so at runtime — `HF_HOME` points at
+  # where the build put them, and `offline` turns a cache miss into an error rather than a
+  # 130 MB fetch from HuggingFace in the middle of somebody's request.
+  #
+  # Set `offline: false` only if you pushed an image without the build argument, in which
+  # case the gateway does exact caching and answers 503 to a request for `semantic`.
+  embed:
+    hfHome: /opt/hf
+    offline: true
+
+  # `requests` are what the scheduler reads, so they are what has to fit on a node;
+  # `limits` are burst room. The gap is wide on memory on purpose: the baseline gateway is
+  # a couple of hundred megabytes, and the CPU torch model behind the semantic cache is
+  # most of a gigabyte the first time a tenant asks for it. Requesting the burst would
+  # mean paying for a node big enough for a feature this demo never enables.
+  #
+  # `tests/test_deploy_k8s.py` checks the requests against the node type in
+  # `deploy/k8s/eksctl/cluster.yaml`, including the surge pod a rolling upgrade adds —
+  # because a Deployment whose pods do not fit is a Deployment that sits in `Pending` with
+  # nothing red anywhere, which is the Kubernetes-shaped version of H-082's problem.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1536Mi
+
+  # maxUnavailable 0: never take a Ready pod away before its replacement is Ready.
+  # maxSurge 1: one extra pod at a time, so the node group is sized for N+1 and not 2N.
+  strategy:
+    maxUnavailable: 0
+    maxSurge: 1
+
+  # `/healthz` is liveness-only by design (H-000) — it reports that the process is
+  # serving and claims nothing about Postgres, DynamoDB, or a provider. That makes it
+  # exactly right for both probes here, and it is the same endpoint the ALB's target group
+  # and compose's healthcheck use. The *shapes* differ (an HTTP GET rather than a
+  # `python -c urllib` command) because that is the idiom of each runtime; the endpoint,
+  # the port, and the meaning do not.
+  probes:
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+    # A cold start pulls ~810 MiB of image and then builds the gateway, so the first
+    # Ready can be minutes away on a node that has never seen this image. A startup probe
+    # is what stops the liveness probe killing a pod that is merely still starting.
+    startup:
+      periodSeconds: 5
+      failureThreshold: 60
+
+  # Three things, and all of them are load-bearing for "zero dropped requests":
+  #
+  #   * `drainFilePath` — `preStop` touches this before it sleeps, and the gateway answers
+  #     every subsequent response with `Connection: close` so clients retire their
+  #     keep-alive connections during the window rather than losing a request when
+  #     uvicorn closes them at SIGTERM. §8 measured one drop per replaced pod without it,
+  #     at both sleep lengths below; the sleep alone cannot fix that race because an
+  #     established connection ignores Endpoints entirely (H-091, `headroom/api/drain.py`).
+  #     It must be a path the container can write and nothing else reads — `/tmp` is that,
+  #     and `readOnlyRootFilesystem` is already off for `uv`'s cache.
+  #   * `preStopSleepSeconds` — a pod is sent SIGTERM and removed from Endpoints at the
+  #     same moment, and kube-proxy on every node takes a beat to notice. Without this
+  #     sleep, requests already heading toward a doomed pod are the ones that get dropped.
+  #     It is also the window the drain above needs: long enough for every pooled
+  #     connection to receive one response and retire itself.
+  #   * `terminationGracePeriodSeconds` — the gateway's own shutdown drains the ledger
+  #     writer's queue before closing the store (H-027's "a graceful stop loses nothing").
+  #     Comfortably longer than the sleep plus that drain.
+  lifecycle:
+    drainFilePath: /tmp/headroom-draining
+    preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 45
+
+  # `preferred`, not `required`: two gateway pods should land on different nodes so a node
+  # going away is not an outage, but a single-node cluster must still schedule. Required
+  # anti-affinity on a two-node cluster would also make the surge pod of a rolling upgrade
+  # unschedulable, which would turn a safety property into a deadlock.
+  podAntiAffinity: preferred
+
+  # Voluntary disruption — a node drain, a cluster upgrade — may never take the last
+  # Ready gateway. The Deployment's own `maxUnavailable: 0` says the same thing about
+  # rollouts; this says it about everything else.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  service:
+    # ClusterIP by default. `values.aws.yaml` sets `LoadBalancer` and the source ranges
+    # together, and the template refuses to render a LoadBalancer without them — the same
+    # rule `var.home_cidr` has in Terraform: no default, because a default of `0.0.0.0/0`
+    # publishes a tenant-and-key control plane the first time somebody forgets a flag.
+    type: ClusterIP
+    # 8080 to match the port compose publishes on the host and the port the Phase 9 ALB
+    # listened on, so an operator's curl differs from the local one by the hostname only.
+    port: 8080
+    annotations: {}
+    loadBalancerSourceRanges: []
+
+  nodeSelector: {}
+  tolerations: []
+  podAnnotations: {}
+  extraEnv: []
+
+# -----------------------------------------------------------------------------------
+# Autoscaling — shipped, and OFF
+# -----------------------------------------------------------------------------------
+#
+# BUILD_PLAN §P10 asks for "HPA optional-off". Off is not laziness here, it is the only
+# honest setting for this cluster:
+#
+#   * An HPA needs `metrics-server`, which EKS does not install and this chart does not
+#     bring. Enabling this without it gives an HPA stuck at `<unknown>/70%` forever.
+#   * The node group is two fixed nodes with no Cluster Autoscaler or Karpenter, so an
+#     HPA's real ceiling is whatever fits on them. Scaling into `Pending` is not scaling.
+#   * Nothing in this phase measures throughput, so a scaling rule would be a knob with
+#     no reading behind it.
+#
+# The template exists so turning it on is a values change rather than a chart change, and
+# the two prerequisites above are what the README says to do first.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: null
+
+# -----------------------------------------------------------------------------------
+# Migrations
+# -----------------------------------------------------------------------------------
+#
+# A Helm hook Job running `python -m headroom.db.migrate` in the gateway's own image,
+# before install and before every upgrade. BUILD_PLAN §P9's standard, carried over: the
+# same runner everywhere, same code local and prod.
+#
+# Applying them twice is a no-op that prints `up to date` (CI asserts exactly that), so
+# the Phase 9 schema already on RDS makes this a confirmation rather than a change. It
+# runs to completion *before* the rollout starts, which costs a few seconds at the front
+# of an upgrade and costs no requests: the old pods are still serving.
+migrations:
+  enabled: true
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------------
+# The console
+# -----------------------------------------------------------------------------------
+#
+# A client of `/admin/*` and nothing else (H-054), handed no secret at all — not even by
+# reference (H-055). Its whole environment is one URL, and on this cluster that URL is the
+# gateway's ClusterIP service.
+#
+# It is deliberately NOT published on a load balancer. On ECS it was, because ECS has no
+# equivalent of `kubectl port-forward`; Kubernetes does, it costs nothing, and it is
+# authenticated by IAM and RBAC rather than by an IP allow-list on a cleartext listener.
+# Set `service.type: LoadBalancer` (and source ranges) if you want it on its own address
+# and are willing to pay for a second load balancer.
+
+ui:
+  enabled: true
+  image:
+    repository: headroom/ui
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  containerPort: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  probes:
+    readiness:
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+  service:
+    # 3001, matching compose, because Backline holds 3000 on the operator's machine
+    # (H-006, one service along).
+    type: ClusterIP
+    port: 3001
+    annotations: {}
+    loadBalancerSourceRanges: []
+  nodeSelector: {}
+  tolerations: []
+  podAnnotations: {}
+
+# -----------------------------------------------------------------------------------
+# Reaching home: the tailscale egress proxy
+# -----------------------------------------------------------------------------------
+#
+# BUILD_PLAN §P10's own words: "the two-vLLM failover demo pointed at the cluster gateway
+# (tailscale reaches home)". The operator's two vLLM instances are containers on his
+# desk, published on ports 8010 and 8011 of a machine that is already a node on his
+# tailnet. Nothing about them is reachable from AWS, and nothing about them should be.
+#
+# So one pod joins the tailnet and forwards to that machine. `TS_TAILNET_TARGET_IP` is the
+# tailscale container's own egress-proxy mode: every connection arriving at the pod is
+# forwarded to that tailnet address, port for port. A ClusterIP Service in front of it
+# publishes 8010 and 8011, and the gateway's `VLLM_BASE_URL` / `VLLM_B_BASE_URL` point at
+# that Service — the exact shape they have in `docker-compose.yml`, where they point at
+# `host.docker.internal`. No gateway code changes, no proxy environment variables, no
+# CRDs, and no route advertised into the cluster.
+#
+# Off by default, so `helm template` with no values needs no tailnet and no auth key.
+# `TS_AUTHKEY` comes from a Secret the operator creates (README §3) — never from here.
+vllm:
+  enabled: false
+  image:
+    repository: ghcr.io/tailscale/tailscale
+    tag: v1.90.6
+    pullPolicy: IfNotPresent
+  # The tailnet address of the machine running the two vLLM containers. `tailscale status`
+  # prints it; on the operator's tailnet it is the `som-1` row.
+  targetIP: ""
+  # A short, stable hostname for the pod's own tailnet device, so `tailscale status` at
+  # home shows something recognisable rather than a pod hash.
+  hostname: headroom-eks-egress
+  # An ephemeral, pre-approved, tagged auth key. Ephemeral so the device disappears from
+  # the tailnet when the pod does — which matters at teardown, because a demo that leaves
+  # a stale node on somebody's tailnet has left something behind.
+  authKeySecret:
+    name: headroom-tailscale
+    key: TS_AUTHKEY
+  ports:
+    a: 8010
+    b: 8011
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------------
+# Extra labels applied to everything this chart creates
+# -----------------------------------------------------------------------------------
+
+commonLabels: {}

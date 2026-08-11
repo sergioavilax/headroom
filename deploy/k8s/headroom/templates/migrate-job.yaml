@@ -1,0 +1,77 @@
+{{- if .Values.migrations.enabled }}
+{{- $component := "migrate" -}}
+# `python -m headroom.db.migrate`, in the gateway's own image, before install and before
+# every upgrade.
+#
+# BUILD_PLAN §P9's standard applied one runtime along: **the same runner everywhere, same
+# code local and prod.** On compose it is `make up`'s second line; on ECS it was a one-off
+# `run-task` on the gateway's own task definition; here it is a Helm hook. In all three
+# the thing being run is the module this repo ships, against the connection string the
+# gateway itself reads.
+#
+# ── Why a pre-upgrade hook costs no requests ──────────────────────────────────
+# Helm runs this to completion before it touches the Deployment, so the old pods are
+# still serving throughout. It costs a few seconds at the front of an upgrade — visible in
+# the load loop's timeline as a longer-than-usual quiet stretch *before* anything changes,
+# and not as a gap in service.
+#
+# ── And why running it every time is safe ─────────────────────────────────────
+# `headroom/db/migrate.py` records applied versions in `schema_migrations` and applies
+# each file once, in one transaction. Applying them twice prints `up to date` and touches
+# nothing, which CI asserts directly ("Migrations apply, and applying them twice is a
+# no-op"). Against the schema Phase 9 already put on RDS this is therefore a confirmation
+# rather than a change — and it is the confirmation that would have caught a chart pointed
+# at the wrong database before any traffic reached it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "headroom.fullname" . }}-migrate
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    # `before-hook-creation` rather than `hook-succeeded`: the Job's logs survive until the
+    # next upgrade replaces it, so `kubectl logs job/...-migrate` still answers "what did
+    # the last migration run say" after a successful install. Deleting on success would
+    # throw away the one artifact worth reading.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  # A migration that has not finished in five minutes is not going to; failing the hook
+  # stops the upgrade rather than letting a rollout start against a half-built schema.
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "headroom.componentSelectorLabels" (dict "root" . "component" $component) | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uv", "run", "--no-sync", "python", "-m", "headroom.db.migrate"]
+          env:
+            # Only the database URL. A migration runner has no provider to call and no
+            # admin API to authenticate, so it is handed neither — the same reasoning that
+            # gave the rollup Lambda one secret out of three (H-077).
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.keys.databaseUrl }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}

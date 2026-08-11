@@ -1,0 +1,28 @@
+{
+  "label": "rolling-upgrade",
+  "model": "mock-load-loop",
+  "dialect": "anthropic",
+  "duration_s": 600.08,
+  "requests": 8331,
+  "ok": 8330,
+  "shed": 0,
+  "dropped": 1,
+  "by_status": {
+    "200": 8330,
+    "transport": 1
+  },
+  "latency_ms": {
+    "p50": 85.94,
+    "p95": 91.24,
+    "p99": 97.99
+  },
+  "max_gap_ms": 393.8,
+  "incidents": [
+    {
+      "t_s": 86.976,
+      "kind": "dropped",
+      "status": null,
+      "detail": "RemoteProtocolError: Server disconnected without sending a response."
+    }
+  ]
+}

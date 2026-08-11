@@ -1,0 +1,26 @@
+# What `helm package` leaves out.
+#
+# ── No `!` negation in here, and the reason is a trap worth naming ────────────
+# This file looks like a `.gitignore` and is not one. Helm's own matcher inverts the
+# meaning of a leading `!`: where git reads `!foo` as "and keep foo after all", helm reads
+# it as "ignore everything that does NOT match foo". A single `!values.*.yaml.example`
+# line therefore excluded Chart.yaml and the whole templates directory, and `helm lint`
+# answered:
+#
+#     [ERROR] templates/: Chart.yaml file is missing
+#
+# — which names neither the file that caused it nor the rule that did. Caught on the first
+# lint of this chart; recorded here so the next person to reach for a negation does not
+# spend the afternoon on it.
+.DS_Store
+.git/
+.gitignore
+*.tmproj
+*.orig
+*.bak
+# The environment files. `values.aws.yaml` carries the operator's home CIDR and a tailnet
+# address (deploy/k8s/README.md section 2), so it is gitignored and never packaged — a
+# chart tarball that shipped somebody's allow-list would be a surprising thing to hand
+# over. It normally lives one directory up, beside the chart rather than in it; this rule
+# is here for the copy somebody eventually drops in the wrong place.
+values.*.yaml

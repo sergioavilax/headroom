@@ -93,6 +93,18 @@ services:
       # near-miss, which is exactly why it is not the default.
       HEADROOM_EMBEDDER: ${HEADROOM_EMBEDDER:-}
       HEADROOM_LOG_LEVEL: ${HEADROOM_LOG_LEVEL:-INFO}
+      # Phase 10: the lame-duck sentinel. On the cluster a `preStop` hook touches this
+      # path and the gateway starts answering `Connection: close` so clients retire
+      # their keep-alive connections before SIGTERM breaks them (H-091). Nothing here
+      # writes it, so locally it changes nothing — until you write it yourself, which is
+      # what makes the cluster's race reproducible on a laptop:
+      #
+      #   docker compose exec gateway touch /tmp/headroom-draining
+      #   docker compose stop gateway     # SIGTERM, same as Kubernetes sends
+      #
+      # with the load loop running against :8080. Set here rather than left to the chart
+      # so the two environments differ in the number of pods and nothing else.
+      HEADROOM_DRAIN_FILE: ${HEADROOM_DRAIN_FILE:-/tmp/headroom-draining}
       # The root admin token (Phase 2), referenced from the host shell or the
       # gitignored `.env`, never valued here. Unset is a safe state: the admin API
       # answers 503 rather than opening itself (docs/DECISIONS.md H-019).

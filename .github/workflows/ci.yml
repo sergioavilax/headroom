@@ -149,16 +149,28 @@ jobs:
           path: ui/playwright-report/
           retention-days: 7
 
-  # Phase 9. Two things that can only break outside Python, both keyless and both cheap:
-  # the Terraform parses, and the rollup Lambda's package assembles. Neither touches an
-  # AWS account — `terraform init -backend=false` fetches providers from the registry and
-  # nothing else, and `validate` reads no data source. Together with
-  # `tests/test_deploy_aws.py` (which holds the `.tf` files to the constants the gateway
-  # actually uses) this is the whole of what CI can honestly say about a deployment it
-  # will never perform: invariant 2 gives every apply to the human.
+  # Phases 9 and 10. Three things that can only break outside Python, all keyless and all
+  # cheap: the Terraform parses, the rollup Lambda's package assembles, and the Helm chart
+  # lints and renders into manifests a Kubernetes API server would accept. None touches an
+  # AWS account and none needs a cluster — `terraform init -backend=false` fetches
+  # providers from the registry and nothing else, `validate` reads no data source, and
+  # `helm template` is a text transformation.
+  #
+  # Together with `tests/test_deploy_aws.py` and `tests/test_deploy_k8s.py` — which hold
+  # the `.tf` files, the chart, and the eksctl config to the constants the gateway
+  # actually uses — this is the whole of what CI can honestly say about a deployment it
+  # will never perform: invariant 2 gives every apply, every `eksctl` and every
+  # `helm install` to the human.
   deploy:
-    name: terraform validates, and the Lambda package builds
+    name: terraform validates, the Lambda packages, and the chart renders
     runs-on: ubuntu-latest
+    env:
+      # The version kubeconform validates against. Not `latest`: a schema set from a
+      # newer Kubernetes accepts fields the chart's own `kubeVersion` floor does not
+      # promise are there, so the check would drift more permissive without anyone
+      # deciding to. Kept in step with the Makefile's `KUBE_VERSION`.
+      KUBE_VERSION: 1.31.0
+      KUBECONFORM_VERSION: v0.7.0
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v9.0.0
@@ -181,6 +193,44 @@ jobs:
       # request rather than at the apply.
       - run: make lambda-build
       - run: make tf-check
+
+      # Phase 10. `helm lint` catches a chart that is not a chart; `helm template` catches
+      # a template that does not render, including the two guards that are supposed to
+      # refuse — a LoadBalancer with no source ranges, and a tailscale egress proxy with
+      # nowhere to forward to. `kubeconform` then checks the rendered manifests against
+      # the Kubernetes API schemas, which is the part `helm lint` does not do at all: a
+      # `maxUnavaialble` typo renders perfectly and is silently ignored by a real cluster.
+      # v5, not v4.3.1: v4 targets Node 20 and the runner forces it onto 24 with a
+      # deprecation annotation. Exactly what Phase 9 fixed in-branch for
+      # `setup-terraform`, and Phase 0 for `checkout` and `setup-uv` — an annotation
+      # nobody acts on is an annotation nobody reads.
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v3.19.0
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o /tmp/kubeconform.tgz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tgz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+      - run: make helm-check KUBE_VERSION=${{ env.KUBE_VERSION }}
+      # The two refusals, asserted as refusals. A guard that stopped guarding would
+      # otherwise be invisible: the chart would render, install, and publish an admin API
+      # to 0.0.0.0/0 with nothing red anywhere.
+      - name: The chart refuses to publish a load balancer to everyone
+        run: |
+          if helm template headroom deploy/k8s/headroom \
+               --set gateway.service.type=LoadBalancer >/dev/null 2>&1; then
+            echo "a LoadBalancer rendered with no loadBalancerSourceRanges"
+            exit 1
+          fi
+          if helm template headroom deploy/k8s/headroom \
+               --set vllm.enabled=true >/dev/null 2>&1; then
+            echo "the tailscale egress proxy rendered with no targetIP"
+            exit 1
+          fi
+          echo "both guards fired"
 
   image:
     name: gateway and ui images build and serve

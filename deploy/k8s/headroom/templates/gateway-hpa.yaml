@@ -1,0 +1,47 @@
+{{- if .Values.autoscaling.enabled }}
+{{- $component := "gateway" -}}
+# Shipped, and off by default. Two things have to be true before this is anything but a
+# resource that reports `<unknown>/70%` forever, and the README says both:
+#
+#   1. `metrics-server` must be installed. EKS does not install it and this chart does not
+#      bring it — an HPA with no metrics source does not fail, it simply never scales,
+#      which is the least useful way for a feature to be broken.
+#   2. The node group must be able to hold `maxReplicas`. Two fixed nodes with no Cluster
+#      Autoscaler means an HPA's real ceiling is whatever fits, and scaling into `Pending`
+#      is not scaling.
+#
+# Note the interaction with the Deployment: when this is enabled, `replicas` is omitted
+# from the Deployment entirely rather than set to `minReplicas`. A chart that wrote both
+# would hand Helm and the HPA the same field to fight over, and every `helm upgrade` would
+# scale the fleet back down before the HPA scaled it up again.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "headroom.fullname" . }}-gateway
+  labels:
+    {{- include "headroom.componentLabels" (dict "root" . "component" $component) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "headroom.fullname" . }}-gateway
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- with .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+    {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+{{- end }}

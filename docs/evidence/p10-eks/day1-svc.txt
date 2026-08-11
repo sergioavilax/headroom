@@ -1,0 +1,4 @@
+NAME               TYPE           CLUSTER-IP      EXTERNAL-IP                                                                     PORT(S)             AGE
+headroom-gateway   LoadBalancer   172.20.146.57   aa8fc98273d32468d83f461cd7d4f975-18ea5f65f4c1ed02.elb.us-east-1.amazonaws.com   8080:31917/TCP      23m
+headroom-ui        ClusterIP      172.20.86.207   <none>                                                                          3001/TCP            23m
+headroom-vllm      ClusterIP      172.20.96.105   <none>                                                                          8010/TCP,8011/TCP   23m
