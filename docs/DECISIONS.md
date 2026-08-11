@@ -4398,3 +4398,623 @@ exists to protect** — so it is written down here rather than assumed.
   artifact's `spend` block, which this same session is publishing as an under-reporting
   record. Two changes to one number in one PR, one of them unmeasured, is how a receipt stops
   being a receipt.
+
+---
+
+## H-073 — `daily_rollups` is derived, and a day is replaced rather than added to (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** BUILD_PLAN §P9 specifies the Lambda completely: *"the nightly cost-rollup
+(EventBridge schedule → aggregate the day's ledger into `daily_rollups` → the dashboard's
+history view reads it) — a genuine, small, defensible Lambda, not decoration."* What it
+does not specify is the two things that decide whether that table is an asset or a second
+source of truth: **where the aggregation lives**, and **what happens when the job runs
+twice**.
+
+Both have an obvious answer that would work and would be wrong. The aggregation could be a
+`GROUP BY` inside the Lambda — it is a scheduled job, it owns its query, nobody would
+blink. And the writer could accumulate, which is what "roll up" means to most people.
+
+**Decision — the aggregation is a `LedgerStore` method; the Lambda is a wrapper.**
+
+`write_daily_rollup(day)` is implemented on `PostgresLedgerStore` and
+`InMemoryLedgerStore` and asserted by the same contract suite as `totals` and `series`
+(H-021's shape). That is H-054's argument one runtime over: `usage_ledger` has forty
+columns and five `cost_status` values whose distinctions are the whole point of Phase 3 —
+NULL is not zero, a `partial` row is a bound, a hit's token counts are absent rather than
+copied — and a second reader re-decides every one of them silently, in a process nobody
+runs the test suite in.
+
+The load-bearing test is `test_a_rollup_says_what_totals_say_about_the_same_day`. They are
+the same question over different windows; a disagreement means one of them is wrong about
+a NULL, in a number a human reads as a bill.
+
+**Decision — the table is derived, and a day is deleted before it is written.**
+
+Every column is recomputable from `usage_ledger` alone, and nothing on the request path
+writes here. `write_daily_rollup` is `DELETE FROM daily_rollups WHERE day = $1` followed by
+`INSERT … SELECT`, in one transaction — not an upsert, and not `ON CONFLICT DO UPDATE` with
+sums.
+
+That makes re-running **a correction rather than a doubling**, which is what the whole
+schedule rests on: the Phase 9 gate fires it by hand, the handler covers two days on every
+run (H-078), and a failed night is repaired by the next one. It is also the only behaviour
+under which the table can be trusted after a ledger truncation — not hypothetical, since
+this repo's own Postgres fixture runs `TRUNCATE usage_ledger, virtual_keys, tenants
+CASCADE` on every `make test` (H-029).
+
+**Supporting choices.**
+
+- **The day is the UTC day of `started_at`**, never `created_at`. The writer is
+  fire-and-forget with a drain queue (H-027), so a request that arrived at 23:59:59 can
+  land its row after midnight — and it belongs to the day it happened. Cast as
+  `($1::date)::timestamp AT TIME ZONE 'UTC'` rather than `$1::date::timestamptz`, which
+  resolves midnight in the *session's* zone.
+- **Every sum ships beside a count of what it could not include** — `unpriced_requests`,
+  `cache_avoided_unknown`. H-025's rule, and it matters more here than on a live total: a
+  rollup that folded NULL into zero understates a day nobody can re-check once the window
+  has passed.
+- **A day with no traffic gets no row**, not a row of zeros — `UsageBucket`'s rule, one
+  table over. The consequence is that an absent day is ambiguous ("no traffic" or "nobody
+  rolled it up"), which is why `computed_at` is a column and why the console's history view
+  makes it a first-class tile rather than a footnote.
+- **`list_rollups`' limit bounds distinct *days*, not rows** (`dense_rank`). A day is
+  several rows when several tenants were busy, and "the last ninety days" quietly becoming
+  "the last twenty-two days and four tenants" is the shape of a chart that loses a tenant.
+
+**Alternatives considered.** *A `GROUP BY` in the Lambda* — H-054's second reader with a
+different hostname. *Upsert and accumulate* — makes the job non-idempotent, which makes
+firing it by hand at a gate something to be careful about and a retry after a half-failed
+night a corruption. *A materialised view* — Postgres would own the refresh, which is
+elegant and removes the Lambda §P9 asks for by name. *Grain of (day, tenant, model)* — a
+finer cut nobody asked for; the history view asks what the Overview asks over a longer
+window, so `UsageTotals`' shape is what it should match.
+
+**Consequences.** `migrations/0007` is the first table in this schema holding derived data,
+and `migrations/README.md` says so. The rollup and a live total can differ in the *scale*
+of their money string — Postgres returns `NUMERIC(24, 12)` as `"0.000023000000"`, while
+summing Python `Decimal`s keeps the operands' scale and gives `"0.000023"` — both exact,
+both parsing to the same picodollars, and `tests/test_rollup.py` compares as `Decimal`
+rather than pinning a spelling that would make the test a statement about which store ran
+it. `GET /admin/usage/rollups` is read-only and there is deliberately **no route that fires
+the rollup**: the schedule is EventBridge's, a manual run is `aws lambda invoke`, and a
+POST would be a way to make the gateway's own database do arbitrary aggregate work from the
+internet side of a load balancer. `ui/lib/proxy.ts` already named "a Phase 9 rollup
+trigger" as its example of what the console must never relay; the route it must not relay
+does not exist.
+
+---
+
+## H-074 — Two Terraform roots, split by lifetime rather than by service (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** Two clauses of the plan cannot both be satisfied by one state file. §P9's gate
+says *"destroy the same day unless P10 follows immediately"*; §P10 says *"RDS/DynamoDB
+reused from P9's Terraform (don't rebuild the data layer as k8s pods)"*. So the ALB and the
+Fargate services have to be destroyable this evening while the database they were pointed
+at survives for three more days.
+
+`terraform destroy -target=…` can express that. It is also the thing every Terraform
+document warns is for exceptional recovery, it is order-dependent, and its blast radius is
+whatever the operator typed at the end of a long session.
+
+**Decision — two root modules, `deploy/aws/data` and `deploy/aws/compute`, split by how
+long a thing is meant to live.**
+
+| Root | Holds | Lifetime |
+|---|---|---|
+| `data` | VPC, subnets, RDS, both DynamoDB tables, both ECR repositories, the three secret containers | created in P9, survives P9's teardown, carries P10 |
+| `compute` | ALB, both Fargate services, the rollup Lambda, the alarms, the log groups, the Secrets Manager endpoint | created and destroyed inside a day, repeatedly |
+
+**The dependency points one way and cannot be written the other way.** `compute` reads
+`data` through `terraform_remote_state`; `data` names nothing in `compute`, which
+`tests/test_deploy_aws.py` asserts by grepping for `aws_ecs_`, `aws_lb`, `aws_lambda_`, and
+`aws_cloudwatch_` in the data root. Where compute needs to be *reachable* by a data-layer
+resource — the database's security group — the group is data's and compute's tasks **join**
+it. Membership is a property of the member, so removing the member is enough; an ingress
+rule in `data` naming a compute security group is the shape that fails a destroy with
+`DependencyViolation` at the worst possible moment.
+
+**ECR is in `data`, and that is the non-obvious half.** An image is state. Phase 10's Helm
+chart pulls the same gateway image this phase pushed, and that image is a ~810 MiB upload
+from a home connection (H-076). Putting the repositories in `compute` would make "destroy
+compute, keep data" cost that upload again, and would make it cost it at the moment
+somebody is trying to bring a cluster up. The split is stateful-versus-ephemeral, not
+storage-versus-service, and the runbook says so.
+
+**Decision — local state, no remote backend.** One operator, one machine, two roots. An S3
+bucket plus a lock table is two more resources to create before the first apply and two
+more to destroy after the last, on a stack whose entire budget is $5–8. The cost is stated
+rather than buried: `terraform.tfstate` is the only copy, so **`git clean -xdf` between an
+apply and its destroy leaves resources to be deleted by hand from the console**, and the
+runbook warns about exactly that.
+
+**Alternatives considered.** *One root with `-target` at teardown* — expressible, and it
+makes the phase's most consequential operation a flag rather than a plan somebody reads.
+*One root with `count` guards on the compute resources* — a `compute_enabled = false` apply
+is a real pattern; it also means the destroy path is an untested branch of the same
+configuration, and a mistyped variable is a data-layer destroy. *Three roots (network,
+data, compute)* — the VPC has exactly one lifetime and it is the database's. *Terragrunt or
+a workspace-per-layer* — a tool and a concept to learn for two directories.
+
+**Consequences.** Two `terraform init`s, two `apply`s, and two `tfvars` files, in a fixed
+order the runbook enforces. `data`'s outputs are now a published interface — the coupling
+between the roots is exactly that file, which `test_compute_reads_the_data_layer_through_its_published_outputs`
+holds by checking every `local.data.*` reference against it. And the property the split
+exists for is a *step* rather than a hope: after `compute destroy`, the runbook runs
+`terraform -chdir=../data plan` and expects **`No changes.`**, which Phase 10's estimate
+depends on being true.
+
+---
+
+## H-075 — No NAT gateway: public tasks, a free endpoint, and the one that is not free (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §0.6 budgets **$5–8** for this phase. A NAT gateway is **$0.045/hour** —
+$1.08/day, or forty percent of everything this stack costs — and the textbook VPC has one,
+because the textbook VPC puts workloads in private subnets and gives them a route out.
+
+Meanwhile four things need to be reachable from inside the VPC: Anthropic (the product),
+ECR and CloudWatch Logs (the platform), DynamoDB (the budget gate and the token buckets),
+and Secrets Manager (the credentials).
+
+**Decision — a topology with no NAT gateway at all, and each of the four solved
+differently.**
+
+- **The Fargate tasks run in the public subnets with `assign_public_ip = true`**, and their
+  security group admits nothing except the load balancer's. A public IP with no inbound
+  rule is a host with an egress path, not an exposed host — and that egress path is how
+  they reach Anthropic, ECR, and CloudWatch for nothing.
+- **DynamoDB goes through a gateway endpoint**, which is a route-table entry rather than an
+  ENI: no hourly charge, no data processing charge, no availability zone to pick. It is on
+  both route tables, so the answer to "where does a conditional write go" does not depend
+  on which subnet the caller is in.
+- **RDS stays in private subnets with no default route**, and the door in is an ECS task on
+  the same VPC — which is also the door migrations come through, using the same runner
+  §P9 asks for.
+- **The rollup Lambda is in the private subnets too**, because that is where the database
+  is, and a VPC Lambda has no public IP under any configuration. Its one AWS call —
+  `GetSecretValue` — therefore needs an **interface endpoint**, at ~$0.48/day.
+
+**That $0.48/day is what it costs to make the rollup a Lambda, and the runbook says so
+next to the number.** A scheduled ECS task on the gateway's own task definition would run
+in a public subnet, reach Secrets Manager over the internet, need no endpoint and no
+packaging, and cost nothing extra. It is a Lambda because BUILD_PLAN's second paragraph
+names DynamoDB and Lambda as the two listing gaps this project exists to close, and closing
+one of them with "we used a cron task instead" closes nothing.
+
+**Decision — the console reaches the gateway through Cloud Map, not through the ALB.**
+
+The two services are separate ECS services and the console needs the gateway's address.
+Routing it through the load balancer would mean adding "and also anything in this VPC" to a
+security group whose entire job is admitting one address — weakening the control §P9 asks
+for by name, to solve a problem service discovery solves for about two cents a day. So the
+gateway registers in a private DNS namespace and the console is handed
+`http://gateway.headroom.local:8000`. The ALB's ingress stays at exactly one CIDR.
+
+**Alternatives considered.** *A NAT gateway* — the conventional answer, $1.08/day, and it
+would also have made the Lambda's endpoint unnecessary; rejected on price for a stack that
+lives for a day. *Private subnets with VPC endpoints for ECR, S3, Logs, and Secrets
+Manager* — the "no internet at all" build, four interface endpoints at ~$0.48/day each,
+which is worse than the NAT it replaces. *RDS publicly accessible from the home /32* —
+removes the private subnets, the endpoint, and the run-task migration path in one move, and
+puts a database on the internet behind a home IP that changes. *An internal ALB for
+service-to-service* — a second load balancer at $0.68/day to avoid a $0.02/day namespace.
+
+**Consequences.** The tasks have public IPs, which reads alarming in a console and is
+exactly as safe as their security group — so that group is the one thing in this
+configuration worth reviewing carefully, and it admits one source: the ALB's group. There
+is no NAT to fail over, and equally no egress control: a compromised task can reach the
+internet. On a stack that exists for a day behind a /32, with a stated teardown, that is
+the trade; production adds a NAT, egress rules, and a VPC flow log, and none of those is
+claimed here.
+
+---
+
+## H-076 — One Dockerfile, one build argument, and the weights are baked (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** BUILD_PLAN L6 is a locked decision: *"Embeddings for the semantic cache:
+`BAAI/bge-small-en-v1.5`, CPU, weights baked in the deploy image."* Phase 5 deliberately
+did **not** put the `embed` extra in the compose image — a ~200 MB torch install in a
+container whose tenants all have caching disabled by default buys nothing — and said
+baking was Phase 9's job. H-000 anticipated the same moment from the other side: *"A single
+root `Dockerfile` … the deploy-specific image lands in Phase 9 and can introduce `docker/`
+then, when there is a second thing to name."*
+
+**Decision — there is no second thing to name. One `Dockerfile`, `ARG WITH_EMBED=0`.**
+
+The deploy image differs from the local one by an extra and a download. A second Dockerfile
+would be a second copy of the base image, the layer order, the `COPY` set, and the
+entrypoint — four things that must not drift and that nothing would notice drifting, for
+the sake of one conditional. A build argument cannot drift.
+
+`--build-arg WITH_EMBED=1` adds `--extra embed` to both `uv sync` layers and runs
+`SentenceTransformer('BAAI/bge-small-en-v1.5')` in a layer of its own with `HF_HOME=/opt/hf`
+already set. **It is that call and not an import**, for the reason Phase 5's container run
+found the hard way: constructing Headroom's own `BGEEmbedder` touches no weight file, which
+is why `PUT /admin/cache {"mode":"semantic"}` used to answer 200 on an image with no model
+in it. The line that really fetches is the line that really bakes.
+
+**`HF_HUB_OFFLINE` is set by the task definition and not by the image.** In the image it
+would break the download that puts the weights there. At runtime it turns a cache miss into
+an error instead of a 130 MB fetch from HuggingFace in the middle of somebody's request —
+which is the failure mode baking exists to prevent, so leaving it to chance would be
+strange.
+
+**Measured rather than estimated**, because the numbers change what the runbook says:
+
+```
+3.81 GB unpacked   (2.62 GB venv with CPU torch + 140 MB weights + the 501 MB base)
+ 810 MiB compressed — the actual ECR push
+```
+
+Verified on the operator's machine before the runbook was written: the image builds, serves
+`/healthz`, and `LazyEmbedder().resolve()` returns `BAAI/bge-small-en-v1.5` at 384
+dimensions **with `HF_HUB_OFFLINE=1`** — which is the only test that distinguishes a baked
+image from one that would have downloaded the model on first use.
+
+**Alternatives considered.** *`docker/gateway.aws.Dockerfile`* — H-000's own suggestion, and
+it duplicates everything that is not the difference. *A multi-stage build copying the venv
+into a fresh base* — saves the ~54 MB `uv` binary out of 3,810 and changes the entrypoint.
+*`UV_COMPILE_BYTECODE=0` for the embed build* — a real few hundred megabytes, paid for in
+cold-start time on the one image whose cold start is already the slowest thing here.
+*Don't bake at all and let the first semantic request fetch* — contradicts L6, and makes one
+unlucky request pay 130 MB of latency.
+
+**Consequences.** CI keeps building the default image, so the deploy variant is **not**
+built on every pull request — a multi-gigabyte download per run for a variant only
+`docker push` uses. The verification above is a phase-log entry rather than a CI job, and
+that is stated in `.github/workflows/ci.yml` beside the build it does run. `health_check_grace_period_seconds`
+is 120 on the gateway service because a 810 MiB pull is the slow part of a cold start. And
+an operator who does not want to push 810 MiB can drop the flag: the gateway then does
+**exact** caching and answers 503 to a request for `semantic`, naming the extra — the
+shipped behaviour, and an honest thing to demo.
+
+---
+
+## H-077 — Three secrets the human fills in, and a password Terraform never sees (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** BUILD_PLAN §0.2 invariant 3: *"No API key ever enters the repo, a compose
+file's committed env, Terraform state, or a task definition's plain environment. `.env`
+locally, Secrets Manager on AWS, Kubernetes Secrets on EKS — set by the human, out of band,
+leading-space CLI calls."* The phase brief adds: *"Secrets out of Terraform state where the
+design allows; document what lands in state and why where unavoidable."*
+
+Four credentials exist on this stack: the database password, the connection string built
+from it, the root admin token, and the Anthropic key.
+
+**Decision — Terraform creates secret *containers* and never a version.**
+
+`aws_secretsmanager_secret` × 3 (`headroom/database-url`, `headroom/admin-token`,
+`headroom/anthropic-api-key`), no `aws_secretsmanager_secret_version` anywhere in either
+root. The values arrive by hand, with a leading space, in the runbook's §4. A secret with
+no version is not a broken state: `terraform plan` is empty, and the *task* that reads it
+fails to start with a message naming it — loud, early, and in the right place.
+`tests/test_deploy_aws.py` asserts the absence of both `aws_secretsmanager_secret_version`
+and `secret_string` in the deploy tree, so the property is checked rather than remembered.
+
+**Decision — `manage_master_user_password = true`: RDS generates the password and
+Terraform never sees it.**
+
+The two alternatives both fail the invariant in state. A `password =` argument writes the
+literal. `random_password` writes its `result`. RDS's own managed secret writes neither —
+the value exists in a secret AWS created, and Terraform holds an ARN.
+
+The cost is one manual step, and it is the runbook's: read the generated password once,
+percent-encode it, and write the whole `postgresql://…` URL into the `database-url` secret
+the tasks actually read. **Percent-encoding is not defensive tidiness** — an RDS-generated
+password may contain `#`, `?`, or `%`, each of which truncates or corrupts a URL, and the
+failure would look like an authentication problem.
+
+**Decision — one secret holding the whole URL, not a password plus a hostname.**
+
+The gateway, the migration runner, and the rollup Lambda all read exactly one thing:
+`DATABASE_URL`. Assembling that string from parts would be code written for the deployment
+rather than the code that ships, and BUILD_PLAN §P9's "migrations run by the same runner as
+everywhere (same code local and prod)" is the standard this has to meet.
+
+**What does land in state, stated.** Terraform state for the data root holds: the RDS
+endpoint and the ARN of the RDS-managed secret, the three secret ARNs, every subnet and
+security group id, and both ECR URLs. No value of any of the four credentials, and no
+password. Terraform state for the compute root holds the same identifiers plus IAM policy
+documents that name those ARNs. **An ARN names a secret without being one**, which is also
+why the rollup Lambda's environment carries `DATABASE_URL_SECRET_ARN` rather than a
+connection string: a Lambda's environment is visible in `GetFunctionConfiguration` and is
+the same thing invariant 3 calls "a task definition's plain environment".
+
+**Decision — `recovery_window_in_days = 0`, and it is a destroy flag.**
+
+Secrets Manager's default is a 30-day recovery window, during which a deleted secret still
+owns its **name**. So the default turns this phase's own teardown-and-rebuild — which
+happens at least twice here and again in P10 — into `InvalidRequestException: You can't
+create this secret because a secret with this name is already scheduled for deletion`, four
+weeks after the mistake.
+
+**Alternatives considered.** *A `secret_version` with a value from a `tfvars`* — puts it in
+state and in a file. *SSM Parameter Store `SecureString`* — same mechanics, and ECS's
+`secrets` block supports both; Secrets Manager is what the plan names. *Injecting discrete
+`PG*` variables and composing the URL in the gateway* — would remove the manual step, and
+it is a gateway change made to suit a deployment. *Reading the RDS-managed secret directly
+from the task* — the JSON has `username`/`password` and ECS can pull one key, but the
+gateway wants a URL, so this only moves the assembly problem into a task definition.
+
+**Consequences.** Two Secrets Manager secrets hold the same password (RDS's and ours) and
+rotating it is a two-step manual operation — acceptable for a stack with a stated lifetime,
+and named here rather than discovered. The three values must be present **before** the
+compute apply, which the runbook orders and which `test_the_runbook_fills_in_every_secret_terraform_creates`
+holds it to. And the console remains the one component handed no secret at all, not even by
+reference (H-055): its whole task-definition environment is one URL.
+
+---
+
+## H-078 — The nightly rollup covers today as well as yesterday, at 00:15 (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** "Nightly rollup" suggests one obvious implementation: fire after midnight,
+aggregate yesterday. Two facts about this system make that quietly wrong, and both come
+from decisions taken phases ago.
+
+**`LedgerWriter` is fire-and-forget with a drain queue** (H-027). A request that arrived at
+23:59:59 can land its row a moment after midnight; the row's `started_at` says the earlier
+day, so it belongs to a rollup that has already run. A job that only ever looks one day
+back would lose it permanently — silently, in a table nobody re-checks.
+
+**And a history view whose newest point is yesterday is a history view that is always a day
+stale**, which for a stack that lives for a day means it is empty at the exact moment the
+Phase 9 gate asks somebody to look at it.
+
+**Decision — `DEFAULT_ROLLUP_DAYS = 2`: the scheduled run covers today and yesterday.**
+
+Free to do, because the table is derived and a day is replaced rather than accumulated into
+(H-073): recomputing a day has no consequences at all. Two aggregate queries a night
+instead of one.
+
+Rolling up the day in progress means the newest row is a *partial* day — and `computed_at`
+says exactly how partial, which is why that column exists and why the console makes it a
+tile. Nothing is claimed that is not true.
+
+**Decision — `cron(15 0 * * ? *)`, fifteen minutes past midnight UTC.** Not on the stroke:
+a job that fired at 00:00:00 would race the last rows of the day it is summarising. Fifteen
+minutes is far more than the writer's drain latency and is still "nightly" by any reading —
+and the two-day window means even a bad estimate here is repaired the following night.
+
+**Decision — the event has three shapes, and the schedule uses the plainest one.**
+
+`{"day": "2026-08-11"}` rolls up exactly that day (a backfill, and the Phase 9 gate's
+manual fire). `{"days": 7}` rolls up a window. Anything else — including `{}`, which is
+what the EventBridge target sends — takes the default. So the scheduled invocation and a
+bare `aws lambda invoke --payload '{}'` take the *same* branch, which is what makes the
+gate's manual fire a rehearsal of the schedule rather than a different program.
+
+A mistyped day is a `ValueError` rather than something adjacent: `date.fromisoformat`, not
+a permissive parser. A schedule that summarised the wrong 24 hours would be worse than one
+that failed.
+
+**`now` is a parameter, not a call.** `resolve_days(event, now)` takes the clock, so the
+midnight boundary is tested by moving it rather than by waiting for it — including the case
+that decides the whole thing: a `now` of 00:30 in Tokyo is still *yesterday* in UTC, and
+`started_at` is resolved in UTC everywhere else in this project (H-023, H-033).
+
+**Alternatives considered.** *Yesterday only* — the obvious reading, and it loses late rows
+forever and leaves the history view a day behind. *Today only* — never repairs anything.
+*A seven-day rolling window every night* — repairs more and costs seven queries a night to
+recompute six days that cannot have changed. *Trigger the rollup from the gateway after the
+day's last request* — there is no such thing as a day's last request. *Read `created_at`
+instead of `started_at` so late rows land in the day they were written* — makes the rollup
+agree with itself and disagree with the invoice.
+
+**Consequences.** The newest rollup row is always incomplete until the following night's
+run replaces it, which is correct and is stated in the console's own copy. `MAX_ROLLUP_WINDOW = 366`
+bounds a backfill: a year plus a leap day, so one invocation cannot ask for the whole table.
+And the same code runs from a terminal — `python -m headroom.rollup --days 7` — because the
+handler differs from `__main__` only in where the connection string comes from, which is
+BUILD_PLAN §P9's "same code local and prod" applied to the one other thing that touches this
+database from outside the gateway.
+
+---
+
+## H-079 — Four alarms, read off the gateway's own log line; and the fifth is named, not built (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P9 asks for *"CloudWatch alarms that would actually page (5xx rate,
+provider-down, budget-gate failures)"*. The gateway exposes no metrics endpoint and has no
+StatsD client, so the first question is what an alarm can even read. The second is what
+"would actually page" means — an alarm that fires on one flaky request is an alarm an
+operator learns to ignore, which is worse than no alarm.
+
+**Decision — three of the four read the structured request log, which has existed since
+Phase 1 and has not changed for this.**
+
+`headroom/core/log.py` emits one line of bare JSON per request, and every field these
+filters name has been stable since the phase that added it. CloudWatch Logs metric filters
+turn a pattern into a metric; the alarms sit on those. **No gateway code was added, changed,
+or removed to be observed here**, which is what makes this phase additive.
+
+The cost of that is a coupling neither side can see: rename `budget_status` and the alarm
+keeps applying cleanly, keeps reporting OK, and never fires again — with nothing red
+anywhere. So `tests/test_deploy_aws.py` parses every pattern out of `alarms.tf`, extracts
+every `$.field` and every literal, and asserts each is a field the gateway really emits and
+a value it can really produce. That is H-072's lesson — *a reader tested against a fixture
+its own author invented can only confirm the reader* — pointed at infrastructure. Both pins
+were sabotage-tested: renaming a log field and swapping `breaker_open` for `circuit_open`
+each turn exactly one test red.
+
+**The four, and where each number comes from.**
+
+| Alarm | Reads | Threshold | Why that number |
+|---|---|---|---|
+| `5xx-rate` | ALB metric math | ≥ 5% over 5 min, evaluated above 20 requests | a *rate*, and one failure out of one request is a 100% error rate and not an incident. §P8.H3 publishes "zero caller-visible 5xx at every intensity", so this firing means something the repo calls impossible has happened |
+| `provider-down` | `$.outcome`, `$.error_reason`, `$.failover_error` | ≥ 3 in 5 min | H-052's breaker needs 5 samples and a 0.5 ratio before it trips, so three failures inside five minutes is "something real, and the breaker may not have noticed yet" |
+| `budget-refusals` | `$.budget_status = "exceeded"` | ≥ 1 in 5 min | deliberately the most sensitive: a 402 means a tenant's traffic is being dropped on purpose, and that is a thing to learn within five minutes rather than at the end of the month |
+| `ledger-rows-lost` | `$.event` ∈ the writer's three warnings | ≥ 1 in 5 min | H-027's own request, six phases later |
+
+**The exclusions are the decision, on the second one.** An upstream 4xx that is not 429 is
+deliberately absent, because H-052 counts it as a **success** — a 400 is a healthy provider
+correctly refusing a bad request, and counting it would let one tenant's malformed payloads
+page an operator about somebody else's outage. The filter inherits the circuit breaker's
+definition of ill health rather than inventing a second one, and a test asserts that
+`upstream_status_4` and `upstream_error` appear nowhere in it.
+
+**The fourth alarm is not in §P9's list, and it is in H-027's.** *"`writer.dropped` and
+`writer.failed` are numbers worth alerting on in Phase 9; non-zero means the ledger is now
+an undercount."* The writer already logs `ledger_row_dropped`, `ledger_write_failed`, and
+`ledger_shutdown_incomplete` as JSON with an `event` field, so honouring a decision written
+for this phase costs one metric filter. The ledger becoming an undercount is the one failure
+in this system that looks like good news.
+
+**And the fifth is named rather than built.** H-032: *"`expired_releases` and
+`expired_released_picos` are counters worth alarming on in Phase 9: non-zero means requests
+are dying between admission and settlement."* They are in-process counters on the budget
+store, reported by `GET /admin/budgets/{tenant}` and by nothing else. There is no log line
+to filter, so an alarm would need the gateway to start emitting one — a gateway change in a
+deploy phase, which is exactly the shape this phase is trying not to have. It is recorded as
+follow-up work in `PHASE_LOG.md` rather than smuggled in, and the honest split is: **alarm on
+what the process already says out loud; name what it does not.**
+
+**Alternatives considered.** *A count of 5xx rather than a rate* — robust, trivially
+correct, and meaningless on a demo stack: five failures out of ten thousand and five out of
+five look identical. *A metrics endpoint and a scrape* — a second transport, a second thing
+to secure behind the /32, and a gateway change. *Container Insights* — per-metric charges on
+a $5–8 stack, for dashboards this phase does not need. *`treat_missing_data = "missing"`* —
+would leave every alarm in INSUFFICIENT_DATA whenever the stack is idle, which is how an
+operator learns to ignore a colour; `notBreaching` reads a quiet stack as OK, which it is.
+
+**Consequences.** Three custom metrics and four alarms cost about $0.06/day, which is in the
+runbook's table. `ok_actions` is set on all four — "did it clear" is the second question
+every page produces. And the metric filters are now part of this project's stable-identifier
+surface: `outcome`, `error_reason`, `failover_error`, `budget_status`, and the writer's three
+`event` values were already additive-only because Phase 7 charts them; they are now
+additive-only because an alarm reads them too.
+
+---
+
+## H-080 — The tags are activated before the first *hourly* resource, not before the first apply (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §0.4's A7 names the lesson by hand: *"cost-allocation tags get **activated in
+Billing at P9 day one** this time, the lesson from Backline's cost chase"*. The phase brief
+repeats it: *"cost-allocation tags are activated in Billing BEFORE the first apply"*.
+
+Followed literally, that instruction cannot be carried out. **AWS will not let a
+user-defined tag key be activated until it has seen the key on a resource** — the key does
+not appear in `ListCostAllocationTags` and `UpdateCostAllocationTagsStatus` answers
+`ValidationException`. Before the first apply there are no resources, so there are no keys,
+so there is nothing to activate.
+
+Restating a rule that cannot be followed is how a runbook becomes decorative, so the
+chicken-and-egg gets solved rather than repeated.
+
+**Decision — apply the two ECR repositories first, activate, then apply everything else.**
+
+```
+terraform apply -target=aws_ecr_repository.gateway -target=aws_ecr_repository.ui
+aws ce update-cost-allocation-tags-status --cost-allocation-tags-status \
+  TagKey=Project,Status=Active TagKey=Layer,Status=Active \
+  TagKey=Phase,Status=Active TagKey=ManagedBy,Status=Active
+```
+
+An empty ECR repository costs **nothing**, which is what makes it the right thing to create
+first: the tag keys become visible to Billing and not one hourly resource exists yet. The
+instruction's *intent* — no resource is ever charged untagged — is honoured exactly, and
+`test_the_runbook_activates_the_tags_before_anything_is_charged_by_the_hour` holds the
+runbook to both halves.
+
+**Decision — four keys, applied by `default_tags` on the provider rather than per
+resource.** `Project`, `Layer`, `Phase`, `ManagedBy`. A tag added to eleven resources by
+hand is a tag missing from the twelfth, and A7's whole story is a bill that could not be
+attributed.
+
+**`Layer` is the one that earns its place.** It is how Cost Explorer answers the question
+Phase 10 will actually ask — *what is the data layer costing me while the cluster runs* —
+which is the number §P10's estimate-versus-actual table needs. `Phase` is **provenance, not
+a date range**: it stays `p9` on the data layer through P10's window, because that is the
+phase that created those resources, and "what did it cost during P10" is a date filter.
+
+**Alternatives considered.** *Activate in the console before touching Terraform* — same
+wall, fewer words about it. *A single throwaway resource created purely to seed the keys* —
+an SSM parameter, say; the ECR repositories are needed anyway, are free, and are the very
+next step. *Skip activation and attribute by resource name* — works until two things share a
+prefix, and forfeits Cost Explorer's grouping entirely. *`aws_ce_cost_allocation_tag` in
+Terraform* — the provider does support it, and it would run inside the same apply whose
+resources are supposed to already be tagged; the ordering problem moves rather than
+disappears, and a Billing-scope API call inside a stack apply is a surprising thing for a
+`destroy` to try to reverse.
+
+**Consequences.** The first apply is two applies, and the runbook says why in the step
+rather than in a footnote. Activation takes up to 24 hours to appear in Cost Explorer, so
+the billing screenshot is the last item on the evidence list rather than a missing one. And
+a stray untagged resource is now visible rather than theoretical: anything created outside
+these two roots has no `Project` tag and drops out of every figure the phase log quotes.
+
+---
+
+## H-081 — The chaos subset against a deployed stack is a script, not the suite pointed at a URL (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** §P9's gate: *"smoke = a live streamed request through the ALB + **the chaos
+test's keyless subset against the deployed stack** + one Lambda rollup fired manually and
+verified in the dashboard"*.
+
+`tests/test_failover_chaos.py` cannot be that. It builds a gateway in-process and drives it
+through an ASGI transport with an injected clock and an injected `sleep`; pointing it at a
+hostname is not a flag, it is a different program. Leaving the clause as prose — "run the
+chaos scenarios by hand and check the properties" — would make the one gate step that is
+about resilience the one gate step nobody can reproduce.
+
+**Decision — `scripts/chaos_smoke.py`: the same properties, asserted from outside, over
+HTTP.**
+
+Nine checks against a base URL and a virtual key. Every fault is injected into the
+MockProvider through the `x-headroom-mock-script` control header, which Phase 6 made
+addressable from outside a test process for exactly this reason (`fault-529`,
+`fault-timeout`, `fault-connect`, `fault-cut`, each aimable at one chain member with `@name`).
+The shipped `config/routing.yaml` already chains `mock → mock_fallback` on both dialects, so
+a deployed gateway has a chain to exercise with nothing configured. **Cost: $0.00.**
+
+What it asserts is §P8.H3's clauses, one layer out: three pre-first-token faults each answer
+**200** with `x-headroom-failover-hops: 1` naming what was passed over; a mid-stream cut
+ends in a terminal `event: error` carrying `upstream_stream_cut`, with **no** `message_stop`
+and **exactly one** `message_start`. That last count is H-048's splice test from the
+outside — two `message_start` frames would mean two providers wrote one answer — and it is
+the assertion worth having on a deployed stack, because it is the one a load balancer,
+a proxy, or a retry policy in between could break.
+
+There is a control: an unfaulted request must answer 200 **with no failover headers at
+all**. Without it, "zero caller-visible 5xx" is satisfied by a gateway that answers nothing.
+
+**Verified before it was handed over.** Run against the compose stack over HTTP: 9 checks,
+0 failures. A gate step that has never been executed is a gate step that fails at the gate.
+
+**Decision, generally — every gate step in the runbook is a command with its expected
+output.** The live request prints headers and then reads its own ledger row back by request
+id; the Lambda step invokes and then reads the same numbers through `GET
+/admin/usage/rollups`; the alarm step deliberately exhausts a tenant's budget and expects a
+402 and an `ALARM`. The operator's job is to run and compare, not to interpret.
+
+**Alternatives considered.** *A `--base-url` flag on the pytest suite* — would mean a second
+transport inside the harness and an in-process fixture that is sometimes not in-process;
+`tests/support/` exists to build gateways, and rewriting it to also drive a URL would put
+the deployment inside the unit tests. *A shell script of curls* — no assertions worth the
+name, and a mid-stream cut needs a streaming client that counts frames. *Re-run the P6
+container demo by hand against the ALB* — that is what this is, with the checking done by
+something other than an operator's eyes at the end of a long session.
+
+**Consequences.** `scripts/` gains a second file and the same rule the first one follows
+(H-054's, for `seed_demo.py`): it drives the public HTTP API and writes no SQL. It is not in
+the keyless suite — it needs a running gateway and a key — so it is a `make` target
+(`make chaos-smoke BASE_URL=… KEY=…`) rather than a test, and it runs unchanged against
+compose, against the ALB, and in Phase 10 against a cluster.
+
+---
+
