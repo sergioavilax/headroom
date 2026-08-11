@@ -35,10 +35,32 @@ be left deleting resources by hand from the console.
 terraform version        # >= 1.9
 aws sts get-caller-identity
 docker version
+
+# Not optional, and not implied by the tfvars. Terraform reads its region from
+# `var.region`; the `aws` CLI does not, and every AWS command in this runbook is the CLI.
+export AWS_DEFAULT_REGION=us-east-1
+aws configure get region        # or: echo $AWS_DEFAULT_REGION
 ```
 
 `aws sts get-caller-identity` must return *your* account. Everything below is scoped to
 one region (`us-east-1` unless you change it in both tfvars files).
+
+**Pin the region before step 4, and re-export it in every new terminal.** This one cost
+the first run of this runbook an evening. A CLI profile left pointing at another project's
+region (`us-west-2`, in that case) sends `terraform apply` to `us-east-1` — it has
+`var.region` — and every `aws secretsmanager put-secret-value` in §4 to the *other* region,
+where the failure reads:
+
+```
+An error occurred (ResourceNotFoundException) when calling the PutSecretValue operation:
+Secrets Manager can't find the specified secret.
+```
+
+Which is true, and is the most misleading sentence in this document: the secret exists,
+Terraform made it three steps ago, and it is 2,000 miles away. `aws secretsmanager
+list-secrets` returning an empty list right after a successful apply is the tell.
+`AWS_DEFAULT_REGION` is a shell variable, so a second terminal — or a reboot, or a new tab
+for step 8 — starts without it. **H-083.**
 
 ### What it costs
 
@@ -115,10 +137,39 @@ aws ce list-cost-allocation-tags --status Active \
   --query 'CostAllocationTags[].{Key:TagKey,Status:Status}' --output table
 ```
 
-*Expected:* four rows, all `Active`. If `update-cost-allocation-tags-status` returns
-`ValidationException` naming a key, the apply above did not land — re-run it and try
-again. Activation is also available in the console under **Billing → Cost allocation
-tags**, and either way it takes up to 24 hours to appear in Cost Explorer.
+*Expected, eventually:* four rows, all `Active`. **Do not expect them on the first try.**
+
+The first run of this runbook got exactly one — `Project`, and only because another
+project had already made that key known to Billing. `Layer`, `Phase`, and `ManagedBy` each
+answered:
+
+```
+An error occurred (ValidationException) when calling the UpdateCostAllocationTagsStatus
+operation: tag key missing
+```
+
+with the resources created, tagged, and visible in `aws ecr describe-repositories --output
+json` the whole time. They had still not surfaced in **Billing → Cost allocation tags** by
+the end of the session. The lag is Billing's own tag-key discovery, it is **hours and can
+be next-day**, and it is not something the apply can hurry.
+
+So this step is **apply, then retry until discovered** — not a gate. Re-run the two
+commands above whenever you next have a terminal open; the activation applies from the
+moment it lands, and Cost Explorer then needs its own up-to-24 hours on top. Do not hold
+the rest of the runbook for it: nothing downstream depends on activation, and the tags are
+on the resources from their first second either way, which is the half that cannot be
+retrofitted.
+
+The one thing worth checking before moving on is that the keys are really *on* the
+resources — that is the half that would be unrecoverable:
+
+```bash
+aws ecr describe-repositories --query 'repositories[].repositoryArn' --output text \
+  | xargs -n1 aws ecr list-tags-for-resource --resource-arn
+```
+
+*Expected:* `Project`, `Layer`, `Phase`, `ManagedBy` on both repositories. **H-080**, as
+amended after the run.
 
 ---
 

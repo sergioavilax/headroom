@@ -4956,6 +4956,42 @@ the billing screenshot is the last item on the evidence list rather than a missi
 a stray untagged resource is now visible rather than theoretical: anything created outside
 these two roots has no `Project` tag and drops out of every figure the phase log quotes.
 
+### Amended 2026-08-11, after the operator's run — the wall is later than this entry says
+
+The entry above got the mechanism right and the **timing** wrong, and the difference
+matters because it turned a step written as a gate into a step that cannot be one.
+
+What the run found: with both ECR repositories applied, tagged, and returning all four keys
+from `ecr list-tags-for-resource`, `UpdateCostAllocationTagsStatus` activated exactly one
+key — `Project`, and only because a previous project had already made that key known to
+Billing on this account. `Layer`, `Phase`, and `ManagedBy` each answered
+`ValidationException: tag key missing`, and were still absent from **Billing → Cost
+allocation tags** at the end of the session, hours later.
+
+So "AWS will not let you activate a tag key it has never seen on a resource" is true but
+incomplete. **Billing's discovery of a tag key is asynchronous and slow** — hours, possibly
+next-day, and not a function of anything the operator can do faster. The resource existing
+and carrying the key is necessary and *not* sufficient; there is a second wait, before the
+one Cost Explorer already imposes.
+
+**The amendment: activation is apply-then-retry-until-discovered, and it never blocks the
+runbook.** §1 now says so in those words, with the `ValidationException` quoted so it is
+recognised rather than debugged. Nothing downstream depends on activation having landed:
+the tags are on the resources from their first second either way, which is the half that
+cannot be retrofitted and the half A7's lesson is actually about. What activation buys is
+Cost Explorer's *grouping* of a bill that is being accrued correctly regardless.
+
+The evidence list records this honestly rather than working around it: `02` was not
+captured, because a screenshot of three keys that have not appeared yet is a picture of an
+empty screen, not evidence of a lagged activation. It lands with `18` when Cost Explorer
+does. The keyless half is asserted instead, in
+`test_every_resource_carries_the_cost_allocation_tags`.
+
+**The wider consequence, for Phase 10.** A7's estimate-versus-actual table needs `Layer` to
+be an *active* key for the whole P10 window, not from the day somebody remembers to retry.
+So the retry belongs at the start of P10's first session, before the cluster exists —
+which is where the P10 runbook picks it up, and is cheap precisely because it is not a gate.
+
 ---
 
 ## H-081 — The chaos subset against a deployed stack is a script, not the suite pointed at a URL (Phase 9)
@@ -5018,3 +5054,219 @@ compose, against the ALB, and in Phase 10 against a cluster.
 
 ---
 
+## H-082 — AWS enforces a charset on a description, and nothing local enforces it (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** Two of the operator's applies died on the same thing, five hours apart.
+
+The **first data apply** stopped partway through, with a VPC and its subnets already
+created, on:
+
+```
+Error: creating Security Group (headroom-workload): InvalidParameterValue:
+Invalid security group description. Valid descriptions are strings less than 256
+characters from the following set:  a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*
+```
+
+The offending character was an **apostrophe**, in `"Joined by compute's tasks and Lambda."`
+— prose written to read well, in a field that is not prose. A strip fixed every apostrophe
+in an AWS-facing description and the apply completed. Five hours later the **compute plan**
+stopped on the same error from a different character: an **em dash**, in an alarm
+description, which the apostrophe strip had no reason to look at.
+
+Three things make this an entry rather than a fix.
+
+1. **Nothing local can see it.** `terraform fmt` is happy, `terraform validate` is happy,
+   `terraform plan` is happy — the string is legal HCL and the rejection is the API's, at
+   apply time, with resources already created. This repo's own `make tf-check` and CI's
+   sixth job both pass on a configuration that cannot be applied.
+2. **It is a class, not two bugs.** The set excludes the apostrophe, the double quote, the
+   backtick, `%`, `?`, and every dash that is not U+002D — which is most of the punctuation
+   that makes English read well, and this repo writes its descriptions in English on
+   purpose.
+3. **The second failure was caused by the first fix.** A strip aimed at one character is a
+   fix aimed at one symptom, and that is the shape that comes back.
+
+**Decision — the charset becomes a keyless test, over every description string in both
+roots.**
+
+`test_every_single_line_description_is_a_string_aws_would_accept` parses every
+`description` / `alarm_description` assignment in `deploy/aws/{data,compute}` and holds each
+to AWS's documented set, quoted into the test as data:
+`[0-9A-Za-z_ .:/()#,@[]+=&;{}!$*-]`. It runs in the `test` job, keylessly, in
+milliseconds. Both failures would have been caught on the pull request that introduced
+them — which is the only place a five-hour-apart pair of failed applies is cheap.
+
+**Applied to every description, not only to the security groups.** The charset is
+documented for security-group descriptions; the alarm description that failed proves the
+reach is wider, and *which* of these strings AWS eventually sees is not a distinction a
+reader makes at a glance. A string that moves from an `output` into a `resource` must not
+be able to carry a character in with it.
+
+**With one exemption, and a second test that makes the exemption sound.** Heredoc
+(`<<-EOT`) descriptions are skipped: they are `variable` and `output` prose — markdown,
+argued at length, several paragraphs long — that Terraform shows to a human and never sends
+to an API. `test_no_resource_description_is_a_heredoc` closes the door that would otherwise
+open: no `resource` may use one. A heredoc on a security group would skip the charset check
+*and* contain a newline, which the charset excludes on its own.
+
+**Decision — the strip's collateral damage is repaired as English, not restored as
+punctuation.** A charset strip does not produce shorter sentences; it produces wrong ones.
+`"compute's tasks"` became `"computes tasks"`, `"the operator's network"` became `"the
+operators network"`, and — the one that was not cosmetic — `"More than 5% of requests"`
+became **`"More than 5 of requests"`**, because `%` is outside the charset too. That is a
+page-able alarm's description losing its unit. All of them are now rewritten into English
+that is legal by construction: `"from the home CIDR only"`, `"the gateway container port"`,
+`"More than 5 percent of requests"`.
+
+**Three strings are frozen as applied, and say so in a comment beside them.**
+`aws_security_group.workload`'s description and the two secret descriptions in the **data**
+root belong to resources that are still standing. Re-wording them is not free:
+
+- A security group's description is **immutable** in AWS, so changing it is a *replacement*
+  of a group that RDS's own group references and that this phase's `No changes` plan
+  depends on.
+- A secret's description updates in place — which is exactly the wrinkle this run already
+  hit once (two in-place updates in the post-destroy data plan, reconciled with an apply).
+  Doing it again for prose trades a clean plan for a typo.
+
+So `"computes tasks"` stays until the data layer is destroyed at the end of Phase 10, with
+the reason in the file next to it. A typo is cheaper than replacing a standing security
+group, and pretending otherwise is how a cosmetic commit becomes an incident.
+
+**Alternatives considered.** *A `validation` block on each variable* — validates the
+variable, not the literals in resource blocks, which is where nine in ten of these strings
+live. *A pre-commit hook* — not what CI runs, so it is advice rather than a gate. *Write
+every description in ASCII by habit* — the habit that produced two failed applies.
+*Normalise at apply time with a `replace()` in the Terraform* — silently rewrites what the
+author wrote, so the file and the API disagree about what the description says, and the `%`
+would have vanished with nobody the wiser.
+
+**Consequences.** Descriptions under `deploy/aws/` are written in a restricted English: no
+apostrophes, no em dashes, no backticks, no percent signs, colons where a dash would read
+better. The test says so when it fails, naming the file, the line, the characters, and the
+string. Prose that wants punctuation goes in a `#` comment above the resource, where this
+codebase already keeps its argument, or in a heredoc if it is a variable. And the class is
+closed: the next character AWS does not accept fails on a pull request rather than halfway
+through creating a VPC.
+
+---
+
+## H-083 — Terraform's region is not the CLI's region, and the failure names the wrong thing (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** Runbook §4 puts the three secret values in by hand. On the operator's run,
+every one of the three answered:
+
+```
+An error occurred (ResourceNotFoundException) when calling the PutSecretValue operation:
+Secrets Manager can't find the specified secret.
+```
+
+— with `terraform output` in the next terminal printing all three ARNs, and the data apply
+half an hour old. The cause was an `aws` CLI profile still defaulting to `us-west-2` from a
+previous project. `export AWS_DEFAULT_REGION=us-east-1` fixed all three at once.
+
+**Terraform and the CLI do not share a region, and this runbook uses both.** Terraform
+reads `var.region`, which has a default and a line in the tfvars template; the AWS CLI reads
+`AWS_DEFAULT_REGION`, then the profile's `region`, and knows nothing about either tfvars
+file. Every `terraform` line in the runbook was therefore correct in `us-east-1` while every
+`aws` line was correct somewhere else — and the runbook alternates between them, step by
+step, for twelve steps.
+
+**What makes it expensive is the error message, which is true and misleading.** Secrets
+Manager genuinely cannot find that secret; there is no secret of that name in `us-west-2`.
+Nothing in the message mentions a region, and every obvious reading is wrong: the apply did
+not land, the name is misspelt, the tfvars are wrong, IAM is denying and reporting a 404 to
+avoid leaking existence. The one reading that is right requires already suspecting it.
+
+**Decision — the region is a prerequisite, with the failure signature named beside it.**
+The runbook's Prerequisites block now exports `AWS_DEFAULT_REGION` before anything else,
+prints it back, quotes the `ResourceNotFoundException` verbatim as *the* symptom, names the
+tell (`aws secretsmanager list-secrets` returning an empty list immediately after a
+successful apply), and says the part that is easy to forget: **it is a shell variable, so a
+second terminal, a new tab, or a reboot starts without it.** This runbook is explicitly two
+terminals (invariant 2), which makes that failure mode structural rather than careless.
+
+`test_the_runbook_names_the_region_the_secrets_commands_need` holds the prerequisites to
+both halves — the export and the signature — so a later tidy-up cannot quietly drop the
+reason the paragraph exists.
+
+**Alternatives considered.** *Prefix every `aws` command with `--region "$REGION"`* —
+correct, and thirty-odd more places to get right; it also buries the lesson in ceremony
+rather than teaching it once. *Read the region out of Terraform into the shell*
+(`REGION=$(terraform output -raw region)`) — §3 already does exactly this for the ECR login,
+and it is the better pattern where a variable is being set anyway; making it universal
+means the runbook can no longer be read a step at a time, which is what a runbook is for.
+*Say nothing, because a competent operator sets their region* — the operator here was
+competent and had set it, to a correct value, for a different project. That is the normal
+case, not the careless one.
+
+**Consequences.** One export, at the top, before the first `aws` call. And a general rule
+this phase earned the hard way: **when a runbook mixes two tools that resolve the same
+setting from different places, the prerequisites pin it — and quote the error that means it
+is unpinned.**
+
+---
+
+## H-084 — The alarm in the evidence is the one the chaos faults fired, not the one the list asked for (Phase 9)
+
+**Status**: accepted · **Date**: 2026-08-11
+
+**Context.** `docs/evidence/p9-aws/README.md` item 13 asked for `headroom-budget-refusals`
+in **ALARM** after a deliberately staged 402: give a tenant a $0.000001 cap, send one
+request, watch the gate refuse it. The operator captured **`headroom-provider-down` in
+ALARM** instead — which nobody staged. The §8c chaos smoke had put three provider failures
+through the gateway inside one five-minute window (`fault-529`, `fault-timeout`,
+`fault-connect`, each aimed at the mock chain); the metric filter counted them off the
+ordinary request log, and the alarm crossed its threshold on its own, several minutes and
+three runbook steps after the thing that caused it.
+
+**Decision — accept the substitution, and record it as the stronger evidence rather than as
+a deviation to apologise for.**
+
+The two captures do not prove the same thing.
+
+A staged 402 proves **plumbing**: an alarm wired to a metric wired to a filter, driven by an
+input constructed for the purpose. It is a closed loop — the operator writes the cause and
+reads the effect — and its failure mode is that it can only ever confirm itself. That is
+H-072's lesson wearing another costume.
+
+The provider-down alarm proves **detection**. A fault injected for an entirely different
+purpose, in a different step, testing failover, was noticed by an alarm nobody was pointing
+at it. Nothing in `scripts/chaos_smoke.py` knows the alarms exist. The path it exercised end
+to end is the one H-079 actually claims: the gateway's ordinary structured request log,
+unchanged since Phase 1 and with **no code added in order to be observed**, through a
+CloudWatch Logs metric filter, into a metric, past a threshold that came from H-052's
+breaker constants rather than from taste, and into ALARM with an SNS action attached. Fired
+by a real fault, on a deployed stack, unprompted.
+
+**And the substitution is not a hole in coverage.** The budget-refusal path is asserted
+keylessly and specifically by `test_every_field_an_alarm_filters_on_is_a_field_the_gateway_logs`
+and `test_every_value_an_alarm_matches_is_a_value_the_gateway_can_produce`, which read
+`alarms.tf` and hold it to `RequestContext`'s real fields and the budget gate's real
+`exceeded` status — the two ways that alarm fails *silently* in production.
+`12-alarms.json` shows all four alarms deployed, each with the topic as its action. What a
+console screenshot adds is *one* of them observed changing state for real, and which one it
+is matters less than that it was not the one somebody arranged.
+
+**Alternatives considered.** *Stage the 402 as well and capture both* — the right answer
+while the stack is up; it is not, it was destroyed the same day as the gate requires, and
+re-applying the compute layer to take a second screenshot spends a day's $2.77 to
+photograph a weaker claim than the one already in hand. *Re-shoot it on Phase 10's cluster*
+— those alarms are Helm's, not this root's; a screenshot from a different stack is not this
+stack's evidence. *Quietly relabel item 13 and move on* — the failure mode this project
+exists to avoid. A capture list is pre-registered; one edited after the fact to match what
+was captured has stopped being a pre-registration (§0.2 invariant 8's spirit, pointed at
+evidence rather than at experiments).
+
+**Consequences.** The capture list keeps the row it registered, marks what actually landed
+against it, and argues the difference in the open. `13-alarm-fired.png` is labelled for what
+it is. And the two alarm artifacts a reader might think contradict each other — `13` at
+20:05 with one alarm in ALARM, `12` at 20:13 with all four OK — are eight minutes apart with
+`ok_actions` in between; the evidence README now says so rather than leaving it to be
+spotted.
+
+---
