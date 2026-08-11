@@ -45,3 +45,5 @@ kubeconfig
 .idea/
 .vscode/
 .DS_Store
+*.plan
+*.tfplan
