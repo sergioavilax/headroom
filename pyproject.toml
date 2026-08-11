@@ -76,7 +76,10 @@ select = [
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["headroom", "tests", "conftest.py"]
+# `experiments` joins the gate at Phase 8. It is not part of the wheel — it is a sibling
+# tree like `scripts/` — but it computes the project's headline finding, and code that
+# produces a published number deserves the same --strict treatment as the gateway.
+files = ["headroom", "tests", "experiments", "conftest.py"]
 
 [[tool.mypy.overrides]]
 module = "asyncpg.*"
@@ -112,3 +115,11 @@ addopts = '-m "not live"'
 markers = [
     "live: hits a real provider API and costs money (needs a key; run manually with -m live)",
 ]
+
+# Backline lives in a sibling checkout, not in this project's dependencies. Only
+# experiments/h1/build.py imports it — the equivalence matrix is its own scorer's arithmetic
+# by decision (H-061) — and it does so behind a lazy import with an explicit error message.
+# Everything downstream reads the committed artifact, so CI never needs it on the path.
+[[tool.mypy.overrides]]
+module = ["evals.*"]
+ignore_missing_imports = true

@@ -3218,3 +3218,1183 @@ build-and-smoke. Neither reads a secret. The stub is now a thing that has to sta
 with the admin API's response shapes — a real maintenance cost, and the reason it is
 written as literal fixtures rather than generated: when a shape changes, the diff is the
 list of what the console will now see.
+
+---
+
+## H-059 — H1 seeds the cache from the answer key, not from a model run (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** BUILD_PLAN §P8.H1 leaves this open in a parenthesis — *"seed the cache with the
+133 canonical entries (reference answers derived from the answer key / **a prior scored
+Backline run**)"* — and the slash is doing a great deal of work. The two readings produce
+different experiments.
+
+Seeding from a prior scored run is the more *realistic* cache: it holds what a model
+actually said, including the ~7% of answers that were wrong. Seeding from the answer key
+holds only true answers.
+
+**Decision.** **The answer key.** Every seeded entry is correct for its own question by
+construction.
+
+The argument is about what the headline number *means*. H1 reports a **silent-wrong-answer
+rate**, and with a model-run seed that rate is a sum of two independent quantities: *the
+model was wrong about the question the cache answered*, and *the cache answered the wrong
+question*. Only the second is a fact about semantic caching; the first is a fact about
+Sonnet on 2026-08-08. They cannot be separated after the fact, because a probe that hits a
+wrong entry whose answer happens to be wrong for *both* questions is indistinguishable from
+a probe that hit a right entry the model fluffed. So a model-run seed makes the metric a
+blend, published under the name of one of its terms.
+
+With a key seed the attribution is exact: **a hit is wrong if and only if the cache resolved
+it to the wrong source question.** That is the quantity the experiment is named after, and
+it is the quantity nobody currently measures.
+
+Two consequences are accepted rather than hidden. The measured hit rate is *unchanged* by
+this choice — hit rate is a function of the embedding space and the threshold, and entry
+bodies are never embedded — so nothing about the savings side of the curve depends on it.
+And the seeded corpus is a *best-case* cache in one specific respect: a real cache holding a
+wrong answer serves that wrong answer even on a correct hit. That is a real effect, it is
+the *model's* error rate rather than the cache's, Backline has already published it (93.3),
+and the two compose by inspection.
+
+**Alternatives considered.** *A prior scored run* — see above; it also makes the artifact
+depend on one dated run of a paid suite, so regenerating the corpus would cost $8 rather
+than $0. *Both, as two arms* — doubles every table to separate a term the reader can compose
+themselves from a number Backline already publishes. *Synthetic answers from a cheaper
+model* — invents a third error source and measures none of them.
+
+**Consequences.** A seeded entry's body is synthesised from the key by code with no model in
+it, in Backline's own `ANSWER:` protocol, so the gateway's store and replay path handle a
+real Anthropic-dialect body unchanged. The artifact is therefore reproducible offline and
+for free, which is what makes a regenerated corpus a reviewable diff rather than a purchase.
+H1 measures the cache; it does not measure the model, and REPORT.md says so in the sentence
+that states the result.
+
+---
+
+## H-060 — The probe is the prompt as sent, and the answer protocol is never paraphrased (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** Backline's prompts are two things joined by a blank line: a question (*"What is
+Mariko Chorus's net payable for 2026-02, after recoupment?"*) and a machine-readable
+protocol (*"End your reply with a line exactly `ANSWER: $<amount>` (USD)."*). All 133 split
+that way, into 133 bodies and **8 distinct tails**. Two decisions fall out and neither is
+obvious.
+
+**Decision — the paraphrase rewrites the body and re-attaches the tail byte-for-byte.**
+
+A paraphrase of the tail is not a paraphrase. `ANSWER: $<amount>` is a wire format
+Backline's scorer parses; rewording it changes *what was asked* rather than *how*, and a
+corpus whose probes ask for a different output shape would measure a scorer, not a cache.
+Enforced mechanically: the generator re-attaches the original tail and a check asserts byte
+equality, so a model that helpfully rephrased it cannot reach the artifact.
+
+**Decision — the embedded text is the whole prompt, tail included; the body alone is a
+secondary sensitivity curve.**
+
+This is the load-bearing half. The shipped gateway embeds the user turn
+(`Dialect.cache_probe`), and the user turn is the whole prompt. So the *only* similarity
+numbers that describe a cache anyone could deploy in front of this suite are the ones
+computed over the full prompt — boilerplate and all.
+
+And the boilerplate is not noise to be cleaned away: eight tails shared across 133 questions
+raise the floor under every pairwise similarity, and they raise it *most* between questions
+that share an answer type — which is to say, between the near-misses. That is a real
+property of this workload and plausibly of every workload where an application templates its
+prompts, which is most of them. Removing it would produce a prettier curve about a system
+nobody runs.
+
+The question-body-only curve is reported beside it because it costs one more embedding pass
+over the same texts and it answers the one objection this design invites. Naming which is
+primary **before** either exists is the whole point: after the fact, "the boilerplate
+inflated it" and "stripping it was cherry-picking" are both available.
+
+**Alternatives considered.** *Embed the body only* — cleaner numbers about a gateway that
+does not exist. *Strip the tail in the gateway before embedding* — a real design, and
+plausibly a future feature, but inventing it here would mean measuring an unshipped feature
+in the phase whose job is to measure the shipped one. *Paraphrase the tail too* — measures
+Backline's answer extractor. *Drop the tails from the corpus entirely* — the prompts would no
+longer be Backline's prompts, and the answer key would no longer apply.
+
+**Consequences.** Every probe carries both texts and both vectors, so the artifact is roughly
+twice the size it would otherwise be and every table in REPORT.md has two columns. If the
+primary curve turns out to be dominated by boilerplate similarity, that is a finding about
+prompt templating and it is reported as one — with the secondary curve standing next to it as
+the counterfactual.
+
+---
+
+## H-061 — A wrong hit is wrong by Backline's own arithmetic, and a lucky one is not correct (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H1's metric is *"hit resolved to a different source question — with the
+returned answer provably wrong for the asked question, courtesy of the answer key"*. The word
+carrying the weight is **provably**, and it rules out the easy implementation.
+
+The easy implementation is `source != probe.source`. It is wrong in a specific and
+embarrassing direction: the suite has 10 `abstention` questions whose expected answer is the
+same `ABSTAIN` token, so a probe for one abstention question hitting another's entry receives
+an answer that **is correct**. Counting that as poison would inflate the headline number with
+the corpus's own structure. There are quieter cases too — two `count` questions that both
+answer 9.
+
+**Decision — three outcomes, not two, and the middle one is Backline's arithmetic.**
+
+A hit to a different source is a **silent wrong answer** only when the served entry's answer
+is *not equivalent* to the probe question's expected answer. When it is equivalent, it is a
+**benign collision**: recorded, reported, and never counted as a correct hit.
+
+*Equivalence is not re-implemented.* It is computed over all 133 × 133 ordered pairs at
+artifact-build time using `evals.answers` and `evals.scoring` — the code that scores the
+suite, with its per-kind parsing, its `money` tolerances, its `set` semantics and its
+abstention protocol — and the resulting matrix is committed inside the golden artifact. CI
+then replays it with no Backline on the path, no Postgres, and no network. That is the P5
+corpus pattern exactly: compute once where the dependencies live, commit the numbers, and let
+the keyless suite do arithmetic over them.
+
+**A benign collision is never folded into "correct".** A cache that returns the right answer
+because two questions happened to share one has been graded on the corpus rather than on
+itself, and the grade would not survive a corpus with fewer ties. Reporting the two columns
+separately also makes the abstention structure visible instead of buried.
+
+**Alternatives considered.** *Source-identity alone* — over-counts poison by the corpus's own
+tie structure, in the direction that makes the finding look worse than it is while making the
+measurement less true. *Re-implement the comparison in `experiments/`* — a second scorer to
+keep in step with Backline's, whose drift would be invisible and would move the headline
+number. *Import Backline at sweep time* — kills keyless CI and pins the experiment to a
+sibling repo's working tree. *Count benign collisions as correct* — see above. *Count them as
+poison* — the reverse error, and also wrong: the caller got a right answer.
+
+**Consequences.** The artifact carries a 133 × 133 boolean matrix and the Backline commit
+that produced it, so "provably wrong" has a provenance rather than a claim. Regenerating the
+artifact requires Backline present; the sweep never does. If Backline's scorer changes, the
+matrix is stale until rebuilt — which is why the Backline `suite_hash` and git sha are both
+stamped into the artifact and asserted by a test.
+
+---
+
+## H-062 — Two probe families: a paraphrase has a right answer to find; a novel question does not (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H1's corpus is paraphrases, and a paraphrase is the *favourable* case for a
+semantic cache: the question it paraphrases is sitting in the cache, so a right answer is
+available and the only question is whether the threshold finds it. A production cache spends
+most of its life in the other case — asked something it has never seen, with 132 near-misses
+and no right answer anywhere. There, **every hit is wrong by construction** (or lucky, per
+H-061).
+
+Measuring only the favourable case would publish a safety curve that omits the situation the
+safety question is actually about.
+
+**Decision. Two pre-registered families, with the plan's as primary.**
+
+- **Family A — paraphrase probes** (399). §P8.H1's curve, and the headline.
+- **Family B — novel-question probes** (133). Each canonical question probed against a cache
+  holding the other 132, leave-one-out. No true match exists.
+
+Family B costs **nothing**: it needs no paraphrases, only the 133 canonical vectors, so it is
+producible before a dollar is spent and it is the half of H1 a reader can reproduce from a
+clone. It is the floor Family A sits on — the false-positive rate of the embedding space
+itself, with the corpus's own hard negatives (templates crossed with 150 artists and 12
+periods) doing the work no invented negative could do honestly.
+
+τ₀, the recommended threshold (H-063), is computed over **A ∪ B** rather than over A alone,
+because a threshold that is safe only for questions you have already answered is not a safe
+threshold.
+
+**Alternatives considered.** *Family A only* — the plan's letter, and it measures the easy
+half. *Family B only* — free and reproducible, and it cannot measure hit rate at all, since
+there is nothing correct to hit. *A held-out split (seed 100, probe 33)* — a smaller cache
+and a smaller answer key for no gain; leave-one-out uses every question as both. *Invented
+hard negatives* — the thing this corpus was chosen to avoid: a negative tuned until the test
+passed.
+
+**Consequences.** Every table in REPORT.md has a family column, and the two curves must be
+read together — quoting Family A's hit rate beside Family B's poison rate would be the most
+flattering possible pair and is exactly what the pre-registration forbids. Family B also makes
+a partial result possible: it can be measured, and was, before the paraphrase batch existed.
+
+---
+
+## H-063 — The recommended threshold is a rule fixed before the curve, not a reading of it (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H1 asks for *"the resulting savings-vs-poison curve and its knee"*. "Knee" is
+a word, not a definition, and a curve with a free reader is a curve that recommends whatever
+the reader wanted. This is the single place in H1 where post-hoc discretion could change the
+headline recommendation, so the discretion is spent in advance.
+
+**Decision.**
+
+> **τ₀, the zero-poison floor** — the **lowest** grid threshold at which the
+> silent-wrong-answer count over **Family A ∪ Family B** is zero, and stays zero at every
+> higher grid point.
+
+Because hit rate is non-increasing in threshold, τ₀ is *also* the highest-savings threshold
+among the zero-poison ones, so one rule answers both "where is it safe" and "where is it
+best" without a second, negotiable trade-off parameter. The "and stays zero above" clause
+matters: the wrong-hit count is **not** monotone — a wrong neighbour can be displaced by a
+right one as the bar rises — so the lowest zero point and the point above which zero holds
+are different numbers, and picking the first without the second would recommend a threshold
+that is unsafe slightly higher up.
+
+If no such threshold exists in `[0.700, 0.990]`, **τ₀ does not exist** and that is reported as
+BUILD_PLAN's own second branch — *"semantic caching is unsafe for this workload class, here's
+the threshold-by-threshold proof"* — rather than as a softer threshold found by relaxing the
+rule.
+
+Reported unconditionally beside it, whatever it says: **where the shipped default 0.90
+lands.** `DEFAULT_SIMILARITY_THRESHOLD`'s own docstring already says it was measured on 12
+questions and is expected to move when this data exists. If τ₀ is above 0.90, the shipped
+default is unsafe on this corpus and the report says so in those words.
+
+**Alternatives considered.** *Maximum-curvature knee detection* — a defensible name for a
+choice of smoothing, on a step function where the steps are the result. *A cost-weighted
+optimum* (dollars saved per wrong answer) — the honest general answer, and it needs a price
+for a wrong answer, which nobody has and which would become the free parameter this entry
+exists to remove. *Highest threshold with hit rate above some floor* — encodes a savings
+target as if it were a safety finding. *Read the curve and argue* — what everyone does, and
+the reason nobody trusts the answer.
+
+**Consequences.** τ₀ is computed by code, not chosen, and the sweep reports the exact
+similarity **breakpoints** beside the grid so a reader can see the step the rule landed on
+rather than a rounded grid point. Changing the rule after seeing the curve is possible only as
+an amendment to `experiments/PRE_REGISTRATION.md` in a later PR, with the original
+recommendation still published.
+
+---
+
+## H-064 — H2 compares against the direct-local run, and admits it has no paired control (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H2 pre-registers *"overall score within the documented ≤3.0 same-model noise
+bound of the fresh-run reference points (93.3 / 92.5 / 91.6)"*. Three numbers and one bound is
+not yet a criterion: against the *range* it is a 7.7-point window, against the *mean* it is
+one interval, against each separately it is three tests with a choice of which to quote
+afterwards.
+
+Backline's own §A5.5 answers a stricter question by *pairing* — a fresh control and a fresh
+treatment on the same day. That costs another ~$8, against §0.6's $10 for this experiment.
+
+**Decision — the primary criterion is `|overall − 93.3| ≤ 3.0`, and the absence of a paired
+control is stated before the result rather than after.**
+
+`93.3` is the **direct-local** fresh run. It is the right comparator for the arithmetic reason
+that it differs from this treatment by exactly one thing — the gateway hop — where `92.5` also
+differs by a cloud, an RDS, and a Fargate CPU, and `91.6` also differs by a different commit
+and a different day. Choosing the *nearest neighbour in configuration space* is the choice
+that makes the residual attributable, and it is fixed here so it cannot become the choice that
+makes the residual small.
+
+`92.5` and `91.6` are reported as context, with the full per-category table beside all three in
+`deploy/aws/README.md`'s shape. `python -m evals gate` is run and reported as the strict
+secondary check with its known variance failure modes pre-declared — it failed on *both* runs
+of the AWS experiment, in different places, and §A5.5's rule is to report that rather than
+re-roll.
+
+**The limitation, named:** without a same-day control, between-day drift — provider-side model
+updates, load, sampling — sits inside this experiment's residual and cannot be separated from
+the gateway's effect. The claim H2 can support is therefore *"the suite scored within the
+documented same-model noise bound of its direct-local reference when run through the gateway"*,
+and **not** *"the gateway changed the score by X"*. The second sentence needs the control run,
+and the control run needs $8 the plan did not budget.
+
+**Alternatives considered.** *Against the range `[91.6, 93.3] ± 3.0`* — a 7.7-point window
+that almost nothing could fail. *Against the mean of the three* — averages three configurations
+that differ in three ways. *A paired same-day control* — the correct experiment, and $8 outside
+the line item; naming it as the thing not done is more useful than a quiet omission. *Halve
+both runs to 66 questions each to afford the pair* — a different suite, not gate-comparable,
+and it would forfeit the exact ground truth that makes Backline worth pointing at anything.
+
+**Consequences.** REPORT.md's H2 verdict is a statement about a bound, not an effect size, and
+the sentence that states it says so. If a later session has $8 spare, the paired control is the
+single highest-value follow-up in this repo and it needs no new code — the runbook's own
+commands with `ANTHROPIC_BASE_URL` unset.
+
+---
+
+## H-065 — "Gateway overhead" is three numbers, and the pre-registered one is the weakest (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H2 promises *"the number that answers 'why is a gateway in Python
+defensible'"*, pre-registered as **p50 overhead < 50 ms** and *"measured from Headroom's own
+ledger timings"*. H-051 already named the column: `passthrough_overhead_ms`, defined as *first
+upstream byte → first byte out*, and it named it in Phase 6, before this data existed.
+
+That column is going to come back in **microseconds**. P1 measured 0.006 ms, P6 measured 0.019
+ms. Publishing "p50 overhead: 0.02 ms, target < 50 ms, PASS" is true, pre-registered, and would
+be a flattering non-answer to the question the plan actually asked — because
+`passthrough_overhead_ms` measures the *forwarding* cost, and the gateway's real cost is mostly
+spent *before* the upstream is opened, in authentication, routing, the rate limiter, the cache
+lookup and the budget reservation.
+
+And the ledger cannot separate that: `upstream_latency_ms` is *request received → first upstream
+byte*, which contains the admission work **and** the provider's own time to first token, with no
+mark between them.
+
+**Decision — report three numbers, in this order, with the pre-registered one first and its
+weakness stated in the same breath.**
+
+1. **`passthrough_overhead_ms` p50/p95/p99** — the pre-registered metric, H-051's column,
+   against the pre-registered `< 50 ms`. Reported first because it is the one that was promised,
+   and reported with the sentence *"this is expected to be sub-millisecond, so meeting a 50 ms
+   target by four orders of magnitude is a weak test"* attached to it rather than in a footnote.
+2. **Admission cost, measured where the provider costs nothing** — `upstream_latency_ms` over
+   ≥ 2,000 **MockProvider** requests through the full pipeline. The mock answers in
+   microseconds, so what remains is the gateway's own admission work, with real Postgres and
+   real DynamoDB Local behind it. Keyless, free, reproducible by a stranger with a clone, and it
+   is the honest answer to "what does a gateway in Python cost". Its caveat is recorded with it:
+   it excludes TLS and DNS setup to a real upstream, which httpx amortises over a keep-alive
+   pool and which a direct caller pays too.
+3. **End-to-end latency parity** — Backline's own per-question p50/p95 through the gateway
+   against the three reference runs' p50s (12,678 / 12,508 / 13,033 ms). The caller-visible
+   answer, and the noisiest: it carries a 12-second provider-side quantity in which a
+   millisecond of gateway is invisible, and there is no paired control (H-064).
+
+**Adding a fourth timing mark was considered and rejected.** A `provider_open_at` mark would
+separate admission from provider time directly and would be the clean fix. It is a change to
+`RequestContext`, to the ledger schema, and to the log line — in the phase whose job is to
+*measure the shipped gateway*, using a column H-051 pre-registered two phases ago. Measuring a
+gateway that Phase 8 modified in order to measure it is the shape of mistake this plan spends
+its invariants avoiding. The mark is the right first change of Phase 9 or 11, and this entry is
+the reason.
+
+**Alternatives considered.** *Report only the pre-registered figure* — literal compliance, and
+it answers the plan's stated question with a number that cannot fail. *Report only the mock
+admission cost* — the useful number, and it quietly replaces a pre-registered metric with a
+better one chosen after the fact. *Subtract a modelled provider TTFT from
+`upstream_latency_ms`* — invents the missing mark arithmetically, and the model would be fitted
+to the data it is used to interpret.
+
+**Consequences.** REPORT.md's overhead section is three rows, not one, and the honest headline
+is row 2. The keyless mock measurement runs in the suite, so the number is regenerated on every
+change rather than measured once — which also makes it the first thing that would notice a
+future phase putting a round trip on the admission path.
+
+---
+
+## H-066 — Phase 8's money stops: whose cap is whose, and why $12 sits inside a $10 line (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §0.6 budgets **$1** for H1's paraphrase generation and **$10** for the H2 run, with
+**$6** contingency behind them and a **$20** hard project total. The complication is discovered
+by computing, rather than quoting, Backline's own pre-run projection for the 133-question
+suite: **$11.27**. Backline's runner refuses to start when its projection exceeds `--budget`
+unless `--yes` is passed — and `AWS_DEPLOY_PLAN.md` §9 names the reflex by hand: *"never `--yes`
+reflexively"*.
+
+So `--budget 10.00` does not produce a $10 experiment. It produces either a refusal, or a
+`--yes` that switches off the projection guard entirely — which is strictly worse than raising
+the number, because it removes the check rather than moving it.
+
+**Decision — three stops, at three values, each doing one job.**
+
+| Stop | Value | Job |
+|---|---|---|
+| `experiments/h1/generate.py`'s internal cap | **$1.00** | §0.6's H1 line, enforced by the harness: the generator refuses to issue the call that would cross it |
+| Backline's `--budget` | **$12.00** | the operative stop, above its own $11.27 projection so the guard stays *on* and `--yes` is never needed |
+| Headroom's budget gate on the H2 tenant | **$15.00** | the independent backstop |
+
+**The backstop is deliberately the loosest, and that is not a mistake.** A second guard set at
+or below the first fires during normal operation, which makes it a source of corrupted runs
+rather than a safety net — and a Headroom 402 mid-suite would be scored by Backline as an
+errored row, so a backstop that fires *destroys the experiment it was protecting*. At $15 it can
+only fire if Backline's own committed-spend accounting is wrong, which is precisely the failure
+a second opinion exists for. There is a pleasing symmetry in the experiment's money being
+guarded by the product under measurement, and it is only pleasing because the gate reads
+*committed* spend — reserved plus landed — which is §0.2 rule 5 and the thing Backline's own
+runner does too.
+
+**The arithmetic against §0.6, stated rather than absorbed.** Expected H2 spend is ~$8.09 (three
+measured runs: $7.88 / $8.01 / $8.09). The $12 flag is a stop, not a plan. If a run genuinely
+lands between $10 and $12 it is drawn from the $6 contingency bucket and recorded in PHASE_LOG's
+spend line. Worst case for the phase is $1 + $12 = **$13 against the $20 project cap**, so the
+cap holds even in the case where every stop is reached.
+
+**Alternatives considered.** *`--budget 10.00 --yes`* — nominally inside the line item, and it
+disables the projection guard to get there; the worst of both. *Raise §0.6's H2 line to $12 by
+amendment* — defensible, and it edits a budget table to match a flag when the contingency bucket
+exists for exactly this. *Run the gate subset (43 questions, $3.89 projected)* — cheap, and not
+comparable to the 133-question reference points, so it would answer a different question for
+less money. *No Headroom-side backstop* — leaves one accounting system with no second opinion,
+in the repo whose product is second opinions about spend.
+
+**Consequences.** Three numbers now live in `experiments/PRE_REGISTRATION.md` §4 and in the
+runbook, and the runbook states each one's expected cost before its command. No command in this
+phase that spends money is run by Claude Code; every one is handed over — the invariant-2
+discipline the plan applies to `terraform apply`, applied to spend.
+
+---
+
+## H-067 — H3 is adjudicated from the recording that already exists (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** §P8.H3 promotes the P6 chaos suite to a reported experiment and adds *"the two-GPU
+live kill"*. The session brief asks for the **delta** between what P7 captured and what §P8.H3
+specifies, and explicitly: *"If P7's artifacts already satisfy clauses, say so explicitly rather
+than re-demanding them."*
+
+The temptation is to specify a fresh recording, because a fresh recording is easy to specify and
+costs the *operator* rather than the phase. The check is whether the existing one answers the
+pre-registered questions.
+
+**Decision — no new GPU session. The recording exists; Phase 8 adds the adjudication.**
+
+What exists: `tests/test_failover_chaos.py`, green in CI since P6 at three fault intensities;
+`docs/evidence/p7-dashboard/` with seven stills, `hero.gif`, a kill timestamp and a psql
+cross-check; and — the part that settles it — **492 ledger rows surviving in the compose volume
+from the 2026-08-10 run**, 270 of them on the `vllm_a → vllm_b` chain, spanning ~92 minutes under
+the runbook's 2-second loop. That is the sustained load §P8.H3 asks for, already recorded, with
+per-request provenance.
+
+What was missing was never a picture. It was **numbers**: the psql cross-check committed with P7
+is three columns (requests, spend, failed over) and does not state the caller-visible 5xx count,
+the `failover_error` breakdown, or the re-admission interval — the three things §P8.H3 actually
+adjudicates. Those are five queries over rows that are still there, not another `docker kill` on
+a container that spends minutes reloading a 27B checkpoint.
+
+So Phase 8 ships two analysers rather than a demand: one that runs the mock chain at three
+intensities and emits a committed results artifact, and one that reads the surviving rows and
+adjudicates the three clauses. **If the analysis finds the rows cannot answer a clause, that gap
+is reported and a re-record is scheduled** — the decision is "adjudicate first", not "assume it
+is fine".
+
+**The recovery bound is arithmetic, not a choice.** H-052 published `COOLDOWN_S = 10` and one
+probe per half-open window in Phase 6; the transition happens on the request that finds the
+cooldown elapsed, with no scheduler. Under one request every `T` seconds, re-admission is
+observed within `10 + T`. The constant is read from `headroom/policy/health.py` rather than typed
+into the pre-registration, so the two cannot drift — which also means the bound could not have
+been fitted to the data, and `PRE_REGISTRATION.md` §H3.5 says so.
+
+**Alternatives considered.** *Specify a fresh sustained-load recording* — a GPU session, a 27B
+reload, and an operator evening, to produce rows materially identical to 492 that already exist.
+*Report the clauses from the mock chain only* — reproducible and free, and it drops the half of
+§P8.H3 that needed real hardware. *Report from `hero.gif`* — a picture is not a measurement,
+which is the whole reason the ledger exists. *Re-record because the rows might be truncated by
+the next `make test`* — real (H-029's caveat) and answered by extracting the analysis artifact
+**now**, which is what the analyser's committed JSON is.
+
+**Consequences.** H3's live half depends on rows in a local volume, so the extracted artifact is
+committed to `docs/evidence/p8-experiments/` in this PR and the raw query output beside it —
+after which the volume may be wiped freely. The mock half runs in CI on every pull request and is
+reproducible by a stranger; the live half is the operator's desk and is labelled as such, exactly
+as P6's two-GPU demo already is.
+
+---
+
+## H-068 — The entity check counted sentence position as entityhood; amended before any measurement (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the paid paraphrase batch. It completed **114/130 with 16
+UNRESOLVED**, and every one of the 16 failed on the same shape:
+
+```
+hand-catalog_lookup-01   lost name: Counting          (candidate 3 also: lost code: EP)
+hand-contract_terms-01   lost name: Please
+cross_collateral-004     lost name: Across
+cross_collateral-005     lost name: Across
+hand-cross_collateral-01 lost name: Across
+sql_analytics-003        lost name: Summing
+sql_analytics-004        lost name: Summing
+sql_analytics-008        lost name: Across
+hand-sql_analytics-02    lost name: Exactly
+hand-reconciliation-01   lost code: ONLY; lost name: Audit
+multi_step-006 / -008    lost name: Suppose; lost code: US / lost name: States, Suppose, United
+multi_step-007           lost name: Germany, Suppose
+multi_step-009 / -010    lost name: Suppose; lost name: Kingdom, Suppose, United
+hand-multi_step-02       lost name: Kingdom, Suppose, United
+```
+
+`Suppose`, `Please`, `Across`, `Counting`, `Summing`, `Exactly` and `Audit` are not entities.
+They are ordinary words that happen to open a sentence, and `_NAME`'s `\b[A-Z][a-z]+\b` cannot
+tell a capital that means *proper noun* from a capital that means *this is where the sentence
+starts*. No faithful paraphrase can preserve them: rewording a question is exactly the operation
+that moves its first word. The failures were **identical across all 3 candidates over all 3
+attempts**, which is the diagnostic — a rule no correct answer satisfies is not strictness, it is
+a stuck generator burning `MAX_ROUNDS` on every draw.
+
+The module's own docstring argues the asymmetry that made over-broadness the right *default*: a
+false positive costs a regeneration, a false negative costs a probe that quietly asks a different
+question. That argument holds and is not retracted. What it assumed is that a false positive is
+*payable*. For these 16 it is not payable at any price, because the correct answer sits outside
+the accepted set.
+
+**This is a pre-measurement amendment (risk register item 3).** The batch is fixed before any
+measurement exists: no sweep, figure or analysis has read `h1_paraphrases.json`, the corpus is
+not built from it, and no H1 number exists anywhere in the repo. The checker is corrected against
+*failures*, never against a curve.
+
+**Decision — three narrow amendments, and the exemptions apply to the body, never to the
+candidate.**
+
+1. **Position is not entityhood.** A capitalised word is exempt only when it opens a sentence
+   **and** is an ordinary English word (`COMMON_WORDS`). The conjunction is the safety property:
+   drop the first clause and the track `"Bones"` stops being required; drop the second and
+   `Voltage has more than one agreement` loses its artist. Only spaces and tabs are stepped over
+   when deciding "opens a sentence", so `"Bones"` and `(Kinetic Digital` — quoted, bracketed —
+   are not sentence openings and keep their capital's meaning. A name is exempt only if *every*
+   occurrence is positional; one mid-clause use makes it an entity everywhere in that body.
+2. **ALL-CAPS emphasis is not a code.** `report ONLY findings that are genuinely out of
+   tolerance` is emphasis; `_CODE` read it as an identifier and three of three candidates dropped
+   it. Exempt only at length ≥ 3 and only for words already in the lexicon, which is what keeps
+   `US`, `GB`, `DE` and `EP` codes.
+3. **A gloss the body writes itself declares an equivalence.** `United States (US)` is one entity
+   with two spellings *because the question says so*, so the pair becomes one `AliasGroup`
+   satisfied by either. `U.S.` normalises to `US` on both sides of the comparison. Losing **both**
+   spellings still fails.
+
+**Per-case adjudication, as asked.**
+
+* **`US` ≡ `U.S.` ≡ `United States`, and `GB` / `DE` / `JP` likewise — canonical-variant
+  equivalence, accepted.** Not from a hardcoded world model: the equivalence is read out of the
+  question's own text, which writes `in the United States (US)`. A prompt that introduces an
+  abbreviation has licensed it. Both directions are legitimate and the run produced both —
+  candidates 1 and 3 of `multi_step-006` kept the long form and dropped `(US)`, candidate 2 kept
+  `US` and dropped the long form. Failing either is failing a correct answer. Four groups exist
+  across the 130 bodies: `United Kingdom (GB)` ×4, `Germany (DE)` ×2, `United States (US)` ×2,
+  `Japan (JP)` ×1.
+* **`EP` — exact-token survival required.** The opposite call, deliberately. `EP` fixes the
+  *scope* of `hand-catalog_lookup-01` ("original album or EP, plus any compilations"); a
+  paraphrase that drops it asks a narrower question and the answer key stops applying. The
+  question glosses nothing, so there is no in-text licence, and unlike a country it has no
+  standard punctuation variant. The run itself decides it: **two of the three candidates kept
+  `EP`**. A token two of three drafts preserve unprompted costs nothing to require, so it stays
+  exact and the third candidate stays refused.
+* **`ONLY` — dropped as a requirement.** Emphasis capitalisation of a word `STOPWORDS` already
+  lists as droppable in its title case (`Only`); consistency demanded one answer for both. The
+  honest limit: the mechanical layer now protects no spelling of "only" in that question, and a
+  paraphrase that drops the restriction changes the task. That was already true — the layer has
+  never protected lower-case prose — and it belongs to the operator spot-check, the second clause
+  of §P8.H1's QA chain, not to this module.
+* **`Germany`, `United`, `Kingdom`, `States` — still required, but satisfiable by their glossed
+  code.** They are real entities and their loss must still be caught; the alias group is what
+  makes "loss" mean *the referent is gone* rather than *the spelling changed*.
+
+**Alternatives considered.** *Add the seven words to `STOPWORDS`* — one line, and it drops
+`Across`, `Counting` and `Audit` everywhere including mid-clause, where a capital is real
+evidence; the fix would silently unprotect any future entity sharing those spellings. *Exempt
+every sentence-initial capital regardless of the word* — no lexicon to maintain, and it stops
+requiring `Voltage`, `Germany` and `Meridian` wherever a question opens with them, a false
+negative in exactly the class this module exists to prevent. *Raise `MAX_ROUNDS`, or hand-write
+the 16 paraphrases* — treats a broken rule as bad luck, and hand-written probes are not the
+instrument the pre-registration describes. *Ship the 114 and report on those* — an uneven corpus
+that reweights itself toward whatever the model found easy, which `build.py` already refuses.
+
+**Consequences.**
+
+* **The 114 already committed were re-validated against the corrected checker: 342 paraphrases,
+  0 new failures.** Nothing moved to unresolved. Expected, since the amendment only ever removes
+  requirements — but run rather than assumed, because "expected" is not a measurement.
+* **Blast radius, measured over all 130 bodies:** the amendment stops requiring exactly `Suppose`
+  ×6, `Across` ×4, `Summing` ×2, `Counting`, `Please`, `Exactly`, `Audit`, and the code `ONLY`.
+  No artist, track, label, ISRC, statement id, figure or period changes status. The 16 pinned
+  tests are per-question and assert both halves — spurious token absent, real entities present.
+* **The 16 still need regeneration.** The generator never persisted rejected candidates, so the
+  drafts that would now pass are gone. `--only` re-runs exactly those ids for about $0.05; the
+  command is in `experiments/RUNBOOK.md` and is the operator's to run.
+* **Residual, stated rather than hidden.** An alias group is satisfied by either spelling, so a
+  paraphrase substituting `United States (GB)` for `United Kingdom (GB)` would keep `GB` and pass
+  the mechanical layer. Catching a *substituted* entity rather than a dropped one needs a check
+  on the tokens a paraphrase **adds**, and the run's own data says that check is not viable as
+  written: 46 of the 114 accepted questions contain a paraphrase introducing a capitalised word
+  the body lacks, nearly all sentence-opening verbs (`Identify` ×13, `Examine` ×13, `Review`
+  ×12). Substitution stays with the operator spot-check, which exists for precisely this.
+* **`Counting Crows` is the shape of the remaining false negative:** a real name whose first word
+  is a common word *and* which opens the question. Its second word stays required, so the entity
+  is never wholly unprotected. No such name is in this suite; recorded so the next reader need
+  not rediscover it.
+
+---
+
+## H-069 — A two-part ask is an entity: the compound-ask check, and `--only` made a redo (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the spot-check — the half of §P8.H1's QA chain no checker can do
+— and failed `contract_terms-004#p3` for scope drift. The body asks two things:
+
+```
+As of 2026-06-30, what royalty rate applies to Paloma & The Effigy's digital streaming
+revenue? Cite the governing clause.
+```
+
+The candidate asked one:
+
+```
+p3  What clause specifies the royalty rate applicable to Paloma & The Effigy's digital
+    streaming revenue on 2026-06-30?
+```
+
+Answer the rewrite correctly and you have named a clause. Answer the original correctly and you
+have named a **rate** *and* a clause. The rate survives in the rewrite only as a modifier inside
+the thing being asked for, which is not the same as being asked for. Every mechanical rule
+passed it — entity, period, figure, length, no blank line, no protocol token. There was nothing
+for the checker to see, because nothing was lost: the ask was *compressed*.
+
+The operator forced a redraw (~$0.001). **The fresh batch reproduced the identical drift in 2 of
+3 candidates**, verbatim:
+
+```
+p2  Cite the clause that sets Paloma & The Effigy's digital streaming royalty rate as of
+    2026-06-30.
+p3  Which governing clause specifies the royalty rate applicable to Paloma & The Effigy's
+    digital streaming revenue on 2026-06-30?
+```
+
+Independent draws at temperature 1.0, the same collapse. That is the diagnostic: not a bad
+sample, but `claude-haiku-4-5` systematically compressing *answer-plus-citation* into
+*citation*. And the batch's own history shows it was never one probe — the draw the operator
+rejected sat beside `Identify the clause that sets …`, which collapses the same way and which
+the seeded sample of 20 simply never showed him.
+
+**Decision — make the compound ask survive mechanically, on the same footing as an entity.**
+
+`compound_ask()` reads the shape off the body: an interrogative sentence **plus** a separate
+sentence opening with a request verb (`REQUEST_VERBS`). It extracts what each part demands —
+the head noun of the instruction's object (`clause`), the head noun of the interrogative's
+wh-phrase (`rate`). Nothing is listed: `clause` and `rate` appear nowhere in `checks.py`, and
+the rule finds **25 questions across three categories**, not one id.
+
+A candidate satisfies it when the two demands land in **two different asks**. English joins two
+demands with a coordinator, a sentence break, or a participial adjunct, so `ask_segments()`
+splits on exactly those three and the demands must fall on opposite sides of one. Both inside
+one segment is the collapse — *"Cite the clause that sets X's royalty rate"* mentions the rate
+without asking for it. All four faithful forms pass and are pinned as tests: coordinated
+interrogatives (`…, and which clause establishes it?`), coordinated objects of one verb
+(`Identify the governing clause and the royalty rate`), two sentences (`…? Please cite the
+relevant clause.`), and the adjunct (`…, citing the controlling clause`). Order is surface, so
+the citation may come first.
+
+**Every one of the 25 compound bodies satisfies its own rule**, and that is a test. It is
+H-068's diagnostic turned on the amendment that answers H-068: a rule the original text fails
+is broken, not strict.
+
+**The rubric was deliberately *not* strengthened.** The obvious second lever is a prompt rule
+against compressing a two-part ask. Rejected: `RUBRIC_VERSION` is stamped into the corpus and a
+batch generated under one version is never mixed with another (`rubric.py`), so changing the
+system prompt forces a redraw of all 130 — 113 of which are fine — and a fresh spot-check of all
+390 probes. The evidence says that price buys little: 50 of 75 compound-ask candidates already
+pass, so this is a 1-in-3 failure to be retried, not H-068's 0-in-3 rule that admitted no
+correct answer. The mechanical check is the durable fix because it holds for every future draw
+whatever the model does. **If redraws thrash** — the same ids landing `unresolved` across
+repeated `--only` runs — the next lever is `RUBRIC_VERSION = 2` plus a full regeneration, and
+that is a costed decision for the operator, not a silent one.
+
+**Alternatives rejected.** *Require the demand nouns to be present* — the collapsed candidates
+all keep both words, so presence is exactly what fails to discriminate. *Count ask sites
+(wh-heads and request verbs)* — fails `Identify the governing clause and the royalty rate`, one
+verb with a coordinated object, which is faithful; a rule that rejects a correct answer is the
+H-068 mistake repeated. *Leave it to the spot-check* — it samples 20 of 390 and had already
+missed the collapsed neighbour of the probe it caught.
+
+**Consequences.**
+
+* **The accepted batch was audited against the rule: 25 of 75 compound-ask candidates fail,
+  across 17 of the 25 questions.** They are recorded in `AWAITING_REDRAW` in
+  `tests/test_experiments_h1.py` as a redraw that has not happened yet, never as a tolerated
+  exception. `build.py` re-checks every committed paraphrase and will refuse to assemble a
+  corpus until they are redrawn — which is the correct state, loudly.
+* **The audit set is an upper bound, so it clears itself.** The test asserts *failures ⊆
+  `AWAITING_REDRAW`*: green as redraws land, red the moment a collapse — or any other check
+  failure — appears anywhere else.
+* **Pre-measurement, per risk register item 3.** No sweep has read the current corpus, and the
+  checker is corrected against *failures*, never against a curve.
+* **Stated limit.** This catches a two-part ask collapsing to one, not every drift. A candidate
+  keeping two separate demands but swapping one for something the body never asked would pass
+  here; and a body whose parts are all instructions (the reconciliation runs) is out of scope
+  deliberately — no collapse has been observed there, and widening a rule to a shape without
+  evidence is how H-068's stuck generator happened. The spot-check remains the chain's second
+  clause, now with a smaller job.
+
+**And the second finding, which is why the first one cost hand-editing.** `--help` documented
+`--only` as "question ids to (re)do"; the implementation skipped any question that already had
+paraphrases, so the flag could only *resume*. Forcing the redraw above required deleting the
+question's entry out of `h1_paraphrases.json` by hand. **The operator's spot-check rejecting a
+mechanically valid paraphrase is a designed-for outcome — it is the whole point of a human
+clause in the QA chain — and it must not require surgery on the evidence.** `--only` now redoes:
+`select()` is one function shared by the projection and the run, a bare run resumes, `--only`
+regenerates the named ids complete or not, and an id not in the suite is an error rather than a
+silent no-op. The entry being replaced is dropped only once a call has been paid for, so a
+budget stop leaves the question exactly as it was, and a redraw that then fails leaves the id
+**absent** and `unresolved` rather than carrying text the operator rejected.
+
+---
+
+## H-070 — The redraws thrashed, so the rubric asks too: `RUBRIC_VERSION` 2 (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context — H-069's own lever, invoked on H-069's own condition.** H-069 added the
+mechanical compound-ask check and deliberately did *not* strengthen the prompt, on the
+argument that 50 of 75 compound-ask candidates already passed: a 1-in-3 failure is a retry,
+not a regeneration. It named the condition that would overturn that: *"if redraws thrash —
+the same ids landing `unresolved` across repeated `--only` runs — the next lever is
+`RUBRIC_VERSION = 2` plus a full regeneration, and that is a costed decision for the
+operator, not a silent one."*
+
+They thrashed. The operator ran three `--only` rounds over the 17 audited ids:
+
+```
+17 → 8 → 5 → 5
+```
+
+**Five ids are stuck**: `contract_terms-008`, `-012`, `-013`, `-014` and
+`hand-contract_terms-04`, each having failed three to four independent rounds — nine to
+twelve independent draws apiece, since a round is up to `MAX_ROUNDS = 3` attempts. Every
+failure is the same shape, the compound-ask collapse on the *rate-plus-cite* body, verbatim
+in the committed `unresolved` block:
+
+```
+collapsed the compound ask: 'rate' and 'clause' are asked for separately in the question
+and are folded into one here
+```
+
+`hand-contract_terms-04` additionally loses the name `Japanese` intermittently — a second,
+independent drift on the same body, which is what a model doing badly rather than unluckily
+looks like. Redraw spend so far ~**$0.11**.
+
+**The arithmetic says grinding is no longer information.** Reading the per-candidate
+collapse rate back out of the round-by-round attrition (9 of 17 cleared, then 3 of 8, then 0
+of 5) puts it near **one in two** on these bodies, not H-069's batch-wide one in three — and
+attrition selects for the hardest bodies, so it climbs as the set shrinks. All three
+candidates must pass in the same round, by design (the model is told the three must differ
+from each other, and accumulating passing candidates across calls would trade that diversity
+away), so a clean round is roughly `(1/2)³` ≈ **one in eight** for these questions. Another
+$0.11 of grinding buys the same distribution, and 0-of-5 in the last round is that
+distribution being honest.
+
+**Decision — bump `RUBRIC_VERSION` to 2 and regenerate all 130 under it.**
+
+The amendment is one new rule, stated positively, with a single faithful form shown, and the
+rest of the rubric byte-for-byte unchanged:
+
+```
+4. KEEP A TWO-PART ASK IN TWO PARTS. When the question asks for a value AND separately
+   instructs you to cite, name, report, quote or show something, the rewrite must ask for
+   both, as two distinct asks — joined by "and", left as a second sentence, or attached
+   as a "…, citing …" clause. Mentioning the second thing inside the first ("cite the
+   clause that sets the rate") names it; it does not ask for it.
+   Original: What was the closing balance for 2026-05? Cite the statement it comes from.
+   Faithful: What closing balance was recorded for 2026-05, and which statement reports it?
+```
+
+**The mechanical check stays exactly as it is.** This is belt and braces, not a swap: the
+rubric asks and the checker verifies, and a rule that lives only in a prompt is a rule that
+holds for whatever the model felt like doing that day. The example is invented rather than
+lifted from the suite — the model is being taught a *shape*, not handed a question it will
+be asked to rewrite — and `test_the_rubric_teaches_a_form_the_checker_accepts` runs it
+through `compound_ask()` and `check_paraphrase()`, so a prompt that taught a form the harness
+rejects fails the suite instead of the batch. Teaching an unpassable form is H-068's stuck
+generator reached from the other side, and it would burn the whole regeneration.
+
+**"Batches never mix versions" is now code, because otherwise the lever does not fire.**
+The rule was documented in `rubric.py` and enforced nowhere. Under it, the honest command
+for a full regeneration — a bare `python -m experiments.h1.generate` — would have read the
+complete v1 file, found every question complete, and printed `nothing to do`. So:
+
+* `load_batch()` reads the stamped version; a batch from another one (or from none) arrives
+  holding **no questions**, and a bare run therefore selects the whole suite. Nothing is
+  lost that git does not hold, and nothing is overwritten until a call has been paid for.
+* `--only` on a superseded batch is **refused**, nothing sent. Redrawing 5 of 130 under a
+  new rubric would write a file stamped v2 containing five questions and 125 absences, and
+  the operator would learn that from `build.py` a step later. Refusing beats destroying.
+* `build.py` refuses to assemble a corpus from a batch stamped at another version. The
+  corpus carries the rubric block as provenance; a corpus whose probes were drawn under a
+  rubric the operator never approved is provenance that says the wrong thing.
+
+**Cost, measured rather than guessed.** `--dry-run` (free, sends nothing) projects
+`130 to generate · worst case $0.376095` against the unchanged `$1.00` stop. The worst case
+prices every prompt at three bytes per token with a full `max_tokens` of output, so the
+expected actual is roughly a third of it per round; the first full run's evidence — 114
+questions, 163 calls including retries, **$0.19** — puts the realistic figure at the
+pre-committed **~$0.30**. A run stopped by the cap is resumable in the ordinary way: what it
+wrote is stamped v2, so a bare re-run resumes rather than restarting.
+
+**Alternatives rejected.**
+
+* *Keep grinding `--only`.* The information content of round four is zero, by the arithmetic
+  above; the last round returned 0 of 5. This is the condition H-069 pre-committed to.
+* *Hand-write the five paraphrases.* They would be human-drawn probes in a corpus whose
+  claim is "drawn by `claude-haiku-4-5` under a stated, hashed rubric". The rubric hash would
+  stop describing the artifact, and the spot-check would be the operator approving their own
+  text.
+* *Drop the five questions.* It removes exactly the hardest shape from a corpus that measures
+  semantic-cache safety, which is selection on difficulty — the one bias H1 cannot afford.
+* *Loosen the checker instead.* H-068's mistake, and the rule is validated against all 25
+  compound bodies and four faithful forms. The candidates are collapsing; the rule is right.
+* *Amend only the prompt and skip the version bump.* Then a corpus contains probes drawn
+  under two different rubrics, and `spot_check.approved_by` means nothing at all.
+
+**Consequences.**
+
+* **All 390 probes are new, so the operator's spot-check is a fresh 20, not a re-read of 2.**
+  The seeded sample names the same probe *ids* (the seed is unchanged, deliberately — the
+  sample cannot be re-drawn until it flatters), but every text behind them is redrawn. This
+  is the price H-069 costed, paid.
+* **`AWAITING_REDRAW` now empties all at once** rather than id by id, when the v2 batch is
+  built into a new corpus. It stays an upper bound, so it still cannot hide a new collapse.
+* **Pre-measurement, per risk register item 3.** No sweep has read the current corpus. The
+  curve test stays red until the regeneration, the rebuild, the spot-check and the sweep have
+  all run, in that order.
+* **The v1 batch is not deleted — it is in git**, at `71afa0e` plus the working-tree round
+  the operator has just run, and can be diffed against v2 to see what the rule bought.
+* **Stated limit — the two `$1` numbers are not the same number, and this lever fits once.**
+  The harness's stop is **per invocation**; §0.6's `$1` for H1 paraphrase generation is
+  **whole-project**. Landed so far: $0.19 (first run) + $0.02 (the H-068 redraw) + $0.001
+  (the forced redraw) + ~$0.11 (three compound rounds) ≈ **$0.32**, and the artifact's
+  `spend` block records only the *last* run, so it under-reports what the corpus cost — the
+  cumulative figure lives in `PHASE_LOG.md`. After a ~$0.30 regeneration the §0.6 line is
+  roughly two-thirds spent. There is room for one more full regeneration only by exceeding
+  it, so a `RUBRIC_VERSION = 3` would be a budget amendment, not a repeat of this decision.
+  Making the harness's stop read cumulative landed spend out of the artifact is the obvious
+  follow-up; it is deliberately **not** done here, mid-lever, where it could halt the very
+  run this entry authorises.
+
+---
+
+## H-071 — A prohibition must survive as a prohibition; and `ask_segments` never split a sentence (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The operator ran the spot-check again — the third amendment it has produced, and
+the second *distinct* systematic drift it has caught — and failed `reconciliation-006#p1`. The
+body ends with a bare prohibition:
+
+```
+Scan every statement for period 2025-12 for reporting anomalies — duplicates, unknown ISRCs,
+currency mismatches, negative units, period bleed, suspicious territory spikes, and dashboard
+divergence. Report only genuine, out-of-tolerance findings. Do not submit a batch.
+```
+
+The candidate ended:
+
+```
+p1  … and report only genuine, out-of-tolerance findings, submitting them individually
+    rather than as a batch.
+```
+
+*Do not submit a batch* forbids an action and names no alternative. *Submit them individually
+rather than as a batch* orders one. Answer the rewrite faithfully and an agent submits; answer
+the original faithfully and it submits nothing. Every mechanical rule passed it — entity,
+period, figure, length, no blank line, no protocol token — and the compound-ask rule does not
+look at an all-instruction body at all. Nothing was lost: `submit` and `batch` are both still
+in the sentence. The **polarity** moved.
+
+The operator forced a redraw (~$0.0018). Its sampled probe — `#p1`, the one the seeded sample
+names — came back clean, and **`#p3` reproduced the identical inversion**, verbatim:
+
+```
+p3  … and report genuine, out-of-tolerance findings only, submitting them individually
+    rather than as a batch.
+```
+
+So a re-read of the same twenty ids would have approved the redraw and shipped the drift.
+
+**A correction to the finding as filed.** The inversion occurred **twice** on
+`reconciliation-006`, not three times: the v1 draw was clean on all three candidates, the v2
+draw inverted `#p1`, the redraw inverted `#p3`. The third instance of the identical template
+is on a *different* body — `reconciliation-001#p3`, *"submitted individually rather than as a
+batch"* — found by the audit, along with the same failure in five more places. Two independent
+draws on one body plus six bodies across one family is stronger evidence than three draws on
+one body, so the conclusion stands and is better supported than as filed.
+
+**Decision — make the prohibition survive mechanically, on the same footing as an entity.**
+
+`prohibitions()` reads the shape off the body: an ask whose *own* verb is negated — an optional
+lead adverb, an optional auxiliary, a negator from `PROHIBITION_MARKERS`, then a verb. It
+extracts what is forbidden (`submit`) and what it is forbidden on (`batch`), reusing H-069's
+`_demand_phrase()`. Nothing is listed; hand it `Do not overwrite the staging table.` and it
+reads `overwrite`/`table`. In this suite it finds **15 bodies — the whole reconciliation
+family**, including `hand-reconciliation-01`'s `Do not submit anything.`
+
+`Prohibition` then asks two things of a candidate:
+
+* **It survives.** Some negation must still scope the forbidden verb or its object. The batch
+  already produces six constructions that satisfy this: verbatim (`do not submit a batch`),
+  another negator over the verb (`without submitting a batch`), a negation over the object
+  alone (`not a batch submission`, `not as a batch`, `not batched`), a lexical negative
+  (`avoiding batch submission`), a participial one (`excluding batch entries`, `omitting batch
+  submissions`), and a hyphenated compound (`do not batch-submit`). All six are pinned as
+  passing tests.
+* **It has not become an order.** No un-negated use of the forbidden verb may appear anywhere.
+  This is the clause that catches the inversion, and it is why the contrastives (`rather than`,
+  `instead of`) count as negation for the *first* clause: `rather than as a batch` really does
+  forbid the batch, so failing it there would produce a vague diagnosis where an accurate one
+  is available.
+
+**Scope, and it is narrow deliberately.** The rule fires only where the negator *opens* an ask
+— the bare prohibition standing as its own instruction, which is what every observed failure
+is. A negation modifying an otherwise affirmative instruction (`say so in prose without
+flagging it`, which occurs once, in `hand-reconciliation-01`) is left to the spot-check: there
+the sentence's own verb is positive, a faithful rewrite may restructure it into a restriction
+(`flag only what is out of tolerance`), and no inversion has been observed on that shape.
+Widening a rule to a shape without evidence is how H-068's stuck generator happened. That one
+body carries both shapes, which is the cleanest statement of where the line sits, and it is a
+test.
+
+**Every one of the 15 prohibiting bodies satisfies its own rule**, and that is a test —
+H-068's diagnostic, applied for the third time to the amendment that answers it.
+
+**And the second finding, which is why the first one did nothing at all.** Wired in, the new
+check found **zero** prohibitions in a suite with fifteen. `_ASK_BREAK` carried `re.IGNORECASE`
+for its coordinator alternatives (`and`, `or`, `plus`, `as well as`), and the flag applied to
+the whole pattern — including the `(?<![A-Z]\.)` guard that exists to keep `U.S.` from reading
+as a sentence end. Case-insensitively that guard reads *any letter* followed by a full stop, so
+**`ask_segments()` has never split on a sentence ending in a letter.** `Report the findings. Do
+not submit a batch.` was one segment; `What is the rate? Cite the clause.` split, because the
+guard needs a literal `.`. The fix scopes the flag to the two word alternatives with inline
+`(?i:…)` groups, and the initials guard is a test in both directions.
+
+What the bug cost, measured rather than assumed:
+
+* **H-071: everything.** Prohibitions live in sentences ending in `batch.` and `anything.` —
+  both letters — so the new check was a silent no-op until the regex was fixed.
+* **H-069: nothing measurable.** Re-running the compound-ask rule over all 390 committed probes
+  with the buggy pattern and with the fixed one changes **0 verdicts**, and all four faithful
+  forms H-069 pins pass either way. Compound bodies end their question with `?`, and rewrites
+  that separate the demands with a full stop tend to end the first on a date (`… as of
+  2026-06-30. Cite the clause.`), which splits under both patterns.
+* **The H-070 thrash: not recoverable.** A rewrite shaped `Identify the governing clause. What
+  rate applies?` would have been failed by the bug and passed by the fix. Whether any of the
+  17 → 8 → 5 → 5 rejections had that shape cannot be known — rejected drafts are never
+  persisted, only the diagnosis line is. Recorded here as a possibility that cannot be ruled
+  out, not as a cause.
+
+`_SENTENCE_BREAK`, which `compound_ask()` uses to find the shape in the first place, never
+carried the flag and was always correct — so every *body* was parsed correctly throughout. Only
+candidate-side segmentation was affected.
+
+**The rubric is deliberately *not* bumped to version 3.** H-070's lever exists and its
+condition is named there: redraws thrashing. That condition has not been tested once here. The
+evidence for trying the checker alone first:
+
+* **32 of 45 candidates on prohibiting bodies already pass**, in six distinct constructions.
+  This is not a shape the model cannot produce; it is one it sometimes replaces with a
+  helpful-sounding alternative. H-069's starting position was 50 of 75 — and note the
+  difference in what is being asked: the compound ask needed the model to *generate* a second
+  demand it kept compressing, where this needs it to *not add* an instruction.
+* **The failures cluster on one habit.** Eight of the thirteen are the same template,
+  `individually rather than as a batch`.
+* **The redraw is cheap and narrow.** Seven ids, worst case `$0.020541`, three-round ceiling
+  `$0.062`. A version bump discards all 130 and costs a fresh spot-check of all twenty sampled
+  probes; the seven-id redraw invalidates **2 of the 20** (`reconciliation-006#p1`,
+  `reconciliation-010#p1`) and leaves the operator's other eighteen readings standing.
+
+**Expected retry burden, stated so the operator can hold it to account.** Batch-wide, the
+per-candidate failure rate is **13/45 = 28.9%**. All three candidates must pass in the same
+round, so a clean round is `(1 − 0.289)³ ≈ 36%`, and three rounds resolve a question with
+probability **≈ 74%**. Measured only on the seven selected the rate is 13/21 = 61.9%, but those
+seven were selected *because* they failed, so that is the pessimistic bound and gives ≈ 16%.
+The truth is between. **Expect one to three of the seven to need a second `--only` round or to
+land `unresolved`.** `hand-reconciliation-01` and `reconciliation-007` failed 3 of 3 and are
+the two most likely to stick.
+
+**The thrash condition, pre-committed.** If the same ids land `unresolved` across two `--only`
+rounds — H-069's condition, the one H-070 fired on — the next lever is `RUBRIC_VERSION = 3`
+carrying a rule for prohibitions, plus a full regeneration. That is the operator's costed
+decision, not a silent one.
+
+**A correction to H-070's budget arithmetic, which changes what that lever costs.** H-070 said
+a third full regeneration "would need a budget amendment", projecting the v2 run at ~$0.30. It
+landed at **$0.190212 in 147 calls** (`0f1556d`). Recoverable cumulative landed spend is
+therefore ≈ **$0.51**, not the ~$0.62 implied — and it is a *lower bound*, because the `spend`
+block records only the last run and any `--only` rounds between `0f1556d` and `7d75d41` are
+unrecoverable from the repo. On the recoverable figures roughly **half** the §0.6 line remains
+and a `RUBRIC_VERSION = 3` at ~$0.19–0.30 fits inside it, so it is **not** a budget amendment
+unless those unrecorded rounds were large. The case for trying the checker alone therefore
+rests on the evidence above and not on affordability — which is the honest place for it to
+rest.
+
+**Alternatives rejected.**
+
+* *Require the body's own negator to survive literally.* The batch produces six faithful
+  constructions and only one reuses `do not`. A rule admitting one correct answer in six is
+  H-068 exactly.
+* *Require only that some negation survives.* Passes every inversion in the batch — they all
+  keep `rather than as a batch` — and passes `Do not group submissions.` too. It is the clause
+  that does not discriminate.
+* *Require only that no affirmative order appears.* Misses all three of
+  `hand-reconciliation-01`'s candidates, which drop `Do not submit anything.` and instruct
+  nothing at all. Both clauses are load-bearing; each catches what the other cannot see.
+* *Extend the rule to prohibitive adjuncts (`without flagging it`).* No inversion has been
+  observed on that shape, and `hand-reconciliation-01#p1`'s `flagging only findings that
+  genuinely exceed tolerance` is a faithful restructuring the rule would have failed. Scope
+  follows evidence.
+* *Bump the rubric now.* Above — the condition for it has not been tested.
+* *Leave it to the spot-check.* It samples 20 of 390, and it had just approved the redraw's
+  `#p1` while `#p3` carried the very drift the redraw was ordered to fix.
+
+**Consequences.**
+
+* **The accepted batch was audited: 13 of 390 probes fail, across 7 questions** —
+  `hand-reconciliation-01` (3 of 3), `reconciliation-007` (3 of 3), `-002` and `-014` (2 of 3),
+  `-001`, `-006` and `-010` (1 of 3). They are recorded in `AWAITING_REDRAW` in
+  `tests/test_experiments_h1.py` as a redraw that has not happened yet, never as a tolerated
+  exception, and `build.py` refuses to assemble a corpus while they are there — which is the
+  correct state, loudly. The set is an upper bound, so it clears itself as redraws land and
+  cannot hide a new failure appearing elsewhere.
+* **Two of the seven fail by *dropping* rather than inverting**, the quieter half of the same
+  finding. `reconciliation-002#p2` says `Do not group submissions.` and
+  `reconciliation-014#p1` says `Do not process multiple statements.` — the prohibition's shape
+  kept, its content swapped. `hand-reconciliation-01` loses `Do not submit anything.` in all
+  three candidates, which in this domain is the difference between an agent that writes to the
+  world and one that does not.
+* **H-069's `AWAITING_REDRAW` emptied exactly as H-070 predicted.** The audit reports **zero**
+  compound-ask failures across all 390 probes of the v2 batch, down from 25 across 17
+  questions. That is the rubric bump's receipt, and it is now a committed fact rather than an
+  expectation.
+* **A build refusal now names every failing id at once**, with the `--only` command that fixes
+  them. It stopped at the first id before, which would have made this seven-id audit cost six
+  surprised rebuilds to discover — the same "loudly, once" property the `unresolved` branch
+  already had.
+* **Pre-measurement, per risk register item 3.** No sweep has read the current corpus. The
+  checker is corrected against *failures*, never against a curve.
+* **Stated limit.** This catches a bare prohibition inverted or dropped. It does not catch a
+  prohibition whose *object* drifts while a negation survives, it does not look at prohibitive
+  adjuncts, and it says nothing about the drifts that neither a token rule nor a structural
+  rule can see. The spot-check remains the chain's second clause — and it has now found two
+  distinct systematic drifts the mechanical layer was blind to by construction, which is an
+  argument for keeping a human in the chain rather than for replacing them.
+
+---
+
+## H-072 — Two harness gaps found by running it for real: a column contract, and a key Backline never wrote (Phase 8)
+
+**Status**: accepted · **Date**: 2026-08-10
+
+**Context.** The H2 machinery was written in a session with no key, tested against synthetic
+rows and synthetic summaries, and shipped as ready. It was ready in the sense that every
+verdict it could reach was exercised. It was not ready in the sense that mattered: the first
+time an operator pointed it at the real artifacts, it failed twice.
+
+**Gap 1 — the export SQL and the analyzer disagreed about what a ledger row is.**
+RUNBOOK §2f's `SELECT` listed 21 columns and none of the five token columns. `analyse()` reads
+`row["input_tokens"]` for the two-meter cross-check, so the first export died on:
+
+```
+KeyError: input_tokens
+```
+
+The operator re-exported by hand with `input_tokens, output_tokens, reasoning_tokens,
+cache_read_tokens, cache_write_tokens` added, and the run's analysis is the one committed at
+`0914cc7`. Nothing was lost — but the failure cost a re-export at exactly the moment §2f warns
+is time-critical (*"do it before the next `make test`"*, because the Postgres contract suite
+truncates the control plane and takes `usage_ledger` with it, H-029).
+
+**The worse half of gap 1, which the `KeyError` was hiding.** Three columns were read through
+`.get`, so a missing one would not have raised at all:
+
+| column | read as | what a missing column would have produced |
+|---|---|---|
+| `cache_disposition` | `.get` | every row counted as *not* `cache_disabled` → **"INVALIDATES THE RUN"** on a run that was fine |
+| `passthrough_overhead_ms` | `.get` | an empty overhead list → no percentiles, no verdict |
+| `usd_cost` | `.get` | metered spend of `$0.00` → a **DISAGREE** verdict on the two-meter cross-check |
+
+A crash costs a re-export. A silent degradation costs a wrong published verdict, and the first
+of those three is the exact clause H-047 makes load-bearing. That is the defect worth fixing,
+and the `KeyError` was the symptom that led to it.
+
+**Gap 2 — `parity: NO DATA` against a summary full of data.** `_parity()` read
+`summary["overall"]`. Backline's `summary.json` has no such key and never has. `evals/report.py`
+computes it at *render* time:
+
+```python
+total_n += bucket["n"]
+weighted += bucket["score"] * bucket["n"]
+...
+lines.append(f"| **overall** | {total_n} | **{weighted / total_n:.1f}** |  |  |  |")
+```
+
+So the number every parity claim in this repo is stated against — 93.3 for the direct-local
+run — is a one-decimal n-weighted mean of ten category scores, materialised in a table and
+never stored. The analyzer looked for it as a field, did not find it, and reported the
+pre-registered primary instrument as unmeasurable.
+
+**Why the tests did not catch either.** They tested the code against fixtures the code's own
+author invented:
+
+```python
+result = analyse([row()], summary={"overall": overall, "total_cost_usd": "0.004"})
+```
+
+That fixture is not a Backline summary. It is a description of what `_parity` happened to
+read. A test written from the reader rather than from the real artifact can only ever confirm
+the reader — which is the general form of the lesson, and it is not specific to this module.
+
+**Decision.**
+
+1. **`REQUIRED_COLUMNS` is a contract, checked once, up front.** `require_columns()` runs
+   before any arithmetic, over the union of the rows' keys, and raises naming **every** missing
+   column at once plus the runbook step that produces them. Every `.get` on a required column
+   is now a `[]`, so the contract is the only place a missing column can be handled.
+2. **The runbook SQL and `REQUIRED_COLUMNS` are pinned to each other.**
+   `test_the_runbook_export_selects_every_column_the_analyzer_reads` parses the `SELECT` out
+   of `RUNBOOK.md` and asserts it covers the set. Editing one without the other turns the
+   suite red rather than costing an operator a re-export.
+3. **`overall_score()` is Backline's arithmetic, named as such**, with a docstring that says
+   the key does not exist so nobody re-introduces the assumption. A document with no
+   `categories` block raises with that explanation rather than returning `None`.
+4. **The fixtures are the real shape.** `summary()` in `tests/test_experiments_h2.py` is
+   Backline's actual schema, and `test_backlines_summary_carries_no_overall_key_and_never_did`
+   asserts against the two committed summaries — so if Backline ever *starts* writing an
+   `overall`, the suite says so instead of two definitions drifting apart.
+5. **Both committed artifacts are pinned to their committed inputs**, the way the H1 curve
+   already was: `test_the_committed_analysis_is_the_one_the_committed_inputs_produce` and its
+   adjudication sibling. A stale result file now fails rather than being published.
+
+**Timing, because it decides whether this is adjudication or tuning.** Both figures the parity
+verdict is computed from were public and committed **before** this fix: 93.7 is derivable from
+the `summary.json` the operator captured, 93.3 is Backline's published direct-local figure and
+has been quoted in the pre-registration since `aa134f4`, and the ledger export landed at
+`0914cc7`. The bound (3.0), the comparator (direct-local), and the rounding (one decimal, the
+figure `evals report` prints) were all fixed in the pre-registration before the run. Nothing in
+this decision could have moved the verdict; it could only have left it unstated. **Formalising
+a verdict whose inputs are already committed is adjudication. Choosing an instrument after
+seeing the numbers would have been tuning, and the distinction is exactly the one invariant 8
+exists to protect** — so it is written down here rather than assumed.
+
+**Alternatives considered.**
+
+- **Just add the columns to the SQL and move on.** Rejected: it fixes this instance and leaves
+  the drift mechanism intact. The pin is three lines of test and removes the class.
+- **Make the analyzer tolerate missing columns and report what it can.** Rejected outright.
+  Partial analysis of an $8 run that publishes a verdict from incomplete inputs is the same
+  failure as caching a truncated reply (invariant 6, one layer up). Refusing loudly is correct.
+- **Accept `summary["overall"]` if present, fall back to computing it.** Rejected: tolerance is
+  what let this hide. There is one definition of `overall` and it is Backline's; a second
+  accepted spelling is a second definition waiting to disagree.
+- **Import Backline's `report.py` / `gate.py` instead of restating their arithmetic.** Rejected:
+  Backline is not a dependency of this repo and the keyless replay in CI must not need it on the
+  path (the P5 pattern — compute where the dependencies live, commit, replay keylessly). The
+  restated pieces are small, quoted with their source, and checked against Backline's own
+  recorded output: `test_the_gate_rules_reproduce_the_operators_verbatim_output` asserts the
+  reasons match what the operator pasted back, character for character.
+
+**Consequences.**
+
+- The analyzer refuses an incomplete export instead of degrading, and says what to run.
+- `experiments/h2/adjudicate.py` exists and writes `h2_gate_adjudication.json`, so the gate's
+  FAIL is adjudicated from committed evidence rather than from a script that does not survive
+  the session.
+- Backline's two summaries and its gate baseline are committed under `docs/evidence/` per
+  invariant 9. H2's parity claim previously depended on `~/code/backline/data/evals/`, which is
+  one `make test` in that repo away from being gone.
+- Test count for H2 goes 15 → 44. The added coverage is almost entirely *against the real
+  artifacts* rather than against fixtures, which is the correction this decision is really
+  about.
+- **Not done, deliberately:** `generate.py`'s cap still reads per-invocation landed spend
+  rather than cumulative (H-070 noted it; §0.6's `$1` is whole-project, the harness's `$1` is
+  per run). It did not bind — H1 landed at ~$0.53–0.57 — and the fix would have to read the
+  artifact's `spend` block, which this same session is publishing as an under-reporting
+  record. Two changes to one number in one PR, one of them unmeasured, is how a receipt stops
+  being a receipt.

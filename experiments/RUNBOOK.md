@@ -1,0 +1,528 @@
+# Phase 8 — the operator's runbook
+
+Every command that spends money is here, in dependency order, with its expected cost stated
+**before** it. Nothing in this file was run by Claude Code: BUILD_PLAN §0.2 invariant 2's
+discipline — *the human runs the thing that costs* — applied to spend rather than to
+infrastructure.
+
+Read `experiments/PRE_REGISTRATION.md` first. It is the specification these commands
+execute, it was committed before any of this data existed, and where the two disagree the
+document is right.
+
+## Status — **all three DONE**. Nothing in this file needs running again.
+
+| | state | what it cost |
+|---|---|---|
+| **H1** — the safety curve | **done.** Corpus built, operator-approved, swept, figured, pinned. τ₀ does not exist | **≈ $0.53–0.57** ($0.443670 evidenced) |
+| **H2** — suite through the gateway | **done.** Run `21369386…`, 133/133 scored, 0 errors, no heal pass. Parity WITHIN NOISE at Δ +0.4 | **$7.541253** |
+| **H3** — failover under load | **done and adjudicated.** No GPU session needed (H-067) | **$0.00** |
+
+Verdicts are in [`results/REPORT.md`](results/REPORT.md); spend against §0.6's caps is in
+`docs/PHASE_LOG.md` → *Phase 8 — closed*. **The commands below are kept as the record of what
+was bought and how to reproduce it, not as work outstanding.** Every paid step is marked with
+what it actually cost when the operator ran it.
+
+**H1's headline never depended on the paid step.** τ₀ — the pre-registered recommended
+threshold — is computed over Family A ∪ Family B, and Family B alone already carried
+silent wrong answers at every point of the grid. Adding Family A could only add probes, so
+"no safe threshold exists" was decided before a dollar was spent. What the paid step bought is
+the *other* axis: how many legitimate hits a cache gives up — and, as it turned out, the
+sharper finding, that 7 of 390 paraphrases are poisoned **even though their own question is in
+the cache**, and that the worst wrong hit (0.9995) sits above the lowest right one (0.890) so
+that no threshold separates them.
+
+---
+
+## 0. Prerequisites
+
+```bash
+cd ~/code/headroom
+make up                                    # postgres + dynamodb + gateway + ui, migrated
+export HEADROOM_ADMIN_TOKEN=…              # leading space, per invariant 3
+```
+
+Both stacks coexist by design (H-006): Backline holds 5432 / 8000 / 3000, Headroom holds
+5433 / 8080 / 8001 / 3001. Nothing needs stopping.
+
+> **Capture before the next `make test`.** The Postgres contract suite truncates the control
+> plane and `usage_ledger` references it, so a run's rows go with it (H-029). Every analysis
+> step below writes its artifact immediately for exactly this reason.
+
+---
+
+## 1. H1 — the paraphrase batch  ·  **DONE.** Landed at ≈ $0.53–0.57 across the whole saga
+
+### 1a. Project the cost first — free
+
+```bash
+uv run python -m experiments.h1.generate --dry-run
+```
+
+Prints the suite hash, how many of the 130 questions still need paraphrases, the model's
+dated rate out of `config/models.yaml`, and the **worst case**. Expect the actual to land
+near a third of it: the estimate assumes three bytes per token and the full `max_tokens` of
+output, which is H-034's direction of error.
+
+### 1b. Generate — **paid**
+
+```bash
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate
+```
+
+- The stop is **inside the harness**: before each call it prices that call's worst case and
+  refuses to send if landed + worst case would cross `$1.00`. It reads *committed* spend,
+  not landed — §0.2 rule 5 applied to this experiment's own money.
+- **Resumable.** Completed questions are skipped, so a stop, a crash, or a closed laptop
+  costs nothing already bought. Re-run the same command.
+- A candidate that fails the mechanical checks is regenerated **here**, up to three rounds,
+  before the artifact exists (risk register item 3). Anything still failing lands in
+  `unresolved` and the build will refuse until it is fixed:
+  ```bash
+  uv run python -m experiments.h1.generate --only royalty_math-004,contract_terms-011
+  ```
+  The ids to pass are printed by `build.py` when it refuses, and are in the artifact's
+  `unresolved` list. `--only` runs **just those** — nothing else is touched or re-bought.
+- **`--only` is a redo, not a resume** (H-069). A bare run skips completed questions; `--only`
+  regenerates the ids you name *whether or not they already have paraphrases*, which is what
+  step 1c needs — your spot-check rejecting a mechanically valid paraphrase is a designed-for
+  outcome, and it must not require hand-editing the artifact. The run prints which ids are
+  being **REDRAWN** before it sends anything. The text being replaced is discarded once the
+  first call for that id is paid for, so:
+  - a budget stop leaves the question exactly as it was, and
+  - a redraw that fails all three rounds leaves the id **absent** and in `unresolved`, not
+    carrying the text you rejected. `build.py` then refuses, by design.
+  - an id that is not in the suite is an error, not a silent no-op.
+- **A rubric bump makes every question incomplete** (H-070). If the file on disk was drawn
+  under a different `RUBRIC_VERSION`, the run prints a `SUPERSEDED:` line and regenerates all
+  130 — a batch is never mixed across versions, and `build.py` refuses a corpus built from
+  one that is. In that state `--only` is refused outright: a partial redraw would leave a file
+  that is neither version. Both happen before anything is sent, and the dry run shows it.
+
+#### The 2026-08-10 run: 114/130, and the 16 that need re-running
+
+The first full run completed 114 of 130 for **$0.19**. The other 16 were unresolvable
+against a checker bug, not against a model failure: sentence-initial common words
+(`Suppose`, `Across`, `Counting`, `Summing`, `Exactly`, `Please`, `Audit`) were being
+extracted as entity names that had to survive, and no faithful paraphrase can keep them. The
+extractor was corrected in **H-068** — before any measurement existed — and the 114 already
+committed were re-validated against the corrected rule with **0 new failures**.
+
+The rejected drafts were never persisted, so those 16 have to be drawn again. One command,
+**~$0.05**, resumable, and it will not touch the 114. The harness's own projection for the
+16 is `worst case $0.043393` for a single round each, against the unchanged `$1.00` stop:
+
+```bash
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate --only \
+hand-catalog_lookup-01,hand-contract_terms-01,cross_collateral-004,cross_collateral-005,\
+hand-cross_collateral-01,sql_analytics-003,sql_analytics-004,sql_analytics-008,\
+hand-sql_analytics-02,hand-reconciliation-01,multi_step-006,multi_step-007,\
+multi_step-008,multi_step-009,multi_step-010,hand-multi_step-02
+```
+
+Confirm it with `--dry-run` first (free) — it prints `16 to generate` and the worst case.
+A question that needs all three attempts costs up to three times its share, so the true
+ceiling for this command is ~$0.13; the harness stops at `$1.00` either way.
+
+`EP` in `hand-catalog_lookup-01` is still required exactly (H-068 explains why), so that one
+question can still legitimately fail; two of its three original candidates kept the token, so
+a re-draw is expected to clear it. Anything still `unresolved` after this run is a real
+finding, not a checker artefact — re-read the failure lines before re-running.
+
+#### The compound-ask redraw — run, thrashed, superseded (history, do not re-run)
+
+Your spot-check failed `contract_terms-004#p3` for scope drift — the body asks for a rate
+**and** a citation, the paraphrase asked only for the citation — and the forced redraw
+reproduced it in 2 of 3 fresh candidates. That became a mechanical check (**H-069**), and the
+audit found **25 collapsed candidates across 17 questions**.
+
+You redrew those 17 three times: **17 → 8 → 5 → 5**, ~**$0.11**. Five ids —
+`contract_terms-008`, `-012`, `-013`, `-014`, `hand-contract_terms-04` — failed three to four
+independent rounds on the identical shape. That is H-069's stated thrash condition, so its
+pre-costed lever was taken: **`RUBRIC_VERSION` is now 2** (**H-070**), and the `--only` command
+that used to live here would now be refused, because a batch is never mixed across rubric
+versions. The regeneration below replaces it.
+
+#### The version-2 regeneration — run, landed, superseded (history, do not re-run)
+
+**It was run on 2026-08-10 and it landed: `$0.190212` in 147 calls (`0f1556d`), under the
+~$0.30 projection.** The batch completed 130/130 and the corpus was rebuilt (`7d75d41`). Kept
+below because the projection and the reasoning are the record of what was bought.
+
+Rule 4 of the rubric now asks for what the checker checks: a body that asks for a value and
+*separately* instructs a citation must stay two asks in the rewrite, with one faithful form
+shown. Everything else in the rubric is byte-for-byte what you approved before. Because the
+rubric version is stamped into the artifact and batches are never mixed, this is one command
+over the whole suite — no `--only`, no id list:
+
+```bash
+uv run python -m experiments.h1.generate --dry-run            # free, sends nothing
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate  # ~$0.30, hard stop at $1.00
+```
+
+The dry run prints this, verbatim from the run of 2026-08-10 (the first line is one long line;
+it is wrapped here). Read it before you drop `--dry-run` — it *is* the decision:
+
+```
+SUPERSEDED: /home/somx/code/headroom/experiments/artifacts/h1_paraphrases.json was generated
+under rubric version 1; the rubric is now version 2 (hash f7a48a69c3aab1b6eeb43d83e51a1cbaa370
+69df01a5476a72ed4518a2282e2c). Batches are never mixed across versions (H-070), so every
+question below is regenerated and the text now in that file is discarded. It stays in git, and
+nothing is overwritten until a call has been paid for.
+suite 6eef41c6706f309a · 130 keyed questions (3 excluded) · 130 to generate · resume
+model claude-haiku-4-5 at $1.00/$5.00 per MTok (effective 2026-08-08)
+worst case $0.376095 · cap $1.00 · expected actual ~1/3 of the worst case (the estimate is
+deliberately high)
+
+--dry-run: nothing sent, $0.00 spent
+```
+
+`worst case $0.376095` is one round per question priced pessimistically (three bytes per token,
+a full `max_tokens` of output). The realistic figure is the pre-committed **~$0.30**: the first
+full run drew 114 questions in 163 calls, retries included, for **$0.19**. If the `$1.00` stop
+does fire, the run is resumable in the ordinary way — what it wrote is already stamped v2, so a
+bare re-run picks up the rest.
+
+**Two things to know before you type it.**
+
+* The current file — 125 questions plus the five stuck ids — is **discarded**, not merged. It
+  stays in git; nothing is overwritten until the first call is paid for, so `--dry-run` and a
+  `Ctrl-C` before the first response both leave it exactly as it is.
+* The `$1.00` here is the stop **per invocation**. §0.6's `$1` for H1 paraphrase generation is
+  **whole-project**, and about **$0.32** of it is already landed ($0.19 + $0.02 + $0.001 +
+  ~$0.11). After this run, roughly two-thirds of that line is spent. A third full regeneration
+  would need a budget amendment, so this is the run to let finish.
+
+Then rebuild (step 1d) and spot-check (step 1c). **Every one of the 390 probes is new text, so
+the spot-check is a fresh read of all 20** — the seeded sample names the same probe ids as
+before (the seed does not move; a sample you can re-draw is not a sample), but nothing behind
+them is what you read last time.
+
+#### The prohibition redraw — run, landed, done (history, do not re-run)
+
+**It was run on 2026-08-10 and it landed: `$0.022395` in 13 calls (`e902902`), inside the
+`worst case $0.020541 × 3` ceiling.** All seven cleared in one round — better than the "expect
+one to three to need a second round" this section warned of — the corpus rebuilt, the operator
+approved the spot-check, and the sweep and figure followed at `c94657c`. Kept below because
+the projection and the reasoning are the record of what was bought.
+
+Your spot-check failed `reconciliation-006#p1` for inverting a negation — the body says
+`Do not submit a batch.` and the paraphrase said *"submitting them individually rather than as
+a batch"*, which orders the submission the body forbids. The forced redraw came back with a
+**clean `#p1` and the identical inversion in `#p3`**, so re-reading the same sampled ids would
+have passed it. That became a mechanical check (**H-071**), and the audit of the accepted batch
+found **13 bad probes across 7 questions**:
+
+| id | probes | what happened |
+| --- | --- | --- |
+| `hand-reconciliation-01` | 3 of 3 | `Do not submit anything.` dropped entirely |
+| `reconciliation-007` | 3 of 3 | inverted, three different ways |
+| `reconciliation-002` | 2 of 3 | one inverted, one swapped for `Do not group submissions.` |
+| `reconciliation-014` | 2 of 3 | one inverted, one swapped for `Do not process multiple statements.` |
+| `reconciliation-001` | 1 of 3 | inverted |
+| `reconciliation-006` | 1 of 3 | inverted (the `#p3` above) |
+| `reconciliation-010` | 1 of 3 | inverted |
+
+`build.py` refuses to rebuild the corpus until these are clean, and it now prints **all seven
+ids at once** with the command below rather than stopping at the first. The rubric is *not*
+bumped — H-071 argues the checker alone should be tried first, and states the condition under
+which that judgement is overturned.
+
+```bash
+uv run python -m experiments.h1.generate --dry-run --only \
+hand-reconciliation-01,reconciliation-001,reconciliation-002,reconciliation-006,\
+reconciliation-007,reconciliation-010,reconciliation-014      # free, sends nothing
+
+ANTHROPIC_API_KEY=… uv run python -m experiments.h1.generate --only \
+hand-reconciliation-01,reconciliation-001,reconciliation-002,reconciliation-006,\
+reconciliation-007,reconciliation-010,reconciliation-014      # ~$0.02, hard stop at $1.00
+```
+
+The dry run prints `7 to generate · redo (--only)` and **`worst case $0.020541`** against the
+unchanged `$1.00` stop, plus the `will be REDRAWN` line naming all seven. That worst case is
+one round each priced pessimistically (three bytes per token, a full `max_tokens` of output);
+a question needing all three rounds costs up to three times its share, so the true ceiling for
+this command is **~$0.062**. Confirm it with `--dry-run` before you drop the flag — the
+projection is produced by the same `select()` the run uses, so the two cannot disagree.
+
+**What to expect, so you can hold H-071 to account.** The per-candidate failure rate across all
+15 prohibiting bodies is 13/45 ≈ **29%**, and all three candidates must pass in one round — so
+a clean round is ≈36% and three rounds resolve a question ≈74% of the time. Measured only on
+these seven it is 62%, but they were picked *because* they failed, so that is the pessimistic
+bound. **Expect one to three of the seven to need a second `--only` round or to land
+`unresolved`**; `hand-reconciliation-01` and `reconciliation-007` failed 3 of 3 and are the
+likeliest to stick. If the same ids are still `unresolved` after a **second** round, that is
+H-069's thrash condition and the next lever is `RUBRIC_VERSION = 3` — a costed decision for
+you, described in H-071, and one that on the recoverable spend figures still fits inside §0.6's
+`$1` line.
+
+Then rebuild (step 1d) and spot-check (step 1c). **Only 2 of your 20 sampled probes change** —
+`reconciliation-006#p1` and `reconciliation-010#p1` — so this is a re-read of two, not of
+twenty. The other eighteen are untouched text you have already approved.
+
+### 1c. The spot-check — **your gate, not the harness's** · recorded 2026-08-10T23:29:38Z
+
+`experiments/artifacts/h1_paraphrases.json` carries the batch. Twenty probes drawn by a
+seeded RNG are named in the artifact's `spot_check.sample` once the corpus is built; read
+them against the rubric in `experiments/h1/rubric.py` and ask one question of each:
+
+> Does this ask for **exactly** the same thing — same entity, same period, same figure, same
+> scope — in different words?
+
+Record your approval by filling `spot_check.approved_by` and `approved_at` in
+`experiments/artifacts/h1_corpus.json` after step 1d. `REPORT.md` states the corpus as
+approved or as outstanding; it does not assume.
+
+### 1d. Build the golden artifact — free
+
+Needs Backline on disk (for its own scorer, H-061) and the `embed` extra:
+
+```bash
+BACKLINE_REPO=~/code/backline PYTHONPATH=~/code/backline \
+  uv run --extra embed python -m experiments.h1.build
+```
+
+It refuses on an incomplete batch, re-checks every committed paraphrase against the checks
+as they are committed *now*, and aborts if any rendered ground-truth answer fails Backline's
+own scorer for its own question.
+
+### 1e. Sweep, render, verify — free
+
+```bash
+uv run python -m experiments.h1.sweep
+uv run python -m experiments.h1.figure
+uv run pytest tests/test_experiments_h1.py -q
+```
+
+The last line matters: `test_the_committed_curve_is_the_one_this_corpus_produces` recomputes
+the committed curve from the committed corpus, so a stale result file fails rather than
+being published.
+
+---
+
+## 2. H2 — Backline's suite through the gateway  ·  **DONE.** Landed at $7.541253 of the $12 stop
+
+Run `21369386-a040-4589-90a1-0e75409711ec`, 2026-08-10: **133/133 scored, 0 infra errors, no
+heal pass, 462 ledger rows all `ok`**. The steps below are the record of what was run.
+
+### 2a. The tenant — free, and its configuration is the experiment
+
+```bash
+GW=http://localhost:8080
+AUTH="Authorization: Bearer $HEADROOM_ADMIN_TOKEN"
+
+TENANT=$(curl -sS -X POST $GW/admin/tenants -H "$AUTH" -H 'content-type: application/json' \
+  -d '{"name":"h2-gateway-overhead"}' | jq -r .id)
+
+# Unrestricted: Backline calls four models — planner and judge (sonnet), utility and
+# router (haiku). A scope that missed one would fail mid-suite as a 403.
+KEY=$(curl -sS -X POST $GW/admin/keys -H "$AUTH" -H 'content-type: application/json' \
+  -d "{\"tenant_id\":\"$TENANT\",\"name\":\"backline-suite\"}" | jq -r .key)
+
+# The backstop, deliberately ABOVE Backline's own $12 stop (H-066): it can only fire if
+# Backline's accounting is wrong, which is when a second opinion is worth having.
+curl -sS -X PUT $GW/admin/budgets/$TENANT -H "$AUTH" -H 'content-type: application/json' \
+  -d '{"usd":"15.00","window":"monthly"}' | jq .
+
+# Caching stays OFF — the shipped default, and H-047's requirement. Do not enable it.
+curl -sS $GW/admin/cache/$TENANT -H "$AUTH" | jq '.mode'    # must print "disabled"
+```
+
+### 2b. Pre-flight — free
+
+```bash
+uv run python -m experiments.h2.preflight
+```
+
+Refuses on anything that would invalidate the run: caching on, a rate limit that could shed
+a suite request, a budget cap low enough to 402 mid-run, an unhealthy provider, or a
+failover chain on the `claude-` route.
+
+### 2c. Pre-flight smoke — budgeted ~$0.02, **actual $0.000855**; risk register item 2 requires it
+
+```bash
+H2_VIRTUAL_KEY=$KEY uv run python -m experiments.h2.preflight --smoke
+```
+
+One real Anthropic call carrying a **tool block**, through the gateway. A5 is verified
+keylessly and has never been verified against the real API through this path, and the $8 run
+is a tool-heavy agent suite. If the reply has no `tool_use` block, stop — that is the
+failure the smoke exists to find, for two cents.
+
+**It passed**, and its `request_id` earns a second job later: `hr_e171f6024fc64772a66840fda6aab05a`
+is recorded in `results/h2_preflight.json`, and it is the one row in the §2f export that is not
+the suite's. That is the whole of the $0.000855 difference between Headroom's meter and
+Backline's — which is why the cross-check reconciles to twelve decimal places once it is set
+aside, and why the analyzer reports spend by model.
+
+### 2d. Point Backline at the gateway — **zero changes to Backline**
+
+Assumption **A2**, verified: `anthropic` 0.120.2 reads `ANTHROPIC_BASE_URL` when `base_url`
+is `None`, and Backline's `AnthropicProvider` passes `None`. So the whole integration is two
+environment variables, and Backline's scoring is untouched.
+
+```bash
+cd ~/code/backline
+make up                                     # its own stack, on its own ports
+
+export ANTHROPIC_BASE_URL=http://localhost:8080   # <- Headroom
+export ANTHROPIC_API_KEY=$KEY                     # <- the hk_… virtual key, NOT the real one
+```
+
+The real Anthropic key lives in Headroom's environment and nowhere else in this run. Confirm
+before spending:
+
+```bash
+echo "$ANTHROPIC_API_KEY" | cut -c1-3          # must print: hk_
+```
+
+### 2e. The run — expected ~$8.09, stop $12.00, **actual $7.540398**
+
+```bash
+uv run python -m evals run --suite core --model claude-sonnet-5 --budget 12.00
+```
+
+**Why $12 and not §0.6's $10** (H-066): Backline's own pre-run projection for this suite is
+**$11.27** — computed, not quoted — and its runner refuses to start when the projection
+exceeds `--budget` unless `--yes` is passed. `--budget 10.00` therefore buys either a refusal
+or a `--yes` that switches the projection guard off entirely, which is worse than moving the
+number. The stop is $12; the *expectation* is $8.09; the gap is the §0.6 contingency bucket,
+and PHASE_LOG records what was actually spent.
+
+**Never pass `--yes` reflexively** (`AWS_DEPLOY_PLAN.md` §9). If the projection has moved
+above $12, that is a fact worth reading before spending.
+
+If infra errors appear (`errors.n > 0`), one heal pass is allowed and its use is reported:
+
+```bash
+uv run python -m evals run --suite core --model claude-sonnet-5 --budget 12.00 \
+  --resume <run-id> --retry-errors
+```
+
+**One heal pass, then publish what happened.** Nothing is re-rolled for a friendlier draw.
+**None was needed:** `errors.n` was 0 and all 133 questions scored, so the heal loop was never
+entered.
+
+### 2f. Export and adjudicate — free, and do it before the next `make test`
+
+```bash
+cd ~/code/headroom
+docker compose exec -T db psql -U headroom -d headroom -At -c "
+  SELECT json_agg(row_to_json(r) ORDER BY r.started_at) FROM (
+    SELECT request_id, tenant_id, model, provider, streamed, outcome, status_code,
+           upstream_status, error_source, error_reason, failover_hops, failover_from,
+           failover_error, cache_disposition, cost_status, usd_cost::text,
+           input_tokens, output_tokens, reasoning_tokens,
+           cache_read_tokens, cache_write_tokens,
+           ttft_ms, total_ms, upstream_latency_ms, passthrough_overhead_ms, started_at
+    FROM usage_ledger WHERE tenant_id = '$TENANT' ORDER BY started_at) r
+" > docs/evidence/p8-experiments/h2-ledger-rows.json
+
+uv run python -m experiments.h2.analyze \
+  --rows docs/evidence/p8-experiments/h2-ledger-rows.json \
+  --summary ~/code/backline/data/evals/<run-id>/summary.json
+```
+
+**The five token columns are load-bearing and were once missing** (H-072). The first export
+of the 2026-08-10 run selected none of them and the analyzer died on `KeyError:
+input_tokens` at the two-meter cross-check. That SELECT and
+`experiments.h2.analyze.REQUIRED_COLUMNS` are now pinned to each other by
+`test_the_runbook_export_selects_every_column_the_analyzer_reads`, so editing one without
+the other turns the suite red instead of costing an operator a re-export. The analyzer also
+checks the contract up front and names every missing column at once rather than raising on
+the first row it reads.
+
+Read the first line of its output first. If `cache disabled (H-047)` is not `HOLDS`, the
+overhead figure is a hit-rate figure and the run has to be repeated — that is what the count
+is for.
+
+Also on the record, per Backline §A5.5, with its known variance failure modes pre-declared:
+
+```bash
+cd ~/code/backline
+uv run python -m evals report --summary data/evals/<run-id>/summary.json
+uv run python -m evals gate   --summary data/evals/<run-id>/summary.json
+```
+
+### 2g. Adjudicate the gate — free, and it is where a FAIL gets decided
+
+The gate failed on this run, and §H2.2 pre-declared that it might: it is the **secondary**
+check, and a legitimate fresh run can fail it on variance alone. What decides which one you
+are looking at is whether the *reference* run fails too, and in the same place. Copy the two
+summaries and the baseline into the repo first — invariant 9, and `data/evals/` is one
+`make test` in Backline away from being gone:
+
+```bash
+cd ~/code/headroom
+cp ~/code/backline/data/evals/<run-id>/summary.json \
+   docs/evidence/p8-experiments/h2-backline-summary-gateway.json
+cp ~/code/backline/data/evals/<reference-run-id>/summary.json \
+   docs/evidence/p8-experiments/h2-backline-summary-direct-local.json
+cp ~/code/backline/evals/results/baseline.json \
+   docs/evidence/p8-experiments/h2-backline-gate-baseline.json
+
+uv run python -m experiments.h2.adjudicate \
+  --treatment docs/evidence/p8-experiments/h2-backline-summary-gateway.json \
+  --reference docs/evidence/p8-experiments/h2-backline-summary-direct-local.json \
+  --baseline  docs/evidence/p8-experiments/h2-backline-gate-baseline.json \
+  --treatment-results '~/code/backline/data/evals/<run-id>/results.jsonl' \
+  --reference-results '~/code/backline/data/evals/<reference-run-id>/results.jsonl'
+```
+
+The two `--*-results` flags are optional and add the per-question half: T1 agreement, the
+per-question movement in both directions, the `contract_terms` decomposition, and the raw
+recorded check detail for any T2 violation that is unique to the treatment. **A violation the
+reference does not share is named in `REPORT.md` with its mechanism, never folded into
+"variance"** — that is the line between adjudicating and explaining away.
+
+### 2h. The keyless companion — free, and it is the honest overhead number
+
+```bash
+cd ~/code/headroom
+uv run python -m experiments.h2.bench
+```
+
+Already run and committed; re-run it after any change to the admission path. It measures
+`upstream_latency_ms` against the MockProvider, where the provider costs ~0 and what remains
+is the gateway's own work (H-065).
+
+---
+
+## 3. H3 — nothing to run
+
+Adjudicated in this PR from evidence that already exists (H-067):
+
+- **the mock chain** — `experiments/results/h3_chaos.json`, three intensities, regenerate any
+  time with `uv run python -m experiments.h3.chaos`, $0.00;
+- **the two-GPU kill** — `experiments/results/h3_livekill.json`, from the 492 ledger rows the
+  operator's 2026-08-10 run left behind, exported to
+  `docs/evidence/p8-experiments/h3-livekill-ledger-rows.json` so the analysis survives the
+  next `make test`.
+
+If a future session wants a fresh recording, PHASE_LOG → Phase 7 → *The watched kill demo*
+has the commands and `docs/evidence/p7-dashboard/README.md` has the capture list. Nothing in
+Phase 8 needs one.
+
+---
+
+## 4. Money, totalled — projected, then actual
+
+| step | expected | **actual** | hard stop | where the stop lives |
+|---|---:|---:|---:|---|
+| H1 dry runs | $0.00 | **$0.00** | — | — |
+| H1 generation | ~$0.30 | **≈ $0.53–0.57** | **$1.00** | inside `experiments/h1/generate.py` |
+| H2 pre-flight smoke | ~$0.02 | **$0.000855** | — | one call |
+| H2 suite run | ~$8.09 | **$7.540398** | **$12.00** | Backline's `--budget`, reading committed spend |
+| H2 backstop | — | never fired | **$15.00** | Headroom's own budget gate on the H2 tenant |
+| H3, all sweeps, all benches, the figure, the adjudications | $0.00 | **$0.00** | — | — |
+| **total** | **~$8.41** | **≈ $8.07–8.11** | **≤ $13** | against the **$20** project cap (§0.6) |
+
+**H1 overran its ~$0.30 projection and stayed inside its $1.00 line.** The overrun is the QA
+chain: two checker amendments (H-068, H-069), one rubric bump that forced a full regeneration
+(H-070), a third checker amendment (H-071), and two operator spot-check rejections. It bought
+the removal of 25 collapsed asks and 13 inverted prohibitions from a 390-probe corpus, before
+any measurement read it. `$0.443670` of the total is evidenced in committed `spend` blocks;
+the rest is two redraw rounds that were overwritten before commit — see
+`docs/PHASE_LOG.md` → *Phase 8 — closed* for the per-commit receipt.
+
+Spend across P0–P7 was $0.00 measured plus the P1/P3 live smokes (< $0.01). The project total
+is **≈ $8.08–8.12 against the $20 cap**: no amendment was needed and no stop fired.
