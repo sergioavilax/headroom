@@ -200,7 +200,11 @@ jobs:
       # nowhere to forward to. `kubeconform` then checks the rendered manifests against
       # the Kubernetes API schemas, which is the part `helm lint` does not do at all: a
       # `maxUnavaialble` typo renders perfectly and is silently ignored by a real cluster.
-      - uses: azure/setup-helm@v4.3.1
+      # v5, not v4.3.1: v4 targets Node 20 and the runner forces it onto 24 with a
+      # deprecation annotation. Exactly what Phase 9 fixed in-branch for
+      # `setup-terraform`, and Phase 0 for `checkout` and `setup-uv` — an annotation
+      # nobody acts on is an annotation nobody reads.
+      - uses: azure/setup-helm@v5.0.1
         with:
           version: v3.19.0
       - name: Install kubeconform
