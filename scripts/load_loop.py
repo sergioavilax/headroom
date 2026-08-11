@@ -326,7 +326,17 @@ def main(argv: list[str] | None = None) -> int:
         "sampled: a serial loop can pass through a whole pod replacement between requests.",
     )
     parser.add_argument("--interval-ms", type=float, default=200.0, help="pause per worker")
-    parser.add_argument("--timeout", type=float, default=15.0)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=15.0,
+        help="per-request deadline, seconds. The default is tuned to the mock provider "
+        "(p99 under 100 ms) and is WRONG for a real model: Phase 10 §11's first run "
+        "scored fourteen legitimate 27B completions as `dropped` because non-streamed "
+        "inference on the operator's GPUs takes 12-16 s to first token. Set it above the "
+        "slowest response the chain under test can legitimately produce, or the "
+        "instrument reports the instrument.",
+    )
     parser.add_argument(
         "--model",
         default=MODEL,

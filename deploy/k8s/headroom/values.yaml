@@ -163,17 +163,26 @@ gateway:
       periodSeconds: 5
       failureThreshold: 60
 
-  # Two things, and both are load-bearing for "zero dropped requests":
+  # Three things, and all of them are load-bearing for "zero dropped requests":
   #
+  #   * `drainFilePath` — `preStop` touches this before it sleeps, and the gateway answers
+  #     every subsequent response with `Connection: close` so clients retire their
+  #     keep-alive connections during the window rather than losing a request when
+  #     uvicorn closes them at SIGTERM. §8 measured one drop per replaced pod without it,
+  #     at both sleep lengths below; the sleep alone cannot fix that race because an
+  #     established connection ignores Endpoints entirely (H-091, `headroom/api/drain.py`).
+  #     It must be a path the container can write and nothing else reads — `/tmp` is that,
+  #     and `readOnlyRootFilesystem` is already off for `uv`'s cache.
   #   * `preStopSleepSeconds` — a pod is sent SIGTERM and removed from Endpoints at the
   #     same moment, and kube-proxy on every node takes a beat to notice. Without this
-  #     sleep, requests already in flight toward a doomed pod are the ones that get
-  #     dropped. Sleeping first, *then* terminating, is the fix; it is not a race the
-  #     application can win from inside.
+  #     sleep, requests already heading toward a doomed pod are the ones that get dropped.
+  #     It is also the window the drain above needs: long enough for every pooled
+  #     connection to receive one response and retire itself.
   #   * `terminationGracePeriodSeconds` — the gateway's own shutdown drains the ledger
   #     writer's queue before closing the store (H-027's "a graceful stop loses nothing").
   #     Comfortably longer than the sleep plus that drain.
   lifecycle:
+    drainFilePath: /tmp/headroom-draining
     preStopSleepSeconds: 5
   terminationGracePeriodSeconds: 45
 

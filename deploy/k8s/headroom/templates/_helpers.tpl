@@ -99,6 +99,11 @@ line of difference, now on a third runtime.
   value: {{ .Values.aws.bucketsTable | quote }}
 - name: HEADROOM_LOG_LEVEL
   value: {{ .Values.gateway.logLevel | quote }}
+{{- /* The other half of the preStop hook: the hook writes this path, the gateway watches
+   it and starts answering `Connection: close`. One value, two consumers, so they cannot
+   disagree about where the sentinel lives (H-091). */}}
+- name: HEADROOM_DRAIN_FILE
+  value: {{ .Values.gateway.lifecycle.drainFilePath | quote }}
 - name: HF_HOME
   value: {{ .Values.gateway.embed.hfHome | quote }}
 {{- if .Values.gateway.embed.offline }}

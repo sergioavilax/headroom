@@ -109,13 +109,26 @@ spec:
           lifecycle:
             preStop:
               exec:
-                # Sleep, then let SIGTERM arrive. A pod is sent SIGTERM and removed from
-                # Endpoints at the same instant, and kube-proxy on every other node takes
-                # a moment to catch up — so without this pause the requests already
-                # heading for a doomed pod are exactly the ones that get dropped. It is
-                # not a race the application can win from inside, which is why it is here
-                # and not in `headroom/api/main.py`.
-                command: ["/bin/sh", "-c", "sleep {{ .Values.gateway.lifecycle.preStopSleepSeconds }}"]
+                # Drain, sleep, then let SIGTERM arrive.
+                #
+                # The sleep is for the *new connection* race: a pod is sent SIGTERM and
+                # removed from Endpoints at the same instant, and kube-proxy on every
+                # other node takes a moment to catch up, so without this pause the
+                # requests already heading for a doomed pod are the ones that get dropped.
+                #
+                # The `touch` is for the race the sleep cannot reach, and §8 measured it:
+                # a client holding an established keep-alive connection keeps using it
+                # right through the sleep — conntrack pins the flow, Endpoints has no
+                # say — and loses whatever it had written when uvicorn finally closes.
+                # The sentinel makes every response say `Connection: close`, so clients
+                # retire those connections themselves during the window below, one
+                # response at a time (`headroom/api/drain.py`, H-091).
+                command:
+                  - /bin/sh
+                  - -c
+                  - >-
+                    touch {{ .Values.gateway.lifecycle.drainFilePath }};
+                    sleep {{ .Values.gateway.lifecycle.preStopSleepSeconds }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

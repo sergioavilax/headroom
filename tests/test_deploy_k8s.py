@@ -40,6 +40,7 @@ from typing import Any
 import pytest
 import yaml
 
+from headroom.api.drain import DRAIN_FILE_ENV
 from headroom.db.dynamo import (
     DEFAULT_BUCKETS_TABLE,
     DEFAULT_BUDGETS_TABLE,
@@ -344,6 +345,56 @@ def test_the_rollout_never_takes_the_last_ready_pod_away() -> None:
     deployment = code_only((TEMPLATES / "gateway-deployment.yaml").read_text(encoding="utf-8"))
     assert "readinessProbe" in deployment
     assert "preStop" in deployment
+
+
+def test_the_prestop_hook_drains_before_it_sleeps() -> None:
+    """§8's finding, pinned in the order it has to happen in.
+
+    The sleep covers the *new connection* race while kube-proxy catches up. It has no
+    reach over a connection that already exists — conntrack pins an established flow to
+    the pod it was given to — so a client with keep-alive connections spends the whole
+    sleep talking to the pod that is about to stop, and loses whatever it had written when
+    uvicorn closes them. Two runs measured exactly one drop per replaced pod and tripling
+    the sleep changed nothing (docs/DECISIONS.md H-091).
+
+    The `touch` is what fixes it, and it has to come *first*: the sleep is the window in
+    which clients read `Connection: close` and retire those connections themselves. A hook
+    that slept and then touched would drain nothing at all and look identical in a diff.
+    """
+    hook = code_only((TEMPLATES / "gateway-deployment.yaml").read_text(encoding="utf-8"))
+    hook = hook[hook.index("preStop") :]
+    touch = hook.index("touch")
+    sleep = hook.index("sleep")
+    assert touch < sleep, "preStop must touch the sentinel before it sleeps, not after"
+    assert ".Values.gateway.lifecycle.drainFilePath" in hook[touch:sleep]
+
+
+def test_the_hook_and_the_container_name_the_same_sentinel() -> None:
+    """The failure this exists to catch has no symptom: a pod whose hook writes one path
+    and whose gateway watches another drains nothing, logs nothing, and reports a healthy
+    rollout that quietly drops a request per pod. One values key feeds both, and this is
+    the test that notices if that ever becomes two."""
+    assert VALUES["gateway"]["lifecycle"]["drainFilePath"].startswith("/")
+
+    helpers = code_only((TEMPLATES / "_helpers.tpl").read_text(encoding="utf-8"))
+    env = re.search(r"- name: HEADROOM_DRAIN_FILE\s*\n\s*value: (?P<value>.+)", helpers)
+    assert env is not None, "the gateway's environment has to carry the sentinel path"
+    assert ".Values.gateway.lifecycle.drainFilePath" in env.group("value")
+
+    deployment = code_only((TEMPLATES / "gateway-deployment.yaml").read_text(encoding="utf-8"))
+    assert ".Values.gateway.lifecycle.drainFilePath" in deployment
+
+    assert DRAIN_FILE_ENV == "HEADROOM_DRAIN_FILE", (
+        "the chart spells the variable the code reads; renaming one renames both"
+    )
+
+
+def test_compose_and_the_chart_agree_that_the_gateway_can_drain() -> None:
+    """The drain is the one piece of Phase 10 that lives in the application rather than in
+    the chart, so it is the one piece that can be exercised on a laptop — which is what
+    `scripts/rollout_repro.sh` does, and what it needs this variable set for."""
+    compose = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
+    assert DRAIN_FILE_ENV in compose
 
 
 def test_the_service_keeps_the_load_balancers_targets_still_while_pods_move() -> None:

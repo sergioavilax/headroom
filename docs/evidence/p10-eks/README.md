@@ -26,7 +26,9 @@ Commands are `deploy/k8s/README.md`'s, by section number.
 | `06-live-request-headers.txt` | `HTTP/1.1 200`, the `x-headroom-request-id`, and **no `x-headroom-failover-*`** | §7b |
 | `07-live-ledger-row.json` | That request id's row: tokens, cost, the rates it was billed at, `cache_disposition`, `passthrough_overhead_ms` | §7b |
 | `08-chaos-smoke.txt` | Nine `ok` lines and `{"checks": 9, "failed": 0}` against the cluster | §7c |
-| `09-load-loop.json` | **`dropped: 0`** across a rolling `helm upgrade`, with `max_gap_ms` and an empty `incidents` list | §8 |
+| `09-load-loop-run1-1drop.json` | The first measurement, `preStopSleepSeconds: 5` — **`dropped: 1`**, one per replaced pod, `max_gap_ms` in the low hundreds so no outage window | §8 |
+| `09b-load-loop-run2-sleep15-2drops.json` | The same with the sleep tripled to 15 s — **`dropped: 2`**, one per replaced pod again. The knob does not move the number, which is the diagnosis (H-091) | §8 |
+| `09c-load-loop-run3-drain.json` | The same measurement against the lame-duck drain: **`dropped: 0`** with an empty `incidents` list, or the residual H-091 refuses to rule out | §8 |
 | `10-rollout.txt` | `kubectl rollout status` and the pod transitions: a third pod Ready before an old one is touched | §8 |
 | `11-helm-history.txt` | Two revisions, the second carrying the new image tag | §8 |
 | `12-console-overview.png` | The Overview, served by a pod in the cluster | §9 |
@@ -70,14 +72,22 @@ instance Phase 9 migrated, and that the runner in the image is the one this repo
 `07` is the same ledger row shape Phase 9 captured on ECS, through a third kind of load
 balancer, with the rates it was billed at copied onto it (H-024).
 
-**2. A rolling upgrade drops nothing.** `09`, and the file worth reading is the classifier
-behind it rather than the number. `scripts/load_loop.py` scores a request `shed` only on
-positive evidence that the gateway meant it — a 402 or a 429 carrying
-`x-headroom-error-source: gateway` (H-032, H-038) — and everything else falls to `dropped`,
-including a connection with no status line at all and a 200 whose stream never reached
-`message_stop`. A zero from an instrument whose unknown case was "probably fine" would not
-be worth printing. `max_gap_ms` is beside it because a rollout that dropped nothing and was
-unreachable for nine seconds has an error count of zero and is still an outage.
+**2. A rolling upgrade drops nothing — eventually, and the road there is the evidence.**
+`09`, `09b`, `09c`, kept in that order on purpose. The classifier is what makes any of them
+worth reading: `scripts/load_loop.py` scores a request `shed` only on positive evidence that
+the gateway meant it — a 402 or a 429 carrying `x-headroom-error-source: gateway` (H-032,
+H-038) — and everything else falls to `dropped`, including a connection with no status line
+at all and a 200 whose stream never reached `message_stop`. A zero from an instrument whose
+unknown case was "probably fine" would not be worth printing. `max_gap_ms` is beside it
+because a rollout that dropped nothing and was unreachable for nine seconds has an error
+count of zero and is still an outage.
+
+The first two runs are here because the instrument worked. It found one dropped request per
+replaced pod — a client writing onto a keep-alive connection at the instant uvicorn closed
+it, which the preStop sleep cannot reach and tripling the sleep proved it cannot reach. `09c`
+is the same measurement against the fix that finding produced. **A set that contained only
+`09c` would be a set nobody could check**, and the two runs that read non-zero are the reason
+the third one means something.
 
 **3. The dashboard is served from the cluster.** `12` + `13`, with `04` naming the node
 each pod is on. The address bar says `localhost` because the console is a ClusterIP service
