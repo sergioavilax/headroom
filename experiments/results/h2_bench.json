@@ -1,0 +1,49 @@
+{
+ "schema": "h2_bench/1",
+ "provenance": {
+  "produced_by": "experiments/h2/bench.py",
+  "generated_at": "2026-08-10T20:28:55+00:00",
+  "headroom_commit": "870f36fff61852d10e2b400406674ca83b12f58d",
+  "notes": "Keyless, $0.00. The MockProvider answers in microseconds, so what is measured is the gateway's own admission path."
+ },
+ "caveat": "excludes TLS and DNS setup to a real upstream, which httpx amortises over a keep-alive pool and which a direct caller pays too (H-065)",
+ "configurations": [
+  {
+   "stores": "in-memory",
+   "requests": 2000,
+   "admission_ms": {
+    "metric": "upstream_latency_ms against the MockProvider",
+    "p50": 0.2074,
+    "p95": 0.3288,
+    "p99": 0.4765,
+    "max": 19.3401
+   },
+   "total_ms": {
+    "p50": 0.2175,
+    "p95": 0.3499,
+    "p99": 0.5268
+   }
+  },
+  {
+   "stores": "dynamodb-local",
+   "requests": 2000,
+   "admission_ms": {
+    "metric": "upstream_latency_ms against the MockProvider",
+    "p50": 1.4408,
+    "p95": 2.2875,
+    "p99": 4.6334,
+    "max": 25.4
+   },
+   "total_ms": {
+    "p50": 1.4539,
+    "p95": 2.3089,
+    "p99": 4.6517
+   }
+  }
+ ],
+ "conditional_write_cost_ms": {
+  "statement": "what the rate limiter's and budget gate's DynamoDB writes add",
+  "p50": 1.2334,
+  "p95": 1.9587
+ }
+}

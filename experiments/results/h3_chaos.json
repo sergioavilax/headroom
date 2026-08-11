@@ -1,0 +1,101 @@
+{
+ "schema": "h3_chaos/1",
+ "provenance": {
+  "produced_by": "experiments/h3/chaos.py",
+  "generated_at": "2026-08-10T20:24:41+00:00",
+  "headroom_commit": "870f36fff61852d10e2b400406674ca83b12f58d",
+  "notes": "Deterministic, keyless, $0.00. Same schedules CI asserts on every PR."
+ },
+ "policy": {
+  "breaker_window": 20,
+  "breaker_min_samples": 5,
+  "breaker_failure_ratio": 0.5,
+  "breaker_cooldown_s": 10.0,
+  "backoff_base_s": 0.05,
+  "backoff_cap_s": 2.0,
+  "backoff_worst_case_s": 0.35000000000000003,
+  "breaker_open_state": "open"
+ },
+ "clause_1_no_caller_visible_5xx": {
+  "statement": "zero caller-visible 5xx for pre-first-token faults, at every intensity",
+  "intensities": [
+   {
+    "intensity": "light",
+    "requests": 20,
+    "faults_injected": 5,
+    "fault_rate": 0.25,
+    "statuses": {
+     "200": 20
+    },
+    "caller_visible_5xx": 0,
+    "ledger_rows": 20,
+    "rows_ok": 20,
+    "hops": 5,
+    "primary_breaker": "closed"
+   },
+   {
+    "intensity": "heavy",
+    "requests": 20,
+    "faults_injected": 10,
+    "fault_rate": 0.5,
+    "statuses": {
+     "200": 20
+    },
+    "caller_visible_5xx": 0,
+    "ledger_rows": 20,
+    "rows_ok": 20,
+    "hops": 18,
+    "primary_breaker": "open"
+   },
+   {
+    "intensity": "brutal",
+    "requests": 20,
+    "faults_injected": 20,
+    "fault_rate": 1.0,
+    "statuses": {
+     "200": 20
+    },
+    "caller_visible_5xx": 0,
+    "ledger_rows": 20,
+    "rows_ok": 20,
+    "hops": 20,
+    "primary_breaker": "open"
+   }
+  ],
+  "verdict": "HOLDS"
+ },
+ "clause_3_mid_stream_faults_are_terminal_events": {
+  "statement": "mid-stream faults surface as terminal error events, 100%, never silently",
+  "cut_points": 4,
+  "terminal_error_events": 4,
+  "silent_truncations": 0,
+  "splices": 0,
+  "detail": [
+   {
+    "cut_after_chunks": 1,
+    "terminal_error_event": true,
+    "message_stop_present": false,
+    "fallback_spliced_in": false
+   },
+   {
+    "cut_after_chunks": 4,
+    "terminal_error_event": true,
+    "message_stop_present": false,
+    "fallback_spliced_in": false
+   },
+   {
+    "cut_after_chunks": 8,
+    "terminal_error_event": true,
+    "message_stop_present": false,
+    "fallback_spliced_in": false
+   },
+   {
+    "cut_after_chunks": 12,
+    "terminal_error_event": true,
+    "message_stop_present": false,
+    "fallback_spliced_in": false
+   }
+  ],
+  "verdict": "HOLDS"
+ }
+}
