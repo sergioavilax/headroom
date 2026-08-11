@@ -1,0 +1,20 @@
+{
+  "label": "vllm-failover-run2-timeout60",
+  "model": "cyankiwi/Qwen3.6-27B-AWQ-INT4",
+  "dialect": "openai",
+  "duration_s": 426.14,
+  "requests": 92,
+  "ok": 92,
+  "shed": 0,
+  "dropped": 0,
+  "by_status": {
+    "200": 92
+  },
+  "latency_ms": {
+    "p50": 5506.0,
+    "p95": 15937.6,
+    "p99": 17054.48
+  },
+  "max_gap_ms": 18051.8,
+  "incidents": []
+}
