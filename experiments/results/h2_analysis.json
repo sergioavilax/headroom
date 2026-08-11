@@ -2,8 +2,8 @@
  "schema": "h2_analysis/1",
  "provenance": {
   "produced_by": "experiments/h2/analyze.py",
-  "generated_at": "2026-08-10T23:54:47+00:00",
-  "headroom_commit": "c94657c0aee5566df53a78e4af9d95cdee06b531"
+  "generated_at": "2026-08-11T00:17:56+00:00",
+  "headroom_commit": "0914cc7c31a9f35af27f0e83b86592a413216706"
  },
  "rows": 462,
  "cache_disabled_proof": {
@@ -45,30 +45,161 @@
  "headroom_meter": {
   "input_tokens": 2863154,
   "output_tokens": 181580,
+  "reasoning_tokens": 0,
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "prompt_caching_observed": false,
   "usd_cost": "7.541253000000",
-  "unpriced_rows": 0
+  "unpriced_rows": 0,
+  "by_model": {
+   "claude-haiku-4-5": {
+    "rows": 1,
+    "input_tokens": 665,
+    "output_tokens": 38,
+    "usd_cost": "0.000855000000"
+   },
+   "claude-sonnet-5": {
+    "rows": 461,
+    "input_tokens": 2862489,
+    "output_tokens": 181542,
+    "usd_cost": "7.540398000000"
+   }
+  }
  },
  "parity": {
   "statement": "|overall - 93.3| <= 3.0 (H-064: the direct-local run)",
-  "overall": null,
+  "overall": 93.7,
+  "overall_exact": 93.6968,
+  "overall_source": "n-weighted mean of the summary's per-category scores — Backline's own arithmetic (evals/report.py), which computes it at render time rather than storing it",
+  "n_scored": 133,
+  "n_questions": 133,
   "primary_reference": "direct_local",
   "reference_overall": 93.3,
-  "delta": null,
+  "delta": 0.4,
   "bound": 3.0,
-  "context": {},
+  "context": {
+   "direct_local": {
+    "overall": 93.3,
+    "delta": 0.4,
+    "latency_p50_ms": 12678,
+    "spend_usd": "7.880494"
+   },
+   "aws": {
+    "overall": 92.5,
+    "delta": 1.2,
+    "latency_p50_ms": 12508,
+    "spend_usd": "8.007034"
+   },
+   "sweep": {
+    "overall": 91.6,
+    "delta": 2.1,
+    "latency_p50_ms": 13033,
+    "spend_usd": "8.094698"
+   }
+  },
+  "categories": {
+   "abstention": {
+    "n": 10,
+    "score": 100.0,
+    "tiers": {
+     "t1": 100.0
+    }
+   },
+   "adversarial": {
+    "n": 3,
+    "score": 100.0,
+    "tiers": {
+     "t2": 100.0
+    }
+   },
+   "catalog_lookup": {
+    "n": 15,
+    "score": 100.0,
+    "tiers": {
+     "t1": 100.0
+    }
+   },
+   "contract_terms": {
+    "n": 20,
+    "score": 76.67,
+    "tiers": {
+     "t1": 100.0,
+     "t2": 95.0,
+     "t3": 79.0
+    }
+   },
+   "cross_collateral": {
+    "n": 8,
+    "score": 100.0,
+    "tiers": {
+     "t1": 100.0,
+     "t2": 100.0
+    }
+   },
+   "multi_step": {
+    "n": 12,
+    "score": 71.11,
+    "tiers": {
+     "t1": 100.0,
+     "t2": 98.33,
+     "t3": 71.11
+    }
+   },
+   "reconciliation": {
+    "n": 15,
+    "score": 98.33,
+    "tiers": {
+     "t1": 100.0,
+     "t2": 98.33
+    }
+   },
+   "recoupment_state": {
+    "n": 15,
+    "score": 100.0,
+    "tiers": {
+     "t1": 100.0
+    }
+   },
+   "royalty_math": {
+    "n": 25,
+    "score": 100.0,
+    "tiers": {
+     "t1": 100.0,
+     "t2": 100.0
+    }
+   },
+   "sql_analytics": {
+    "n": 10,
+    "score": 100.0,
+    "tiers": {
+     "t1": 100.0,
+     "t2": 100.0
+    }
+   }
+  },
   "limitation": "no same-day paired control (H-064): between-day drift sits inside this residual and cannot be separated from the gateway's effect. The claim is about a bound, not an effect size.",
-  "verdict": "NO DATA"
+  "verdict": "WITHIN NOISE"
  },
  "cross_check": {
   "statement": "token totals agree exactly; cost agrees to within $0.01 (§H2.4)",
   "headroom_usd": "7.541253000000",
   "backline_usd": "7.540398",
   "delta_usd": "0.000855000000",
+  "bound_usd": "0.01",
   "headroom_tokens": {
    "input": 2863154,
    "output": 181580
   },
-  "note": "Backline meters from the SDK's usage block; Headroom meters from the same block observed in the stream. Backline uses no prompt caching, so H-026's `partial` caveat cannot arise.",
+  "backline_tokens": null,
+  "token_clause": "NOT EVALUABLE — Backline publishes total_cost_usd but no token totals, in neither summary.json nor results.jsonl, so there is nothing to compare Headroom's counts against. Reported, not dropped.",
+  "residual_attribution": {
+   "suite_model": "claude-sonnet-5",
+   "rows_on_other_models": 1,
+   "usd_on_other_models": "0.000855000000",
+   "delta_excluding_other_models_usd": "0.000000000000",
+   "note": "Backline meters only the traffic it issued. Rows on the H2 tenant that are not on the run's own model were not part of the suite — the §2c pre-flight smoke is one — so they are shown separately rather than folded into a meter disagreement."
+  },
+  "note": "Backline meters from the SDK's usage block; Headroom meters from the same block observed in the stream. Backline uses no prompt caching, so H-026's `partial` caveat cannot arise — see headroom_meter.prompt_caching_observed for the check.",
   "verdict": "AGREE"
  }
 }

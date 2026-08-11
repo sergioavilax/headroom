@@ -1,0 +1,303 @@
+{
+ "schema": "h2_gate_adjudication/1",
+ "provenance": {
+  "produced_by": "experiments/h2/adjudicate.py",
+  "generated_at": "2026-08-11T00:15:40+00:00",
+  "headroom_commit": "0914cc7c31a9f35af27f0e83b86592a413216706",
+  "inputs": {
+   "treatment_summary": "docs/evidence/p8-experiments/h2-backline-summary-gateway.json",
+   "reference_summary": "docs/evidence/p8-experiments/h2-backline-summary-direct-local.json",
+   "gate_baseline": "docs/evidence/p8-experiments/h2-backline-gate-baseline.json",
+   "treatment_results": "~/code/backline/data/evals/21369386-a040-4589-90a1-0e75409711ec/results.jsonl",
+   "reference_results": "~/code/backline/data/evals/a309dc57-b68e-4fbd-8591-38c2e7c63263/results.jsonl"
+  },
+  "notes": "Free and deterministic: arithmetic over committed summaries. No run, no re-score, no heal pass (§H2.5)."
+ },
+ "what_this_adjudicates": "§H2.2's SECONDARY check. The pre-registered parity instrument is the Δ bound on the overall score against the direct-local run and it is reported by analyze.py; this file decides only what the gate's FAIL means.",
+ "runs": {
+  "treatment": {
+   "eval_run_id": "21369386-a040-4589-90a1-0e75409711ec",
+   "git_sha": "9053bec4f98c",
+   "suite_hash": "6eef41c6706f309a",
+   "judge": {
+    "model": "claude-sonnet-5",
+    "rubric_sha256": "ffe8c9753172"
+   },
+   "overall": 93.7,
+   "overall_exact": 93.6968,
+   "n_scored": 133,
+   "t2_violations": 3,
+   "infra_errors": 0,
+   "total_cost_usd": "7.540398",
+   "latency_ms_p50": 12185,
+   "latency_ms_p95": 63139
+  },
+  "reference": {
+   "eval_run_id": "a309dc57-b68e-4fbd-8591-38c2e7c63263",
+   "git_sha": "306f13d886a9",
+   "suite_hash": "6eef41c6706f309a",
+   "judge": {
+    "model": "claude-sonnet-5",
+    "rubric_sha256": "ffe8c9753172"
+   },
+   "overall": 93.3,
+   "overall_exact": 93.2959,
+   "n_scored": 133,
+   "t2_violations": 2,
+   "infra_errors": 0,
+   "total_cost_usd": "7.880494",
+   "latency_ms_p50": 12678,
+   "latency_ms_p95": 65855
+  }
+ },
+ "comparability": {
+  "suite_hash_matches": true,
+  "judge_matches": true,
+  "model_matches": true,
+  "note": "same question set, same judge rubric, same model — the two runs differ by the gateway hop and by the day they were drawn (§H2.2's stated limitation)"
+ },
+ "gate": {
+  "rules_applied": "evals/gate.py rule 4 (category drop > 3.0 vs the committed baseline) and rule 5 (any T2 violation). Quoted, not imported: Backline is not a dependency of this repo.",
+  "treatment_fails": true,
+  "treatment_reasons": [
+   "contract_terms: 76.7 vs baseline 85.0 (-8.3 pts > 3)",
+   "3 T2 violation(s) — process assertions failed"
+  ],
+  "reference_fails": true,
+  "reference_reasons": [
+   "abstention: 90.0 vs baseline 100.0 (-10.0 pts > 3)",
+   "multi_step: 65.0 vs baseline 72.8 (-7.8 pts > 3)",
+   "2 T2 violation(s) — process assertions failed"
+  ],
+  "both_fail": true,
+  "reasons_disjoint": true,
+  "baseline_note": "the committed baseline is a post-diagnosis COMPOSITE — its own `note` says it is assembled per category from three different runs — so it is a best-of envelope no single run has reproduced"
+ },
+ "categories": {
+  "abstention": {
+   "n": 10,
+   "baseline": 100.0,
+   "reference": 90.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 10.0,
+   "reference_minus_baseline": -10.0
+  },
+  "adversarial": {
+   "n": 3,
+   "baseline": 93.33,
+   "reference": 100.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 6.67
+  },
+  "catalog_lookup": {
+   "n": 15,
+   "baseline": 100.0,
+   "reference": 100.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 0.0
+  },
+  "contract_terms": {
+   "n": 20,
+   "baseline": 85.0,
+   "reference": 82.67,
+   "treatment": 76.67,
+   "treatment_minus_reference": -6.0,
+   "reference_minus_baseline": -2.33
+  },
+  "cross_collateral": {
+   "n": 8,
+   "baseline": 100.0,
+   "reference": 100.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 0.0
+  },
+  "multi_step": {
+   "n": 12,
+   "baseline": 72.78,
+   "reference": 65.0,
+   "treatment": 71.11,
+   "treatment_minus_reference": 6.11,
+   "reference_minus_baseline": -7.78
+  },
+  "reconciliation": {
+   "n": 15,
+   "baseline": 96.67,
+   "reference": 98.33,
+   "treatment": 98.33,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 1.66
+  },
+  "recoupment_state": {
+   "n": 15,
+   "baseline": 100.0,
+   "reference": 100.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 0.0
+  },
+  "royalty_math": {
+   "n": 25,
+   "baseline": 100.0,
+   "reference": 100.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 0.0
+  },
+  "sql_analytics": {
+   "n": 10,
+   "baseline": 100.0,
+   "reference": 100.0,
+   "treatment": 100.0,
+   "treatment_minus_reference": 0.0,
+   "reference_minus_baseline": 0.0
+  }
+ },
+ "per_question": {
+  "questions_compared": 133,
+  "movement": {
+   "treatment_higher": 13,
+   "treatment_lower": 17,
+   "identical": 103,
+   "reading": "scatter in both directions is the signature of variance; a transport defect degrades one way (Backline §A5.5)"
+  },
+  "t1_agreement": {
+   "statement": "T1 is the deterministic answer-key tier — no judge, no agent trace",
+   "questions_with_identical_t1": 132,
+   "questions_moved": [
+    {
+     "question_id": "hand-abstention-02",
+     "reference": 0.0,
+     "treatment": 1.0
+    }
+   ]
+  },
+  "contract_terms": {
+   "n": 20,
+   "sum_of_per_question_deltas": -1.1999,
+   "category_points": -6.0,
+   "largest_single_drop": {
+    "question_id": "contract_terms-016",
+    "delta": -0.6667,
+    "category_points": -3.33,
+    "share_of_drop": 55.6
+   },
+   "moved_up": 4,
+   "moved_down": 12,
+   "unchanged": 4
+  },
+  "t2_violations": {
+   "reference": [
+    {
+     "question_id": "multi_step-001",
+     "category": "multi_step",
+     "failed_checks": [
+      "sql_clean"
+     ]
+    },
+    {
+     "question_id": "reconciliation-009",
+     "category": "reconciliation",
+     "failed_checks": [
+      "sql_clean"
+     ]
+    }
+   ],
+   "treatment": [
+    {
+     "question_id": "contract_terms-016",
+     "category": "contract_terms",
+     "failed_checks": [
+      "cites_clause"
+     ]
+    },
+    {
+     "question_id": "multi_step-004",
+     "category": "multi_step",
+     "failed_checks": [
+      "sql_clean"
+     ]
+    },
+    {
+     "question_id": "reconciliation-012",
+     "category": "reconciliation",
+     "failed_checks": [
+      "sql_clean"
+     ]
+    }
+   ],
+   "failure_modes_present_in_both": [
+    [
+     "sql_clean"
+    ]
+   ],
+   "treatment_only": [
+    {
+     "question_id": "contract_terms-016",
+     "category": "contract_terms",
+     "failed_checks": [
+      "cites_clause"
+     ]
+    }
+   ],
+   "treatment_only_evidence": [
+    {
+     "question_id": "contract_terms-016",
+     "category": "contract_terms",
+     "failed_checks": [
+      "cites_clause"
+     ],
+     "t1": {
+      "reference": 1.0,
+      "treatment": 1.0
+     },
+     "t3": {
+      "reference": 0.6667,
+      "treatment": 0.4667
+     },
+     "question_score": {
+      "reference": 0.6667,
+      "treatment": 0.0
+     },
+     "score_composition": "a question scores min(tier scores) (evals/runner.py), so a failed T2 zeroes it whatever T1 and T3 say",
+     "recorded_check_detail": {
+      "cites_clause": {
+       "reference": {
+        "citations": [
+         "FBR-C-00777 §3"
+        ],
+        "passed": true
+       },
+       "treatment": {
+        "citations": [],
+        "passed": false
+       }
+      }
+     },
+     "answer_chars": {
+      "reference": 1047,
+      "treatment": 1278
+     }
+    }
+   ]
+  }
+ },
+ "verdict": {
+  "both_runs_fail_the_same_gate": true,
+  "failures_are_disjoint": true,
+  "movement_in_both_directions": true,
+  "gateway_only_t2_violations": [
+   {
+    "question_id": "contract_terms-016",
+    "category": "contract_terms",
+    "failed_checks": [
+     "cites_clause"
+    ]
+   }
+  ],
+  "reading": "variance per Backline §A5.5's pre-declared failure modes",
+  "unexplained_by_variance": "see gateway_only_t2_violations; named, not folded in"
+ }
+}

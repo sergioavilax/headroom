@@ -1137,6 +1137,64 @@ def test_the_committed_curve_is_the_one_this_corpus_produces(
         )
 
 
+def test_no_threshold_is_zero_poison_in_either_embedding_space() -> None:
+    """H-063's rule, read off the committed curve: REPORT.md's headline is `τ₀ = None`."""
+    committed = read_json(RESULTS_DIR / "h1_curve.json")
+    for space in SPACES:
+        assert committed["spaces"][space]["combined"]["tau_zero"] is None, space
+
+
+def test_the_wrong_answers_reach_higher_than_the_lowest_right_one() -> None:
+    """The two numbers REPORT.md rests on. A threshold is one number and these are two
+    overlapping distributions — which is *why* no τ₀ exists, rather than a coincidence of
+    the grid."""
+    committed = read_json(RESULTS_DIR / "h1_curve.json")
+    for space in SPACES:
+        worst_wrong = committed["spaces"][space]["combined"]["summary"]["max_swa_similarity"]
+        best_needed = committed["spaces"][space]["families"]["paraphrase"]["summary"][
+            "min_correct_similarity"
+        ]
+        assert worst_wrong > best_needed, space
+    prompt = committed["spaces"]["prompt"]
+    assert prompt["combined"]["summary"]["max_swa_similarity"] == 0.999539
+    assert prompt["families"]["paraphrase"]["summary"]["min_correct_similarity"] == 0.88985
+
+
+def test_every_probe_has_a_neighbour_above_the_grids_floor() -> None:
+    """REPORT.md's other end of the range: the *least* similar probe in this corpus still
+    sits at 0.766, so at the pre-registered floor of 0.700 everything hits. There is no
+    quiet region for a threshold to live in."""
+    probes = read_json(RESULTS_DIR / "h1_probes.json")["spaces"]["prompt"]
+    best = [row["neighbours"][0]["similarity"] for row in probes]
+    assert len(best) == 520
+    assert min(best) == 0.766012
+    assert max(best) == 0.999539
+    assert min(best) > GRID[0]
+
+
+def test_the_paraphrase_family_is_poisoned_too_and_the_report_says_so() -> None:
+    """Family A is the *favourable* case — every probe's own question is in the cache — and
+    seven of its 390 probes are still answered from a different question."""
+    committed = read_json(RESULTS_DIR / "h1_curve.json")
+    family = committed["spaces"]["prompt"]["families"]["paraphrase"]
+    assert family["summary"]["probes"] == 390
+    assert family["summary"]["counts"]["silent_wrong_answer"] == 7
+    at_default = next(point for point in family["curve"] if point["threshold"] == 0.9)
+    assert at_default["silent_wrong_answer"] == 7
+    assert at_default["correct"] == 382
+
+
+def test_the_operators_approval_is_recorded_before_the_sweep_reads_the_corpus() -> None:
+    """§H1.2 step 4: the spot-check is a gate, and REPORT.md states it as approved rather
+    than assuming it."""
+    corpus_doc = read_json(CORPUS_PATH)
+    spot_check = corpus_doc["spot_check"]
+    assert spot_check["approved_by"]
+    assert spot_check["approved_at"]
+    assert spot_check["seed"] == 20260810
+    assert len(spot_check["sample"]) == spot_check["size"] == 20
+
+
 # --- the claim the whole experiment rests on ----------------------------------------------
 
 
