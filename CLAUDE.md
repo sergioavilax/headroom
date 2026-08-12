@@ -120,7 +120,7 @@ ui/           Next.js dashboard (Phase 7)
 experiments/  Phase 8 corpus, runners, results
 deploy/aws/   Phase 9 Terraform · deploy/k8s/ Phase 10 Helm + runbook
 tests/        keyless; MockProvider; a sabotage test for every scar
-docs/         DECISIONS.md · PHASE_LOG.md · evidence/ · launch/
+docs/         DECISIONS.md · PHASE_LOG.md · evidence/
 ```
 
 ## Commands
