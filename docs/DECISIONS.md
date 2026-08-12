@@ -6353,3 +6353,86 @@ a later decision was foreseen by an earlier one. Only §0.5's repo map moved, be
 description of the tree and the tree changed.
 
 ---
+
+## H-101 — History was rewritten after all, and every SHA these docs cite is now dangling (Phase 11)
+
+**Status**: accepted · **Date**: 2026-08-11 · **Supersedes**: H-100 (its consequences, not its
+decision)
+
+**Context.** H-100 withdrew `docs/launch/` from the tree and closed on a paragraph headed **"The
+files remain in this repository's git history and this is accepted."** It said in as many words
+that no history rewrite had been performed and none was planned, and gave two reasons: this repo is
+public from commit one and its history is part of the artifact, and rewriting it to un-say
+something would trade a small embarrassment for a large dishonesty. Hours after PR #14 merged, the
+operator performed the rewrite.
+
+**Decision.** Record it, here, in the entry after the one that predicted the opposite. The rewrite
+is a fact about this repository, and H-100 is the document a reader is most likely to be holding at
+the moment they discover it.
+
+**What was done, precisely.** On **2026-08-11**, after PR #14 merged,
+`git filter-repo --invert-paths --path docs/launch/` was run over the whole history and the result
+force-pushed. `main`'s tip is now `a28bdc1` and the remote carries a single branch.
+`git log --all -- docs/launch` returns nothing: the six files are gone from every commit, not
+merely from the tip.
+
+**The trees are identical and the identifiers are not.** Every commit before Phase 11 kept its
+content byte for byte — the rewrite removed a path that did not exist yet — and every one of the
+108 commits nonetheless carries a new SHA. Twelve short SHAs are quoted across this log and
+`PHASE_LOG.md` — `0f1556d`, `d57aa33`, `0914cc7`, `aa134f4`, `7d75d41`, `71afa0e`, `364dd72`,
+`c94657c`, `a01e239`, `8ef4d1a`, `6ad2322`, `3f5fc70` — and **not one of them resolves** against
+the repository as it now stands. H-100's own `364dd72` is among them, which is fitting: the commit
+it named as proof the files were still readable is the commit the rewrite dissolved.
+
+**The dangling references stay as written.** A short SHA in a decision log is a claim about what
+was true when the entry was written, not a link, and these entries were true when they were
+written. Chasing each one to its post-rewrite equivalent would be a second rewrite — of the record,
+to match the rewrite of the history — and it would leave a log that reads as though it had always
+described *this* history. They are accepted as historical text. This entry is the note that
+explains why they no longer resolve, and a reader who tries one and finds nothing is meant to land
+here.
+
+**The CI-run references still resolve; the commits they ran against do not.** `PHASE_LOG.md` quotes
+`gh run view <id>` for eight workflow runs. GitHub keys runs by their own ID, so every one of those
+commands still works and the log output the entries quote is still verifiable — but the `headSha`
+each run reports (`3f5fc700a412…` for run `31548028948`, for instance) is a commit no longer in the
+repository. What was checked, and the fact that it passed, survive; the pointer to *what it was
+checked against* does not.
+
+**GitHub may still be serving the old commits.** A force-push deletes nothing GitHub has already
+cached: orphaned commits generally stay reachable through pull-request pages and direct SHA URLs
+until Support is asked to garbage-collect them. **That request is pending.** Until it is honoured —
+and it may not be — the withdrawn files remain retrievable by anyone who knows where to look, and
+nothing here claims otherwise. This is the same shape of claim H-100 was careful about, one layer
+further out: a `git rm` was not a redaction, and neither is a force-push.
+
+**Why H-100 is not edited.** This log is append-only, and an entry is never edited to change its
+meaning. H-100's *decision* — that this material should not be **presented** as part of the project
+— was not reversed; it was carried further than H-100 was willing to go. What this entry overtakes
+is one paragraph of its consequences, and the honest way to record that is to leave the paragraph
+standing and say so from here. H-100's `Status` is deliberately left reading *accepted* for the
+same reason: flipping it to *superseded* would tell a reader at a glance that the withdrawal was
+undone, which is the one thing that did not happen.
+
+**Alternatives considered.** *Say nothing* — refused on H-100's own argument, turned around: a
+decision log that quietly stops matching what happened cannot be trusted about anything, and one
+that promises "no rewrite" while sitting on top of a rewritten history is worse than one that never
+raised the subject. *Edit H-100's consequence paragraph into agreement* — the edit the preamble of
+this file forbids, and the one H-100 itself refused to make to H-099. *Rewrite the twelve SHAs to
+their post-rewrite equivalents* — see above; and for `364dd72` the correspondence is not even well
+defined, since it was cited precisely *because* it carried the six files and no commit in the
+current history does. *Wait for GitHub Support before recording any of this* — the record should
+not depend on a ticket whose outcome is not the operator's to decide.
+
+**Consequences.** A fresh clone now gets a history in which `docs/launch/` never existed and a
+decision log that says twice that it did — H-099 committing it, H-100 withdrawing it and promising
+the commits would remain. That asymmetry is the cost, and it is the right one to carry: the files
+are gone and the reasoning is not. The standing preference that this repo's history is part of the
+artifact survives as a rule with one documented exception rather than becoming quietly untrue,
+which is the difference between an exception and a rule nobody follows. The suite is unchanged at
+**1447** — nothing here is code — and the only check this entry moves is the README's decision-log
+range, which now reads `H-000 … H-101` because
+`test_every_decision_the_readme_cites_is_a_real_entry` compares it against the highest heading in
+this file.
+
+---

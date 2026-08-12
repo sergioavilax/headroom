@@ -7939,3 +7939,13 @@ and the gate output above is untouched. §P11's own prose is left as written for
 reason: it is the plan as pre-registered, and this is a decision taken after it rather than a
 correction to it. Only §0.5's repo map moved, because a map describes the tree as it is. The
 judgment call is **H-100**.
+
+### Second amendment (same day) — the history was rewritten after all
+
+**Contradicting the paragraph directly above**, `docs/launch/` was excised from every commit on
+**2026-08-11** with `git filter-repo --invert-paths --path docs/launch/` and force-pushed (new tip
+`a28bdc1`, a single branch on the remote), which changed all 108 SHAs while leaving every pre-P11
+tree byte-identical — so the twelve short SHAs quoted in this file and in `DECISIONS.md`, and the
+`headSha` of every `gh run view` cited above, now dangle and are accepted as historical text, with
+GitHub possibly still serving the orphaned commits on PR pages pending a support request; the
+judgment call is **H-101**.
