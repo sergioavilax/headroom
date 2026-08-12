@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone, tzinfo
 from decimal import Decimal
 from typing import Any
 
@@ -38,6 +38,34 @@ KEY = "aaaaaaaa-0000-4000-8000-00000000000a"
 
 #: Mid-afternoon, so "today" is unambiguous and a test that moves the clock has to say so.
 NOW = datetime(2026, 8, 11, 15, 30, tzinfo=UTC)
+
+
+class FrozenClock:
+    """`datetime` with `now` nailed to :data:`NOW`, patched over the handler's own import.
+
+    Every test above hands :func:`resolve_days` its `now` explicitly, which is why they are
+    about the arithmetic rather than about the calendar. The **handler** cannot be asked
+    that: it reads `datetime.now(UTC)` itself, because that is what a scheduled function
+    does. So a handler test that seeds rows either side of a *hardcoded* midnight is really
+    asserting that the wall clock is still on that day — it passed in August 2026 and went
+    red, permanently, the moment UTC rolled past it (`KeyError: '2026-08-10'`).
+
+    Freezing the clock the handler reads, rather than deriving the fixtures from the real
+    one, is deliberate: a now-relative construction still races the handler across a real
+    midnight, seeding "yesterday" a microsecond before the window moves on. Frozen, the
+    boundary the test is actually about — `started_at` versus `created_at` — is the only
+    thing left that can fail it.
+
+    A plain stand-in rather than a `datetime` subclass, because `now` is typed to return
+    `Self` and `--strict` is right to refuse an override that narrows it. `now` is the only
+    attribute the handler touches, and a patch that stopped landing does not pass quietly:
+    the window would come from the real clock again and the assertion below would go
+    straight back to the `KeyError` this replaced.
+    """
+
+    @staticmethod
+    def now(tz: tzinfo | None = None) -> datetime:
+        return NOW if tz is None else NOW.astimezone(tz)
 
 
 def entry(request_id: str, *, at: datetime, usd: str | None = "0.0000115") -> LedgerEntry:
@@ -300,9 +328,16 @@ def test_the_entry_the_rollup_reads_is_the_requests_own_arrival(
     A row created a minute after midnight for a request that arrived a minute before it
     belongs to the earlier day, and this is the assertion that says so at the boundary
     rather than in a comment.
+
+    The midnight in question is :data:`NOW`'s own, and the handler is made to agree by
+    :class:`FrozenClock` — the boundary has to be *inside* the window the handler resolves
+    for itself, and this is the only test in the file where that window is not an argument.
     """
-    before_midnight = datetime(2026, 8, 10, 23, 59, 30, tzinfo=UTC)
-    after_midnight = datetime(2026, 8, 11, 0, 0, 30, tzinfo=UTC)
+    monkeypatch.setattr(handler_module, "datetime", FrozenClock)
+    midnight = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday, today = (midnight - timedelta(days=1)).date(), midnight.date()
+    before_midnight = midnight - timedelta(seconds=30)
+    after_midnight = midnight + timedelta(seconds=30)
     store = InMemoryLedgerStore()
     asyncio.run(
         store.record(replace(entry("hr_late", at=before_midnight), created_at=after_midnight))
@@ -313,5 +348,5 @@ def test_the_entry_the_rollup_reads_is_the_requests_own_arrival(
     result = handler_module.handler({"days": 2}, None)
 
     by_day = {day["day"]: day["requests"] for day in result["days"]}
-    assert by_day["2026-08-10"] == 1
-    assert by_day["2026-08-11"] == 0
+    assert by_day[yesterday.isoformat()] == 1
+    assert by_day[today.isoformat()] == 0
