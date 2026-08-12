@@ -7498,7 +7498,8 @@ since H-054.
   `/admin/*`, and then **asserts** twenty-two claims across seven acts, exiting 1 if any
   fails. It resets the tenant to the shipped defaults on the way in and clears the limit,
   the budget and the breaker on the way out, so the second run looks like the first.
-- **`docs/launch/`** (**H-099**) — the X thread (the H1 curve is the hook, ten posts, with
+- **`docs/launch/`** (**H-099**; **withdrawn the same day — see the amendment at the end of
+  this entry and H-100**) — the X thread (the H1 curve is the hook, ten posts, with
   the three expected replies and the honest answer to each), the LinkedIn post, the
   portfolio-site SQL, the recruiter follow-up **v2 now listing Kubernetes**, and the third
   blog post — *the cache that lies politely*, closing the trilogy. The index carries the
@@ -7537,6 +7538,8 @@ since H-054.
    `launch/` added, `ARCHITECTURE.md` removed — the same way Phase 7 amended the map for
    `scripts/`. `CLAUDE.md`'s *Where things live* carries the identical line and is amended
    with it, because two maps that disagree are worse than one that is out of date.
+   *(Amended again the same day: `launch/` is out of the map and out of the tree — the
+   amendment at the end of this entry, and H-100.)*
 3. **One README claim was tightened rather than copied.** `experiments/results/REPORT.md`
    says the cache serves *"99.7% of genuine paraphrases"* correctly; 99.7% is the **hit
    rate** (389 of 390) and the *correct* count is 382. The README states both numbers
@@ -7828,13 +7831,14 @@ FAILED tests/test_docs.py::test_the_cloud_cost_table_says_pending_until_the_bill
 
 ### The launch kit
 
-Delivered as `docs/launch/`: [`x-thread.md`](launch/x-thread.md),
-[`linkedin.md`](launch/linkedin.md), [`portfolio-insert.sql`](launch/portfolio-insert.sql),
-[`recruiter-followup-v2.md`](launch/recruiter-followup-v2.md),
-[`blog-the-cache-that-lies-politely.md`](launch/blog-the-cache-that-lies-politely.md), and
-an index carrying the GitHub About line, the topics list, the publishing order, and the
-*what not to claim* section. Nothing in it is published by this repo and nothing in it holds
-a credential.
+Delivered as `docs/launch/`: `x-thread.md`, `linkedin.md`, `portfolio-insert.sql`,
+`recruiter-followup-v2.md`, `blog-the-cache-that-lies-politely.md`, and an index carrying
+the GitHub About line, the topics list, the publishing order, and the *what not to claim*
+section. Nothing in it is published by this repo and nothing in it holds a credential.
+
+**Withdrawn the same day** (H-100), which is why the five names above are no longer links —
+the directory is gone from the tree. The amendment at the end of this entry says why, and
+says plainly that the files remain in this repo's history.
 
 **Assumed-facts register (§0.4)** — nothing was due at this gate and none of A1–A7 was
 touched. A7 remains **half open**, unchanged from the Phase 10 close: the tags are on every
@@ -7900,3 +7904,38 @@ visible.
 No workflow file changed in this phase — the sixth job's three tools, the chart's two
 refusals, and both image smokes are Phase 9's and Phase 10's, running unchanged over a PR
 that touched no code they cover.
+
+### Amendment (same day) — `docs/launch/` is withdrawn
+
+**Shipped in Phase 11 above, removed from the tree hours later by operator decision.**
+Recorded here rather than quietly rewritten, because a phase log that only ever records
+things going in is not a log.
+
+**Why.** Launch copy is backstage material. The recruiter follow-up template is the sharpest
+case and the one that decided it: a template whose whole purpose is to read as a personal
+note to one reader stops working the moment its source is public — a recipient can find the
+form letter their message was cut from. The rest of the kit — the thread, the post, the blog
+post, the portfolio SQL — is drafting rather than engineering, and it was sitting in the one
+repo a stranger reads to judge the engineering.
+
+**What changed.** `docs/launch/` deleted; the README's *Where everything is* row removed;
+`BUILD_PLAN.md` §0.5 and `CLAUDE.md`'s *Where things live* both back to
+`DECISIONS.md · PHASE_LOG.md · evidence/`; `docs/launch/` added to `.gitignore`, so the next
+draft written in that path cannot be committed by reflex. No test covered the kit's contents
+— H-099 said so at the time — so the suite's count is unchanged at **1447**. The one check
+that did reach it, `test_every_path_the_readme_links_to_exists`, is what would have caught a
+half-done removal, and it is green.
+
+**What is not claimed.** The files remain in this repository's history, reachable by anyone
+who runs `git log` — `364dd72` and its parents still carry them. That is **accepted, not
+overlooked**: the decision is that this material should not be *presented* as part of the
+project, and no history rewrite was performed to pretend it never was. A public repo's
+history is public, and treating a `git rm` as though it were a redaction would be exactly
+the sort of overstatement the withdrawn kit's own *what not to claim* section warned about.
+
+**Phase 11's gate is unaffected.** It read *"doc tests green; a stranger's cold clone reaches
+a working keyless demo in one command; launch kit delivered"* — the kit **was** delivered,
+and the gate output above is untouched. §P11's own prose is left as written for the same
+reason: it is the plan as pre-registered, and this is a decision taken after it rather than a
+correction to it. Only §0.5's repo map moved, because a map describes the tree as it is. The
+judgment call is **H-100**.
