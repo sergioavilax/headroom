@@ -1069,7 +1069,7 @@ $0 in orphans.
 | | |
 |---|---|
 | [`BUILD_PLAN.md`](BUILD_PLAN.md) | the governing document: every phase, its gate, and the nine invariants, written before the code |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | H-000 … H-100 — every judgment call with its alternatives and its consequences |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | H-000 … H-101 — every judgment call with its alternatives and its consequences |
 | [`docs/PHASE_LOG.md`](docs/PHASE_LOG.md) | one entry per phase: shipped, deferred, deviations, and the gate's output **verbatim** |
 | [`experiments/`](experiments/) | the pre-registration, the corpus, the runners, and [`results/REPORT.md`](experiments/results/REPORT.md) |
 | [`docs/evidence/`](docs/evidence/) | what needed hardware, money, or a cloud account — and therefore cannot be re-run from a clone |
