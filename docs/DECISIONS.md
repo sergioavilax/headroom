@@ -6304,7 +6304,15 @@ from having read them, and is flagged in the draft as the one paragraph the oper
 
 ## H-100 — The launch kit is withdrawn: backstage material does not belong in the front door (Phase 11)
 
-**Status**: accepted · **Date**: 2026-08-11 · **Supersedes**: H-099
+**Status**: accepted · **Date**: 2026-08-11 · **Supersedes**: H-099 · **Carried further by**: H-101
+
+> **Carried further by H-101 (same day).** This entry's decision stands and its status is
+> deliberately still *accepted*. Its **Consequences** paragraph is the part that no longer holds:
+> it states that the files remain in this repository's history and that no rewrite was performed or
+> planned, and hours after this entry merged the operator excised `docs/launch/` from every commit
+> and force-pushed. The paragraph is left standing as written, because it is what was decided and
+> believed at the time; H-101 records what happened next and why the SHA it cites — `364dd72` —
+> no longer resolves.
 
 **Context.** H-099 committed `docs/launch/` on the argument that a reviewer "learns something from
 seeing the claims stated for a non-technical audience *and* the guard rails around them". Hours
@@ -6406,13 +6414,20 @@ and it may not be — the withdrawn files remain retrievable by anyone who knows
 nothing here claims otherwise. This is the same shape of claim H-100 was careful about, one layer
 further out: a `git rm` was not a redaction, and neither is a force-push.
 
-**Why H-100 is not edited.** This log is append-only, and an entry is never edited to change its
-meaning. H-100's *decision* — that this material should not be **presented** as part of the project
-— was not reversed; it was carried further than H-100 was willing to go. What this entry overtakes
-is one paragraph of its consequences, and the honest way to record that is to leave the paragraph
-standing and say so from here. H-100's `Status` is deliberately left reading *accepted* for the
-same reason: flipping it to *superseded* would tell a reader at a glance that the withdrawal was
-undone, which is the one thing that did not happen.
+**Why H-100 keeps its status and its wrong paragraph.** This log is append-only, and an entry is
+never edited to change its meaning. H-100's *decision* — that this material should not be
+**presented** as part of the project — was not reversed; it was carried further than H-100 was
+willing to go. What this entry overtakes is one paragraph of its consequences, and the honest way
+to record that is to leave the paragraph standing, wrong, and say so from both ends. So H-100's
+`Status` still reads *accepted*: flipping it to *superseded* would tell a reader at a glance that
+the withdrawal was undone, which is the one thing that did not happen.
+
+The preamble's rule that supersession "says so in both directions" is met without that flip. H-100
+gains one **Carried further by: H-101** line and a block quote under its status naming the
+paragraph that no longer holds — an addition that changes nothing it decided or argued, which is
+the only kind of edit an append-only log can take. A reader who lands on H-100 first is told before
+its first paragraph that the history it describes no longer exists; a reader who lands here is told
+what H-100 still gets to keep.
 
 **Alternatives considered.** *Say nothing* — refused on H-100's own argument, turned around: a
 decision log that quietly stops matching what happened cannot be trusted about anything, and one
