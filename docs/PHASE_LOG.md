@@ -7431,3 +7431,472 @@ twice.
    afterwards.
 
 **PR #12 stays open for review.** Nothing here has been merged.
+
+## Phase 11 — README, doc-pinning, launch kit (2026-08-11)
+
+Branch `claude/p11-readme`, GitHub #13. BUILD_PLAN §P11's words are the spec: *"a README
+whose claims are **pinned by tests** recomputing every number from committed artifacts (the
+H1 curve values, the H2 overhead, the parity verdicts); architecture diagram; the decision
+log cross-linked; Limits section written with the same honesty … Launch kit: X thread +
+LinkedIn post …, the portfolio-site SQL …, recruiter follow-up template v2 now listing
+Kubernetes."*
+
+**No gateway behaviour changed in this phase.** `headroom/` is untouched: `git diff
+--stat 43dfa3d..HEAD -- headroom/` is empty. The one executable thing that landed is
+`scripts/demo.py`, which drives the public HTTP API and writes no SQL — `scripts/`'s rule
+since H-054.
+
+### Shipped
+
+- **`README.md`, rewritten as a front door and additively.** Every section the phases wrote
+  is kept, in order; what changed is the top, the bottom, and the four story sections the
+  evidence had earned and nobody had written down:
+  - **The headline block** — the H1 finding in three sentences, then eight measured claims
+    in a table, each linked to the artifact behind it, and the sentence that governs the
+    rest of the file: *every number above is recomputed from a committed artifact by
+    `tests/test_docs.py` on every pull request.*
+  - **A one-command quickstart** (`make demo`, below) with the demo's own output quoted.
+  - **A Mermaid request-path diagram** — the repo had no diagram convention and no
+    `docs/ARCHITECTURE.md`, so it is in-README per the brief — with the gate order and
+    *why* it is that order (H-039, H-046) underneath it rather than left to be inferred.
+  - **The finding**, with both probe families, the threshold table, the two overlapping
+    bands, the 0.999539 pair in full, and the paragraph that matters most: the embedding is
+    not broken, it is right, and the failure is in using a similarity measurement as an
+    admission decision.
+  - **What the gateway costs** — parity, three overhead numbers with the caveat that the
+    pre-registered one is the weakest, the admission-cost bench, and the two-meter agreement
+    with its one identified residual.
+  - **Zero dropped requests, and the two runs that said otherwise** — the find-fix-verify in
+    the order it happened, including the loopback-FIN insight that made the laptop
+    reproduction measure zero on the broken build, and the residual H-091 names.
+  - **The kill demos**, all three venues, with the cooldown visible in the raw attempt
+    spacing.
+  - **Three things the instruments got wrong** — H-092's mock-tuned timeout, H-095's empty
+    key, and H-094, the one the *runtime* got wrong: `AWS_REGION` is a variable Fargate had
+    been injecting for free for an entire phase, and Kubernetes injects nothing.
+  - **What a human caught that the checks could not** — H-069/H-070/H-071, the two
+    systematic generation failures the operator's spot-check found and the mechanical
+    checks could not see, with the fact that neither audit was reachable from the sampled
+    twenty stated plainly.
+  - **A Limits section** in the same voice: one operator's network, one run per experiment
+    row and no paired control, the L4 scope cut, the measured drain residual, the
+    fourteen-hour window, the five capture-list rows that read *not captured*, and the
+    money tables with **the cloud actuals column marked pending**.
+- **`tests/test_docs.py` — 32 tests, and the phase's actual deliverable.** Every figure in
+  the README is pinned one of three ways, and the tier is named at each site (**H-097**):
+  recomputed from the artifact that produced it; held to a constant in the code; or, where
+  the primary source is a screenshot or a terminal that no longer exists, held to the
+  committed document that recorded it. Plus two structural checks that will fire far more
+  often than the numeric ones — **every relative link resolves** and **every `H-NNN` cited
+  is a real heading** — and one that tightens itself: while
+  `docs/evidence/p10-eks/23-billing.png` is absent the cost table **must** say `pending`,
+  and the day it lands the test **fails** until the number replaces the word.
+- **`make demo` + `scripts/demo.py`** (**H-098**) — the gate's *"cold clone reaches a
+  working keyless demo in one command"*, without undoing Phase 2's refusal to ship a
+  no-auth dev mode. It generates a root token into the gitignored `.env` with
+  `/dev/urandom`, runs `make up` unchanged, provisions a tenant and a key through
+  `/admin/*`, and then **asserts** twenty-two claims across seven acts, exiting 1 if any
+  fails. It resets the tenant to the shipped defaults on the way in and clears the limit,
+  the budget and the breaker on the way out, so the second run looks like the first.
+- **`docs/launch/`** (**H-099**) — the X thread (the H1 curve is the hook, ten posts, with
+  the three expected replies and the honest answer to each), the LinkedIn post, the
+  portfolio-site SQL, the recruiter follow-up **v2 now listing Kubernetes**, and the third
+  blog post — *the cache that lies politely*, closing the trilogy. The index carries the
+  GitHub About text and topics to paste, the order to publish in, and a **"what not to
+  claim"** section naming the four overstatements this material is one careless edit away
+  from.
+- **Docs**: H-097 … H-099 in `docs/DECISIONS.md`; this entry.
+
+### Deferred
+
+- **`docs/evidence/p10-eks/23-billing.png` and `docs/evidence/p9-aws/18-billing.png`**, and
+  with them the actuals column of the README's cloud-cost table. Unchanged from the Phase 10
+  close: Cost Explorer lags up to 24 hours and three of the four cost-allocation tag keys
+  had not been offered for activation when the cluster came down. **The difference this
+  phase makes is that the follow-up is now enforced rather than remembered** — the doc test
+  requires `pending` today and fails the moment the capture appears.
+- **`docs/ARCHITECTURE.md`**, which `CLAUDE.md`'s *Where things live* names and no phase has
+  ever created. The diagram it would have carried is in the README, where a stranger will
+  actually meet it; a second document repeating the request path is a second thing to drift.
+  Recorded rather than quietly dropped.
+- **The entity-and-period filter H1 argues for**, per-key budgets, concurrency limits,
+  prompt-cache tier pricing, latency-based breaker tripping, the `expired_releases` alarm,
+  a `provider_open_at` timing mark, HTTPS — all still deferred from Phases 3, 4, 4b, 6, 8, 9
+  and 10, all named in the README's *What production adds* rather than omitted.
+
+### Deviations
+
+1. **The README is rewritten, not extended, at the top and the bottom.** Invariant 7 is
+   about not stripping shipped *behaviour* to serve a later phase, and every section Phases
+   2–10 wrote is present and unedited. What was replaced is the Phase 0 stub block — which
+   still read *"🚧 Under construction"*, *"This README is a stub"*, and *"Phase 4 ← here"*
+   after six further phases. `test_the_readme_is_not_still_announcing_that_it_is_a_stub`
+   exists so that particular drift cannot recur.
+2. **`docs/launch/` is a new directory §0.5's repo map does not list**, and the map names a
+   `docs/ARCHITECTURE.md` that eleven phases never created. Both are amended in this PR —
+   `launch/` added, `ARCHITECTURE.md` removed — the same way Phase 7 amended the map for
+   `scripts/`. `CLAUDE.md`'s *Where things live* carries the identical line and is amended
+   with it, because two maps that disagree are worse than one that is out of date.
+3. **One README claim was tightened rather than copied.** `experiments/results/REPORT.md`
+   says the cache serves *"99.7% of genuine paraphrases"* correctly; 99.7% is the **hit
+   rate** (389 of 390) and the *correct* count is 382. The README states both numbers
+   separately and the doc test pins both. REPORT.md is a Phase 8 artifact and is not edited;
+   the divergence is recorded here so a reader who spots it knows which is which.
+4. **The README's per-threshold table drops REPORT.md's `SWA / hits` column.** At 0.95 the
+   artifact's own `swa_rate_of_hits` is 0.09949 — 9.9% — where REPORT.md prints 10.0%.
+   Rather than publish a third rounding of a derived column, the README carries the counts
+   and the saving (all recomputed) and one sentence of prose for the ratio. The rate is in
+   `h1_curve.json` for anyone who wants it.
+5. **The mock-price sabotage found the pin going through the price book, which is the
+   point.** `test_the_mock_unit_cost_is_the_shipped_price_book` does not compare the README
+   to a literal: it prices 11 in and 7 out through `load_price_book()` and
+   `usd_for_tokens`, so editing `config/models.yaml` fails the README. Sabotage D below is
+   that, executed.
+6. **`scripts/` gains a fifth file.** Same rule as the other four (H-054's): it drives the
+   public HTTP API, writes no SQL, and spends nothing. It is deliberately **not** in the
+   pytest gate — it needs a running stack — so the suite asserts only that the target exists
+   and runs the script the README quotes.
+7. **Nothing in `ui/` moved**, so `make ui-check` and `make ui-e2e` are unchanged in shape
+   and in count and are not re-reported here beyond the CI section.
+
+---
+
+**Gate** — *doc tests green; a stranger's cold clone reaches a working keyless demo in one
+command; launch kit delivered.* Plus the session brief's additions: all prior tests green
+(1415+), ruff + mypy --strict clean.
+
+### THE COLD CLONE — the headline artifact
+
+`git clone` into an empty directory, **no `.env`, no venv, no image, nothing exported**,
+then one command. The main stack was brought down first so the clone owned the ports.
+
+```
+$ cd ~/code/headroom && make down
+$ git clone -b claude/p11-readme . /tmp/hr-p11-gate
+$ cd /tmp/hr-p11-gate && ls -a | head -6
+.
+..
+.dockerignore
+.env.example
+.git
+.gitattributes
+
+$ ls -la .env
+ls: cannot access '.env': No such file or directory
+
+$ time make demo
+wrote a fresh HEADROOM_ADMIN_TOKEN to .env (gitignored, never committed)
+docker compose up -d --build --wait
+ Container hr-p11-gate-db-1 Healthy
+ Container hr-p11-gate-dynamodb-1 Healthy
+ Container hr-p11-gate-gateway-1 Healthy
+ Container hr-p11-gate-ui-1 Healthy
+docker compose exec -T gateway uv run --no-sync python -m headroom.db.migrate
+applied 7 migration(s): 0001_tenants_and_virtual_keys, 0002_usage_ledger,
+                        0003_ledger_budget_columns, 0004_rate_limits,
+                        0005_response_cache, 0006_ledger_failover, 0007_daily_rollups
+uv run python scripts/demo.py
+Using CPython 3.12.13
+Creating virtual environment at: .venv
+   Built headroom @ file:///tmp/hr-p11-gate
+Installed 44 packages in 396ms
+
+Headroom — the keyless demo, against http://localhost:8080
+No provider key, no network, no GPU, and $0.00. Every fault below is injected
+into the MockProvider over HTTP, on the same code path a real provider takes.
+
+1. A request is priced to the picodollar, at the rates it was billed at.
+  ok    POST /v1/messages -> 200
+  ok    the meter read the usage block, not the text: 11 in / 7 out
+  ok    11 x $0.2500000000/MTok + 7 x $1.2500000000/MTok = $0.000011500000 (priced)
+  ok    the row keeps the price it was billed at, effective 1970-01-01 — editing
+        config/models.yaml cannot re-bill it (H-024)
+
+2. The same question twice is one upstream call, and the saving has a column.
+        caching is off for every tenant until somebody switches it on
+  ok    the first ask is a miss, and it populates
+  ok    the second is cache_hit_exact, served from hr_1a1e66a369ef4c9cb59e1d987c8620ba
+        — the request that produced it
+  ok    and the bodies are byte-identical: an entry is replayed, never converted (H-043)
+  ok    a hit is not an upstream call wearing a hat: provider None, cost $0.000000000000,
+        avoided $0.000011500000 in a column of its own
+
+3. The interesting part of a cache is what it refuses.
+  ok    a stream cut mid-answer ends in a terminal error event, with no message_stop
+  ok    the same words with tools declared: cache_bypass — the model may legitimately
+        answer with a tool call instead of prose (H-041)
+  ok    and the cache still holds 1 entries: neither was stored. One bad write here is
+        served forever (invariant 6)
+
+4. A broken primary is invisible to the caller; a broken stream never is.
+  ok    the primary 529s and the fallback answers: 200, hops=1 from=mock
+  ok    one request, one row, one reservation: served by mock_fallback, passed over mock
+        (upstream_status_529)
+  ok    and a fault *after* the first byte is never spliced: 1 message_start, not two (H-048)
+  ok    an upstream 400 is forwarded verbatim, not retried: 400 from upstream — the
+        fallback would say the same
+  ok    the breaker on `mock` was open after 6 samples (3 failures); DELETE
+        /admin/providers/mock/health puts it back in rotation immediately — closed
+
+5. A rate limit that cannot be raced, and says when it heals.
+  ok    3 requests/minute, 5 fired: [200, 200, 200, 429, 429]
+  ok    429 scope=tenant:requests retry-after=20s, and it says whose it is:
+        error-source=gateway
+
+6. A budget gate that reads committed spend, before a provider is called.
+  ok    a cap of $0.0001150 — about ten mock answers: 8 served, then 12 refused
+  ok    402 billing_error / budget_exceeded — not 429, because a budget does not heal
+        inside its window (H-032)
+        this request would exceed the tenant's monthly (2026-08) budget of
+        $0.000115000000: $0.000092000000 settled plus $0.000000000000 reserved leaves
+        $0.000023000000, and this request reserves $0.000028500000 (34 prompt + 16
+        generated tokens at the current rate)
+  ok    committed = spent + reserved = $0.000092000000 + $0.000000000000 =
+        $0.000092000000 against $0.000115000000 — the figure the gate compares, never
+        landed spend alone
+
+7. And the console renders exactly these numbers.
+  ok    tenant demo: 34 requests, $0.000172500000 spent, 1 cache hit(s) worth
+        $0.000011500000, 2 failed over, 18 errored
+        sign in at http://localhost:3001 with the same HEADROOM_ADMIN_TOKEN
+
+22/22 checks passed in 0.8s
+
+real	0m29.538s
+```
+
+**Thirty seconds, from `git clone` to twenty-two asserted claims**, on a machine whose
+Docker layer cache already held the base images — a genuinely first-ever build pays for the
+`python:3.12-slim` and `pgvector` pulls on top, which is stated here rather than folded into
+the number.
+
+Three things in that output are the phase in miniature. The demo **generated its own root
+token** rather than asking for one or doing without authentication, which is the whole of
+H-098. Act 3's `and the cache still holds 1 entries` is invariant 6 asserted on a stranger's
+laptop rather than described. And act 6's message is the budget gate explaining its own
+refusal in picodollars — the D-019 scar, on a fresh clone, thirty seconds in.
+
+The same clone, still with nothing exported beyond the two service endpoints:
+
+```
+$ DATABASE_URL=… DYNAMODB_ENDPOINT_URL=… make test
+================ 1447 passed, 2 deselected, 1 warning in 21.66s ================
+
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+180 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 173 source files
+```
+
+Then `docker compose down -v`, `rm -rf /tmp/hr-p11-gate`, and the operator's own stack back
+up. Nothing of the clone remains.
+
+### The keyless gate
+
+```
+$ make lint
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+180 files already formatted
+
+$ make typecheck
+uv run mypy
+Success: no issues found in 173 source files
+
+$ make test
+================ 1447 passed, 2 deselected, 1 warning in 22.18s ================
+
+$ uv run pytest -m live -q --collect-only
+2/1449 tests collected (1447 deselected) in 0.22s
+
+$ uv run pytest -q -v | grep -c SKIPPED
+0
+```
+
+**1415 → 1447.** The 32 are `tests/test_docs.py`. **No existing test changed** — the second
+phase since Phase 2 where that is true, and it follows from the phase adding no gateway
+code.
+
+### THE DOC TESTS, INDIVIDUALLY
+
+```
+$ uv run pytest tests/test_docs.py -v
+test_the_two_numbers_the_whole_h1_finding_rests_on PASSED
+test_tau_zero_does_not_exist_across_the_pre_registered_grid PASSED
+test_the_headline_counts_are_the_two_families_at_the_shipped_default PASSED
+test_the_threshold_table_is_the_committed_curve_row_for_row PASSED
+test_the_corpus_the_curve_was_swept_over PASSED
+test_the_mechanism_pair_is_the_one_the_report_names PASSED
+test_the_parity_verdict_is_the_committed_adjudication PASSED
+test_the_passthrough_overhead_is_the_suites_own_column PASSED
+test_each_live_overhead_number_cites_the_row_it_was_measured_on PASSED
+test_the_live_rows_price_their_own_arithmetic PASSED
+test_the_admission_cost_and_its_share_of_a_request PASSED
+test_the_two_meters_agree_and_the_residual_is_one_named_request PASSED
+test_the_cache_was_provably_off_for_the_whole_run PASSED
+test_the_zero_drop_arc_is_three_committed_runs_in_that_order PASSED
+test_the_gpu_kill_from_us_east_1_is_the_run_it_cites PASSED
+test_the_two_gpu_kill_on_the_desk_is_the_h3_recording PASSED
+test_the_keyless_chaos_numbers_are_the_ones_ci_runs PASSED
+test_the_breaker_and_backoff_constants_are_the_shipped_ones PASSED
+test_the_console_capture_numbers_come_from_the_evidence_readme PASSED
+test_the_drain_repro_and_the_instrument_failures_are_in_the_phase_log PASSED
+test_the_mock_unit_cost_is_the_shipped_price_book PASSED
+test_the_caches_default_threshold_is_the_constant_the_gateway_uses PASSED
+test_the_twelve_question_corpus_bands_are_its_committed_vectors PASSED
+test_the_auth_cache_ttl_is_the_documented_number PASSED
+test_the_spend_table_is_the_reports_own_arithmetic PASSED
+test_the_cloud_cost_table_says_pending_until_the_billing_capture_lands PASSED
+test_the_phase_9_cost_read_and_the_phase_10_rate_are_the_logged_ones PASSED
+test_every_path_the_readme_links_to_exists PASSED
+test_every_decision_the_readme_cites_is_a_real_entry PASSED
+test_the_readme_is_not_still_announcing_that_it_is_a_stub PASSED
+test_the_quickstart_really_is_one_command PASSED
+test_the_claimed_test_count_is_the_number_this_session_collected SKIPPED
+```
+
+The last line is the design working: that check compares the README's stated count to
+`len(request.session.items)`, and a run of one file is not the whole suite. It **skips
+loudly** with the reason, exactly as H-012 requires of a check that cannot be made, and it
+passes in the full run above (1447 collected, 1447 claimed).
+
+### THE SABOTAGE RUNS — five, each restored from a file copy
+
+Green on the first attempt is when a suite deserves the most suspicion, and this file
+protects against a failure that is **silent by construction**: a number that stopped being
+true. So each claim was tested by breaking the thing it protects. All five were restored
+from pre-sabotage copies — never with `git checkout --`, which ate an hour of uncommitted
+work in Phase 7 — and every file was diffed afterwards.
+
+*Sabotage A — the H1 headline number is rounded* (`0.999539` → `0.9995` in the README,
+which is exactly the edit a copy-editor would make and which destroys the claim, since the
+whole finding is that the wrong-answer band reaches **above** the correct one):
+
+```
+FAILED tests/test_docs.py::test_the_two_numbers_the_whole_h1_finding_rests_on
+1 failed, 30 passed, 1 skipped
+```
+
+*Sabotage B — a link points at an artifact that is not there* (`09c-load-loop-run3-drain.json`
+→ a file name that was never captured). This is the one most likely to happen for real, in a
+renumbering:
+
+```
+FAILED tests/test_docs.py::test_every_path_the_readme_links_to_exists
+1 failed, 30 passed, 1 skipped
+```
+
+*Sabotage C — the README cites a decision that does not exist* (`H-091` → `H-191`):
+
+```
+FAILED tests/test_docs.py::test_every_decision_the_readme_cites_is_a_real_entry
+1 failed, 30 passed, 1 skipped
+```
+
+*Sabotage D — a rate moves in the shipped price book* (`config/models.yaml`, the mock
+model's `usd_per_mtok_in` from `"0.25"` to `"0.30"`). The README was **not** touched, and it
+failed anyway, which is the proof that this pin goes through `load_price_book()` and
+`usd_for_tokens` rather than comparing two literals:
+
+```
+FAILED tests/test_docs.py::test_the_mock_unit_cost_is_the_shipped_price_book
+1 failed, 30 passed, 1 skipped
+```
+
+*Sabotage E — the billing capture lands* (`touch docs/evidence/p10-eks/23-billing.png`).
+The interesting one, because it fails in the direction nobody expects a test to fail in:
+the README is unchanged and still correct-as-written, and the suite goes red **because the
+follow-up is now possible and has not been done**:
+
+```
+FAILED tests/test_docs.py::test_the_cloud_cost_table_says_pending_until_the_billing_capture_lands
+1 failed, 30 passed, 1 skipped
+```
+
+```
+=== every file identical to its pre-sabotage copy? ===
+  identical  README.md
+  identical  docs/DECISIONS.md
+  identical  config/models.yaml
+```
+
+### The launch kit
+
+Delivered as `docs/launch/`: [`x-thread.md`](launch/x-thread.md),
+[`linkedin.md`](launch/linkedin.md), [`portfolio-insert.sql`](launch/portfolio-insert.sql),
+[`recruiter-followup-v2.md`](launch/recruiter-followup-v2.md),
+[`blog-the-cache-that-lies-politely.md`](launch/blog-the-cache-that-lies-politely.md), and
+an index carrying the GitHub About line, the topics list, the publishing order, and the
+*what not to claim* section. Nothing in it is published by this repo and nothing in it holds
+a credential.
+
+**Assumed-facts register (§0.4)** — nothing was due at this gate and none of A1–A7 was
+touched. A7 remains **half open**, unchanged from the Phase 10 close: the tags are on every
+resource, the activation lagged, and the actuals are pending Cost Explorer. What this phase
+adds is that the gap is now **enforced by a test** rather than carried in a deferred list.
+
+**Spend — $0.00.** No provider API was called, no AWS resource was created, and every
+request in the cold-clone run above went to the MockProvider on the operator's own machine.
+Against §0.6's $20 project cap the running total is unchanged at **≈ $8.08–8.12**.
+
+### CI
+
+CI on PR-11 ([run 31548028948](https://github.com/sergioavilax/headroom/actions/runs/31548028948))
+on `3f5fc70`, all **six** jobs green on the first run:
+
+```
+$ gh run view 31548028948 --json status,conclusion,headSha,jobs
+completed  success  sha=3f5fc70
+  success  lint + typecheck
+  success  pytest (postgres + dynamodb-local service containers)
+  success  terraform validates, the Lambda packages, and the chart renders
+  success  ui lint + typecheck + unit tests + build
+  success  ui browser smoke (chromium, stub gateway)
+  success  gateway and ui images build and serve
+
+lint + typecheck | All checks passed!
+lint + typecheck | Success: no issues found in 173 source files
+pytest (…service containers) | ===== 1447 passed, 2 deselected, 1 warning in 34.29s =====
+terraform … | Summary: 6 resources found parsing stdin - Valid: 6, Invalid: 0, Errors: 0
+terraform … | Summary: 9 resources found parsing stdin - Valid: 9, Invalid: 0, Errors: 0
+terraform … | both guards fired
+ui lint + typecheck + unit tests + build | ℹ tests 31  ℹ pass 31
+ui browser smoke (chromium, stub gateway) |   8 passed (5.6s)
+gateway and ui images build and serve | gateway healthy
+gateway and ui images build and serve | console healthy
+```
+
+**1447 passed, 0 skipped in CI** — `grep -c SKIPPED` over the whole log returns `0`, so the
+Postgres and DynamoDB halves of every contract suite executed against the service containers
+rather than skipping (H-012).
+
+**All 32 doc tests ran on the runner**, which is the half that matters for this particular
+file:
+
+```
+$ gh run view 31548028948 --log | grep -c "test_docs.py::.*PASSED"
+32
+```
+
+Thirty-two rather than thirty-one, and the extra one is
+`test_the_claimed_test_count_is_the_number_this_session_collected` — the check that skips
+loudly on a partial run and therefore only ever proves itself somewhere the whole keyless
+suite is collected. **The README's stated test count is now verified on a machine the
+operator does not own, on every pull request**, which is the strongest form the claim can
+take. Nothing in this file reads a network, a model, or an account: every artifact it
+recomputes from is in the repo.
+
+**Zero annotations across all six jobs** (`check-runs/{id}/annotations` is empty for every
+one), and the only `deprecat` line in the whole log is still the
+`StarletteDeprecationWarning` from `fastapi.testclient` that Phase 0 deliberately left
+visible.
+
+No workflow file changed in this phase — the sixth job's three tools, the chart's two
+refusals, and both image smokes are Phase 9's and Phase 10's, running unchanged over a PR
+that touched no code they cover.
