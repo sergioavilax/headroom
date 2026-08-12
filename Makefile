@@ -1,10 +1,29 @@
 # Headroom — developer entry points. `make help` lists targets.
 .DEFAULT_GOAL := help
-.PHONY: help up down logs ps test lint typecheck fmt migrate seed ui-check ui-e2e \
+.PHONY: help demo up down logs ps test lint typecheck fmt migrate seed ui-check ui-e2e \
         rollup lambda-build tf-check chaos-smoke helm-check k8s-config load-loop
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-12s %s\n", $$1, $$2}'
+
+demo: ## Cold clone to a working keyless demo, in one command. No key, no network, $0.00
+	@# BUILD_PLAN §P11's gate. Phase 2 turned the one-curl demo into four steps — mint a
+	@# root token, bring the stack up, create a tenant, mint a key — and deliberately
+	@# refused a "dev mode" that skips authentication. This is the honest way back to one
+	@# command: the four steps happen, through the public API, and then every claim the
+	@# README makes about the local stack is *checked*. Exit 1 if any of them is not true
+	@# of this clone.
+	@#
+	@# The token is generated once into the gitignored `.env`, because compose reads that
+	@# file and the gateway has to be *started* with the token it will later be asked for
+	@# (H-019: unset means the admin API is off, never open). /dev/urandom rather than
+	@# python, so this step needs nothing installed.
+	@grep -q '^HEADROOM_ADMIN_TOKEN=.' .env 2>/dev/null || { \
+	  printf '\nHEADROOM_ADMIN_TOKEN=%s\n' \
+	    "$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env; \
+	  echo "wrote a fresh HEADROOM_ADMIN_TOKEN to .env (gitignored, never committed)"; }
+	$(MAKE) up
+	uv run python scripts/demo.py $(if $(BASE_URL),--base-url $(BASE_URL),)
 
 up: ## Build and start the stack (db, dynamodb, gateway); waits for healthy, then migrates
 	docker compose up -d --build --wait

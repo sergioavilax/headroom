@@ -80,7 +80,7 @@ headroom/
   deploy/aws/          # P9 Terraform root module (Backline's file-per-concern layout)
   deploy/k8s/          # P10 Helm chart + EKS runbook
   tests/               # keyless; MockProvider; sabotage tests for every scar
-  docs/                # DECISIONS.md · PHASE_LOG.md · ARCHITECTURE.md · evidence/
+  docs/                # DECISIONS.md · PHASE_LOG.md · evidence/ · launch/ (P11)
   CLAUDE.md            # invariants for agent sessions (write at P0)
 ```
 
