@@ -6265,7 +6265,7 @@ keylessly elsewhere, which is why a demo can be an assertion rather than a secon
 
 ## H-099 — The launch kit is committed, and the portfolio SQL states its own assumption (Phase 11)
 
-**Status**: accepted · **Date**: 2026-08-11
+**Status**: superseded by H-100 · **Date**: 2026-08-11
 
 **Context.** §P11 lists an X thread, a LinkedIn post, portfolio SQL, a recruiter template and an
 optional blog post as deliverables. None of them is code, none is executed by anything, and all of
@@ -6299,5 +6299,57 @@ here should; the repo has no credentials for any of those surfaces and will not 
 figures can drift if the README's are corrected and the kit is not. The index says so. The blog
 draft's closing section characterises two earlier posts from BUILD_PLAN's shorthand rather than
 from having read them, and is flagged in the draft as the one paragraph the operator must rewrite.
+
+---
+
+## H-100 — The launch kit is withdrawn: backstage material does not belong in the front door (Phase 11)
+
+**Status**: accepted · **Date**: 2026-08-11 · **Supersedes**: H-099
+
+**Context.** H-099 committed `docs/launch/` on the argument that a reviewer "learns something from
+seeing the claims stated for a non-technical audience *and* the guard rails around them". Hours
+after it merged, the operator read it back as a reader would and reversed the call. This entry
+records the reversal rather than editing H-099 into agreement with it, because a decision log that
+is rewritten when a decision changes is a log that cannot be trusted about anything.
+
+**Decision.** Delete `docs/launch/` from the tree, remove its row from the README's *Where
+everything is*, take `launch/` back out of §0.5's repo map and `CLAUDE.md`'s *Where things live*,
+and add `docs/launch/` to `.gitignore` so the path stays usable for drafting and unusable for
+committing. The material is not destroyed — the operator holds copies — it is moved out of the
+artifact a stranger reads to judge the engineering.
+
+**Why H-099 was wrong.** Its argument was symmetrical: publishing the copy *and* its guard rails
+shows judgment. What it missed is that one of the five files is not copy at all but an **instrument
+that only works unobserved**. A recruiter follow-up template's entire function is to read as a note
+written to one person; published, it invites the recipient to find the form it was cut from, and it
+does the opposite of what it exists to do. That single file is enough to decide the directory,
+because the alternative — ship four, hold one back — leaves an index whose *what not to claim*
+section is the most interesting thing in it and whose contents no longer match its own description.
+The remaining four are drafting rather than engineering, and their being in-repo was never load
+bearing: H-099's own consequence paragraph admits they are "not covered by the doc tests beyond
+their links resolving".
+
+**Alternatives considered.** *Keep it and mark it clearly as drafts* — a label does not change what
+a reader finds in the recruiter file. *Move it to a private repo or a gist* — the operator's own
+copies already serve that; a second location is a second thing to keep in sync. *Rewrite history so
+the files were never committed* — refused, see below. *Leave it and revisit at launch* — the
+decision does not get easier later, and the cost of the delay is paid by whoever reads the repo in
+the meantime.
+
+**Consequences.** **The files remain in this repository's git history and this is accepted.**
+`364dd72` and its parents still contain all six; anyone who runs `git log` can read them. No
+history rewrite was performed and none is planned: this repo is public from commit one, its history
+is part of the artifact (the operator's standing preference), and rewriting it to un-say something
+would trade a small embarrassment for a large dishonesty — a repo whose log no longer matches what
+happened. What the withdrawal buys is that the material is no longer **presented** as part of the
+project, which is the whole of what was wrong with it.
+
+Two smaller consequences. The suite is unchanged at **1447** — nothing tested the kit's contents,
+and the only check that reached it at all,
+`test_every_path_the_readme_links_to_exists`, is what makes a half-done removal fail rather than
+rot. And §P11's plan text still lists the kit as a deliverable, with its gate line *"launch kit
+delivered"* intact: it **was** delivered, the gate was met, and BUILD_PLAN is not edited to pretend
+a later decision was foreseen by an earlier one. Only §0.5's repo map moved, because a map is a
+description of the tree and the tree changed.
 
 ---

@@ -56,3 +56,9 @@ deploy/k8s/values.*.yaml
 .DS_Store
 *.plan
 *.tfplan
+
+# Launch copy is backstage material (H-100). Shipped in P11, withdrawn the same day by
+# operator decision: the recruiter template in particular undermines its own purpose by
+# being public, and the rest is drafting rather than engineering. Drafts still get written
+# here — they just do not get committed here.
+docs/launch/

@@ -1069,13 +1069,12 @@ $0 in orphans.
 | | |
 |---|---|
 | [`BUILD_PLAN.md`](BUILD_PLAN.md) | the governing document: every phase, its gate, and the nine invariants, written before the code |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | H-000 … H-099 — every judgment call with its alternatives and its consequences |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | H-000 … H-100 — every judgment call with its alternatives and its consequences |
 | [`docs/PHASE_LOG.md`](docs/PHASE_LOG.md) | one entry per phase: shipped, deferred, deviations, and the gate's output **verbatim** |
 | [`experiments/`](experiments/) | the pre-registration, the corpus, the runners, and [`results/REPORT.md`](experiments/results/REPORT.md) |
 | [`docs/evidence/`](docs/evidence/) | what needed hardware, money, or a cloud account — and therefore cannot be re-run from a clone |
 | [`deploy/aws/README.md`](deploy/aws/README.md) · [`deploy/k8s/README.md`](deploy/k8s/README.md) | the two runbooks, complete enough that a stranger could repeat them |
 | [`docs/vllm.md`](docs/vllm.md) | the local two-GPU topology, with every claim tagged VERIFIED or UNTESTED |
-| [`docs/launch/`](docs/launch/) | the launch kit — and the section naming the four things this project must not claim |
 | [`CLAUDE.md`](CLAUDE.md) | how an agent session works in this repo |
 
 ## What production adds
