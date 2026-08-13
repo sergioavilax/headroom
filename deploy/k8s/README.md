@@ -152,14 +152,26 @@ Day 3. This matters more than it did in Phase 9: **A7's estimate-versus-actual t
 §17 needs `Layer` active for the whole window**, and a key activated on Day 3 groups
 nothing that happened on Day 1.
 
+> **⚠️ This instruction is what actually failed on the run — see §17 and H-102.** *"Do not
+> hold the runbook for it"* is wrong when the window is short. `Layer`, `Phase` and
+> `ManagedBy` went `Active` at 16:54 UTC, most of the way through a fourteen-hour window, and
+> because cost allocation tags are **never backfilled**, 72.4% of the bill came back with no
+> `Layer` value even though every resource carried the tag. **If you want an attributable
+> bill: hold here until all four read `Active`.** The only thing standing at this point is an
+> empty ECR repository, so waiting costs nothing — which is the whole reason §1 seeds the keys
+> from ECR in the first place. Hold the runbook, or accept that §17 will produce two totals
+> and a gap you cannot explain.
+
 When they are all Active, take the screenshot Phase 9 could not:
 
 - **Billing → Cost allocation tags**, showing the four keys Active and dated →
   `docs/evidence/p9-aws/02-cost-allocation-tags.png`
 
 `docs/evidence/p9-aws/18-billing.png` — Cost Explorer filtered to `Project=headroom`,
-split by `Layer` — lands in §17 with this phase's own billing capture, because Cost
-Explorer needs up to 24 hours after activation on top of everything else.
+split by `Layer` — was to land in §17 with this phase's own billing capture, because Cost
+Explorer needs up to 24 hours after activation on top of everything else. **It was not
+captured:** by the time `Layer` was active there was no Phase 9 split left to show, which is
+the warning above, measured.
 
 ## 2. The data layer's one change — **$0.00, in place**
 
@@ -935,24 +947,60 @@ aws ce get-cost-and-usage \
 Then the console view, which is the artifact: **Cost Explorer, filtered to
 `Project=headroom`, grouped by `Layer`, daily, across the window.**
 
-→ `23-billing.png`, and `docs/evidence/p9-aws/18-billing.png` — the Phase 9 capture that
-has been waiting for these tag keys since 2026-08-11.
+→ `23-billing.png`. **`docs/evidence/p9-aws/18-billing.png` was not captured** — by the time
+`Layer` was active, Phase 9 was over and there was no split left for it to show. See the
+warning below.
 
-Fill in the table in `docs/PHASE_LOG.md`, whichever way it lands:
+Fill in the table in `docs/PHASE_LOG.md`, whichever way it lands. **What this run produced is
+in the right-hand column**, so the next person can see both the shape and the trap:
 
-| | Estimate | Actual |
+| | Estimate | Actual, 2026-08-11 |
 |---|---:|---:|
-| EKS control plane | $2.40/day | |
-| Nodes (2 x t3.medium) + EBS | $2.11/day | |
-| Network Load Balancer | $0.54/day | |
-| Data layer (`Layer=data`) | $0.53/day | |
-| **Window total** | **$17–19** | |
-| **A7's pre-registered estimate** | **$20–25** | |
+| EKS control plane | $2.40/day | $1.3533 |
+| Nodes (2 x t3.medium) + EBS | $2.11/day | $1.1696 |
+| Network Load Balancer | $0.54/day | $0.3380 |
+| Data layer (`Layer=data`) | $0.53/day | $0.3527 |
+| Not priced above: VPC, Secrets Manager, ECS, ECR | — | $0.3419 |
+| **Window total** (14 h, not 3 days) | **$17–19** for 3 days | **$3.5556**, a rate of ≈$6.10/day |
+| **A7's pre-registered estimate** | **$20–25** | not run — the window was compressed (H-096) |
 
 **Both outcomes are publishable.** A7 is an assumption in §0.4's register, and a window
 that lands at $12 or at $31 is a fact about this architecture either way. What is not
 acceptable is a table with an estimate and no actual, which is exactly what Phase 9's
 spend line has been carrying since its close.
+
+> ### ⚠️ Read this before you `apply` anything, not when you get here — **H-102**
+>
+> **This run could not attribute 14% of its own bill, and the tagging was not the reason.**
+> Every resource carried all four keys — `default_tags` on both Terraform roots, and
+> `metadata.tags` plus the node group's `tags` in `deploy/k8s/eksctl/cluster.yaml`. **72.4%
+> of the tagged spend still came back with no `Layer` value.** Three things cause that, and
+> all three are decided before the first hourly resource exists:
+>
+> 1. **Cost allocation tags label line items from activation forward. They are never
+>    backfilled.** §1's `update-cost-allocation-tags-status` is not a formality you can
+>    retry at leisure — a key that goes `Active` at 16:54 groups **nothing** that was billed
+>    that morning. In this run `Project` activated at 02:16 UTC and `Layer`/`Phase`/
+>    `ManagedBy` at 16:54 UTC, on the one day that carried the entire bill.
+>    **So: seed the keys (§1), poll `list-cost-allocation-tags --status Active` until all
+>    four are there, and only then create the first thing that bills by the hour.** The wait
+>    is free — the only resource standing is an empty ECR repository. H-080 got the seeding
+>    right and treated the wait as a delay; it is not a delay, it is a deadline.
+> 2. **Tag what Kubernetes creates for you, not just what you declare.** The NLB is made by
+>    the in-cluster cloud controller manager, so neither Terraform nor `cluster.yaml` tags
+>    it: it showed **$0.02** of its actual **$0.3380** under `Project=headroom`. If the
+>    `Layer` split is meant to cover it, add
+>    `service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags` to the Service
+>    annotations beside the two already in `values.aws.yaml.example`. **Untested here** — the
+>    gap was measured after teardown.
+> 3. **If your window is short, read it `--granularity HOURLY` while it is still inside Cost
+>    Explorer's 14-day retention.** A DAILY read of a fourteen-hour window cannot tell
+>    *billed before activation* from *never tagged*, and once the window ages out you are
+>    left inferring which it was — which is exactly what H-102 has to do.
+>
+> Also worth knowing before you read your own bill: **filter the account's baseline out.**
+> This account carried ≈$0.2242/day of pre-existing S3 spend that has nothing to do with
+> Headroom, and counting it would have overstated the project by 6%.
 
 ---
 

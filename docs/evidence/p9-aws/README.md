@@ -35,7 +35,7 @@ Commands are `deploy/aws/README.md`'s, by step number.
 | `15-destroy.txt` | `Destroy complete! Resources: N destroyed.` | §10 |
 | `16-data-plan-after-destroy.txt` | **`No changes. Your infrastructure matches the configuration.`** | §10 |
 | `17-empty-checks.txt` | Every per-service query from §11, with its output | §11 |
-| `18-billing.png` | Cost Explorer filtered to `Project=headroom`, split by `Layer` | 24h after §1 |
+| `18-billing.png` | Cost Explorer filtered to `Project=headroom`, split by `Layer` | **not captured** — see below |
 
 ---
 
@@ -74,9 +74,17 @@ The two that remain open:
   *is* verified — and is the half that cannot be retrofitted — is that the four keys are
   on the resources from their first second: `default_tags` on both providers, asserted
   keylessly by `test_every_resource_carries_the_cost_allocation_tags`.
-- **`18-billing.png`** — Cost Explorer, filtered to `Project=headroom`, split by `Layer`.
-  Blocked on the same activation, then on Cost Explorer's own 24 hours. The spend line in
-  `docs/PHASE_LOG.md` carries the projection until this lands and the actual after.
+- **`18-billing.png`** — **not captured, by decision on 2026-08-12, and the absence is the
+  finding.** It was to be Cost Explorer filtered to `Project=headroom` and split by `Layer`.
+  `Layer` activated at **16:54 UTC on 2026-08-11**, after this phase was over, and cost
+  allocation tags label spend only from activation forward — so the capture would have been a
+  `Project`-filtered view with nothing to split it by, which is a picture of the problem rather
+  than evidence of the spend. Worse, Phase 9 and Phase 10 billed on the **same UTC day**, and
+  the `Phase` tag that exists to tell them apart activated at the same 16:54: no filter in Cost
+  Explorer separates this phase's money from the next one's. The rule this directory set for
+  itself was that an absent capture whose absence *is* the finding gets said in those words, so:
+  **it is the finding, and this is it.** The mechanism is **H-102**; the numbers that do exist
+  are in `../p10-eks/23-billing.txt` and in the Phase 10 close.
 
 Two smaller things a careful reader will notice in the captures, said out loud:
 
@@ -118,10 +126,16 @@ depends on it being true, and this is where it is checked rather than assumed.
 
 ## Costs, recorded rather than remembered
 
-`18-billing.png` closes A7's loop. §0.6 projects **$5–8** for this phase and
-`deploy/aws/README.md` projects **$3–4** from list price; the actual is what goes in
-`docs/PHASE_LOG.md`'s spend line, whichever way it lands. Cost Explorer needs up to 24
-hours after tag activation, so this one arrives after everything else — which is why it is
-last on the list rather than missing from it. The run made that wait longer than expected:
-three of the four keys had not been *offered* for activation by the end of the session, so
-`18`'s clock started later than the apply did.
+`18-billing.png` was to close A7's loop. §0.6 projects **$5–8** for this phase and
+`deploy/aws/README.md` projects **$3–4** from list price. The run made the wait longer than
+expected: three of the four keys had not been *offered* for activation by the end of the
+session, so `18`'s clock started later than the apply did — and, as it turned out, later than
+the phase itself.
+
+**How it actually closed (2026-08-12): the projection is neither confirmed nor falsified, and
+that is a fact about the tags rather than about the spend.** This phase and Phase 10 billed on
+the same UTC day and no tag can separate them, so there is no Phase 9 figure to put beside the
+$3–4. What is known is that the data layer — the projection's dominant line — billed **$0.3527**
+across that whole day, consistent with the ≈$0.53/day projected and *not* a measurement of this
+phase alone. A7 is closed in the Phase 10 entry with the numbers that do exist; the reason this
+one does not is **H-102**.

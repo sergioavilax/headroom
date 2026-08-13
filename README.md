@@ -983,7 +983,7 @@ from the published corpus and **stayed red for three sessions** rather than bein
 by sweeping a corpus that had just been proven to carry bad probes.
 
 ```bash
-make test        # 1447 keyless tests, 0 skipped with the stack up
+make test        # 1449 keyless tests, 0 skipped with the stack up
 make lint        # ruff check + format --check
 make typecheck   # mypy --strict
 ```
@@ -1046,16 +1046,26 @@ Cloud infrastructure, estimate against actual:
 
 | | estimate | actual |
 |---|---:|---:|
-| Phase 9 — ECS + RDS + DynamoDB + Lambda, applied and destroyed the same day | $3–4 | **$0.04** (the only Cost Explorer read taken during the window) |
-| Phase 10 — EKS control plane + 2 × `t3.medium` + NLB + the data layer | **$5.58/day**, ≈ **$3.25** for a fourteen-hour window | **pending** |
+| Phase 9 — ECS + RDS + DynamoDB + Lambda, applied and destroyed the same day | $3–4 | **not separable from Phase 10.** $0.04 was the only read taken during the window; the `Phase` tag that exists to split the two activated after Phase 9 was over |
+| Phase 10 — EKS control plane + 2 × `t3.medium` + NLB + the data layer, **both phases together** | **$5.58/day**, ≈ **$3.25** for a fourteen-hour window | **$3.5556**, a rate of ≈ **$6.10/day** |
+| — of that, what the `Project=headroom` tag can actually see | — | **$3.0706** ([`23-billing.png`](docs/evidence/p10-eks/23-billing.png) reads $3.07) |
 | Phase 10, the three-day figure the plan pre-registered | $20–25 | not run — the window was compressed, deliberately |
 
-**The actuals column is pending and says so.** Cost Explorer lags up to 24 hours behind the
-final day of usage, and three of the four cost-allocation tag keys had still not been
-offered for activation in Billing when the cluster was torn down — which is itself the
-finding, recorded in [H-080](docs/DECISIONS.md) as amended. The billing captures land as a
-follow-up docs commit; the doc test tolerates the pending state today and tightens the
-moment `docs/evidence/p10-eks/23-billing.png` arrives.
+**The actual undershot the estimate because the window was fourteen hours, not three days.**
+That is window compression ([H-096](docs/DECISIONS.md)), **not** efficiency, and nothing here
+should be read as the architecture coming in cheap: the four lines the estimate priced came to
+**$3.2137** against the **$3.25** those same lines projected for a fourteen-hour window — inside
+1.2%. List price was right. What list price missed was *scope*: VPC, Secrets Manager, ECS and
+ECR added **$0.3419** the estimate had no row for at all.
+
+**The two totals differ, and the difference is the finding.** All of Headroom's spend fell on one
+UTC billing day, 2026-08-11 — $3.7798 unfiltered, less the account's pre-existing S3 bucket spend
+of ≈$0.2242/day, which is baseline and not Headroom's. Of the $3.5556 that is Headroom's, only
+**$3.0706** carries the `Project` tag; **$0.4850 is spend this project made that no tag can find**,
+dominated by the load balancer the cluster created for itself. Grouped by `Layer`, **72.4%**
+($2.2228) lands in an *empty* `Layer` bucket. Cost allocation tags are not retroactive and they
+only label resources that carry them — [H-102](docs/DECISIONS.md), and the CLI output behind both
+figures is [`23-billing.txt`](docs/evidence/p10-eks/23-billing.txt).
 
 **Nothing of Headroom remains on AWS.** `helm uninstall` before `eksctl delete cluster`,
 then per-service empty checks — no cluster, no orphaned load balancer, no `available` EBS
@@ -1069,7 +1079,7 @@ $0 in orphans.
 | | |
 |---|---|
 | [`BUILD_PLAN.md`](BUILD_PLAN.md) | the governing document: every phase, its gate, and the nine invariants, written before the code |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | H-000 … H-101 — every judgment call with its alternatives and its consequences |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | H-000 … H-102 — every judgment call with its alternatives and its consequences |
 | [`docs/PHASE_LOG.md`](docs/PHASE_LOG.md) | one entry per phase: shipped, deferred, deviations, and the gate's output **verbatim** |
 | [`experiments/`](experiments/) | the pre-registration, the corpus, the runners, and [`results/REPORT.md`](experiments/results/REPORT.md) |
 | [`docs/evidence/`](docs/evidence/) | what needed hardware, money, or a cloud account — and therefore cannot be re-run from a clone |

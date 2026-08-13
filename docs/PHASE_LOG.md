@@ -6539,6 +6539,10 @@ uncommitted work in Phase 7 — and both diffed afterwards:
   is the half that lagged, and it is now an amended H-080 with a retry that belongs at the
   start of P10. The estimate-versus-actual table is Phase 10's and needs `Layer` active by
   then.
+  > **2026-08-12.** `Layer` was not active by then — it activated at 16:54 UTC on the day
+  > that carries the whole bill. The half this bullet calls verified stayed verified and
+  > **was not enough**: tags on every resource do not attribute a bill if the keys are
+  > activated after the meter starts. **H-102**, and the table in the Phase 10 close.
 - **H-001 — cashed, at last.** *"The Phase 9 RDS instance must be Postgres 16 with the
   `vector` extension enabled from the RDS-supported list, which it is."* `04-migrations.txt`
   is `applied 7 migration(s): … 0005_response_cache …` from the one-off ECS task's own log:
@@ -6557,6 +6561,16 @@ Explorer needs its tag keys activated and then up to 24 hours, and three of the 
 had not been offered for activation when the session ended. It lands with
 `docs/evidence/p9-aws/18-billing.png`, and this line gets the number then, whichever way it
 falls.
+
+> **Filled in 2026-08-12 — and the honest answer is that it cannot be isolated.** Phase 9 and
+> Phase 10 both billed on the **same UTC day, 2026-08-11**, so no date filter separates them. The
+> `Phase` tag exists precisely to tell `p9` resources from `p10` ones — and it activated at **16:54
+> UTC**, after this phase was already over, so it cannot separate them either. Phase 9's spend is
+> inside the **$3.5556** the Phase 10 close reports for that day, and this projection of **$3–4**
+> is neither confirmed nor falsified: the data layer that dominates it billed **$0.3527** across
+> that whole day, which is consistent with the ≈$0.53/day projection and is *not* a measurement of
+> Phase 9 alone. `18-billing.png` was **not captured**, for the reason set out in this entry's
+> deferred list. The mechanism is **H-102**; A7's table is in the Phase 10 close.
 
 ### CI, on the closing head
 
@@ -7321,25 +7335,45 @@ lags up to 24 hours behind the final day of usage.** The window was fourteen hou
 comparison A7 pre-registered — three days at $20–25 — is answered against a shorter denominator,
 and the **rate** is the honest number to read.
 
-| | Estimate | Actual |
+> **Filled in 2026-08-12**, from `docs/evidence/p10-eks/23-billing.txt` and `23-billing.png`. The
+> whole bill fell on one UTC day, **2026-08-11**, so the "Actual" column is that day. The
+> reconciliation of the two totals, and why they differ, is **H-102**.
+
+| | Estimate | Actual — 2026-08-11 |
 |---|---:|---:|
-| EKS control plane | $2.40/day | *pending* |
-| Nodes (2 × `t3.medium`) + EBS | $2.11/day | *pending* |
-| Network Load Balancer | $0.54/day | *pending* |
-| Data layer (`Layer=data`) | $0.53/day | *pending* |
-| **Rate** | **$5.58/day** | *pending* |
-| **Window total** (≈14 h, ≈0.58 day) | **≈$3.25** | *pending* |
+| EKS control plane | $2.40/day | **$1.3533** — 13.53 metered hours at $0.10/h |
+| Nodes (2 × `t3.medium`) + EBS | $2.11/day | **$1.1696** — 13.33 instance-hours |
+| Network Load Balancer | $0.54/day | **$0.3380** |
+| Data layer (`Layer=data`) | $0.53/day | **$0.3527** |
+| **The four lines the estimate priced** | **$5.58/day** → **≈$3.25** for the window | **$3.2137** — inside 1.2% |
+| Lines the estimate had no row for: VPC, Secrets Manager, ECS, ECR | — | **$0.3419** |
+| **Window total** (≈14 h, ≈0.58 day), Headroom-attributable | **≈$3.25** | **$3.5556** |
+| **Rate** | **$5.58/day** | **≈$6.10/day** |
+| — of that total, what the `Project` tag can see | — | **$3.0706**; the console capture reads **$3.07** |
 | **The three-day figure the table projected** | **$17–19** | not run |
 | **A7's pre-registered estimate** | **$20–25** | not run |
 
-The only Cost Explorer read taken during the window is Phase 9's day-of check: **$0.04** for the
-Phase 9 deploy day. **`23-billing.png` and `docs/evidence/p9-aws/18-billing.png` land tomorrow as
-a docs-only commit to `main` after this PR merges** — both need the same 24-hour lag, and neither
-is worth a branch.
+The only Cost Explorer read taken during the window itself is Phase 9's day-of check: **$0.04**.
 
-**A7 is therefore not yet answered, and the reason is arithmetic rather than reluctance.** A
-fourteen-hour window cannot confirm or falsify a three-day estimate directly; what it can do is
-give the rate the estimate was built from, which is what the table above will carry.
+**A7 is answered, and not in the direction the total makes it look.** The four lines the runbook
+priced came in at **$3.2137** against the **$3.25** those same lines projected for a fourteen-hour
+window — list price was right to within 1.2%. What the estimate missed was **scope**: VPC, Secrets
+Manager, ECS and ECR added **$0.3419** it had no row for. The rate, which is the figure H-096 said
+would have to carry the comparison, came in **over**: **≈$6.10/day** against **$5.58/day**.
+
+**The window total undershoots $20–25 because the window was fourteen hours, not three days.**
+That is window compression (H-096) and it is arithmetic, not efficiency. Nothing in this
+architecture got cheaper — the meter ran for less time, and at a slightly higher rate than
+predicted. Any reading of **$3.56 against $20–25** as frugality is wrong, and this log says so
+here rather than leaving the number to be quoted on its own.
+
+**The two totals differ by $0.4850, and that gap is the finding.** $3.5556 is what Headroom cost;
+$3.0706 is what its own tags can account for. **H-102** has the mechanism: cost allocation tags
+label line items only from activation forward, `Layer`/`Phase`/`ManagedBy` activated at 16:54 UTC
+on the one day that carries the entire bill, and the Network Load Balancer the cluster created for
+itself was never tagged by anything. **72.4%** of the tagged spend ($2.2228) sits in an *empty*
+`Layer` bucket — on a window where every Terraform root **and** `deploy/k8s/eksctl/cluster.yaml`
+was configured to set that key.
 
 ### Deferred
 
@@ -7949,3 +7983,116 @@ tree byte-identical — so the twelve short SHAs quoted in this file and in `DEC
 `headSha` of every `gh run view` cited above, now dangle and are accepted as historical text, with
 GitHub possibly still serving the orphaned commits on PR pages pending a support request; the
 judgment call is **H-101**.
+
+---
+
+## Phases 9 and 10 — closed for real: the billing actuals, and the tags that could not see them (2026-08-12)
+
+The last open item in this repo. Phase 10's close deferred *"`23-billing.png`,
+`../p9-aws/18-billing.png`, and the actuals column"*; Phase 11 carried the same three forward and
+added a test that would fail the moment the first of them landed. It landed.
+
+**Shipped**
+
+- **`docs/evidence/p10-eks/23-billing.txt`** — the CLI read behind every number below: `Layer`
+  grouped and `Project=headroom` filtered, then the same window grouped by `SERVICE` unfiltered,
+  daily, 2026-08-09 → 2026-08-12.
+- **`docs/evidence/p10-eks/23-billing.png`** — the console artifact §17 asked for: Cost Explorer,
+  filtered to `Project=headroom`, grouped by service. **Total costs $3.07.**
+- **A7's estimate-versus-actual table, filled**, in the Phase 10 close above; **Phase 9's spend
+  line, answered** — with the answer being that it cannot be isolated, and why.
+- **The README's cloud-cost table**, carrying both totals and the gap between them.
+- **H-102** — the finding. And **`deploy/k8s/README.md` §17**, which now tells the next person the
+  ordering that would have prevented it.
+
+**The numbers, once.** Every dollar Headroom spent fell on one UTC billing day, **2026-08-11**.
+
+| | |
+|---|---:|
+| The account's whole day, unfiltered | **$3.7798** |
+| less pre-existing S3 bucket spend — ≈$0.2242/day on Aug 9, 10 and 11 alike, and **not this project's** | −$0.2242 |
+| **Headroom-attributable** | **$3.5556** |
+| what the `Project=headroom` tag can actually see — the console's **$3.07** | **$3.0706** |
+| **the gap: Headroom's money that no tag can find** | **$0.4850** |
+
+Aug 9, 10 and 12 carry no Headroom spend at all — S3 baseline only, plus a partial-day $0.1200 on
+the 12th because the read was taken mid-day. That is the account, not the project, and treating it
+as Headroom's would have inflated the bill by two thirds of a day's baseline for each of them.
+
+**Deviations**
+
+1. **`docs/evidence/p9-aws/18-billing.png` was not captured — by decision, and the absence is the
+   finding.** Phase 9's spend predates the activation of `Layer`, `Phase` and `ManagedBy`, so the
+   capture would have shown exactly the un-attributable picture H-102 describes: a `Project`-filtered
+   view with nothing to split it by. The evidence README's own instruction for this case was that an
+   absent capture whose absence *is* the finding **"is itself the finding and it goes in the phase
+   log in those words"** — so, in those words: **it is the finding, and this is it.** The capture
+   lists in `docs/evidence/p9-aws/README.md` and `docs/evidence/p10-eks/README.md` now read *not
+   captured* with this reason, and no test expects the file.
+2. **A7 is closed against a fourteen-hour window, as H-096 said it would have to be.** The
+   pre-registered $20–25 for three days is **not run** and is recorded as not run, rather than being
+   compared to a number that cannot answer it.
+3. **The finding is partly inferential, and is labelled so in H-102.** Daily granularity cannot
+   separate *billed before activation* from *resource never tagged*. The hourly read that would
+   settle it was not taken while the window was inside Cost Explorer's 14-day retention.
+
+**What this says about the estimate — the part worth keeping.** The four lines
+`deploy/k8s/README.md` priced came in at **$3.2137** against **$3.25** projected for the window:
+list price was right to 1.2%. The estimate's error was **scope** — VPC, Secrets Manager, ECS and
+ECR contributed **$0.3419** it had no row for — and the implied rate came in **over** at
+**≈$6.10/day** against **$5.58/day**. The window total is small because the window was short.
+**Window compression, not efficiency**, and the README, the Phase 10 table and H-102 each say so in
+those words, because $3.56 against a pre-registered $20–25 is precisely the number a reader would
+otherwise quote as a triumph of frugality.
+
+**Assumed-facts register (§0.4)**
+
+- **A7 — CLOSED, and half of it falsified.** *"EKS + Helm on 2 small nodes for 3 days lands ≈
+  $20–25"* is **not run**: the three-day window was compressed to fourteen hours (H-096), and the
+  rate it implies is ≈$6.10/day, which annualises the estimate's shape but sits ~9% above its
+  $5.58/day. The other half — *"cost-allocation tags activated in Billing"* — is **falsified in the
+  way that matters**. The tags were on every resource from its first second, in both Terraform roots
+  and in `deploy/k8s/eksctl/cluster.yaml`; the keys were activated too late to label the spend, and
+  **72.4% of the tagged bill has no `Layer` value**. A7 assumed activation was a checkbox. It is a
+  clock, and it starts before the meter or not at all. **H-102.**
+- **A1–A6** — not due at this gate, none touched.
+
+**Spend — $0.00.** No AWS resource was created and no provider API was called; this is a docs and
+evidence commit. The project total is unchanged at **≈ $8.08–8.12** against §0.6's $20 cap, and the
+cloud total is now a measured **$3.5556** rather than a projection.
+
+**Gate**
+
+Doc tests green, with the self-tightening one now demanding the number it spent two phases
+demanding the *absence* of:
+
+```
+$ uv run pytest -q
+1293 passed, 156 skipped, 2 deselected, 1 warning in 7.05s
+
+$ uv run pytest -q --collect-only
+1449/1451 tests collected (2 deselected) in 0.23s
+
+$ uv run ruff check . && uv run ruff format --check .
+All checks passed!
+180 files already formatted
+
+$ uv run mypy --strict headroom tests conftest.py
+Success: no issues found in 154 source files
+```
+
+**The 156 skips are environmental and are recorded rather than smoothed over.** Docker Desktop's
+WSL integration was disabled on the machine that ran this gate, so `make up` could not raise
+Postgres or dynamodb-local and every test that needs a backing store skipped loudly — which is the
+behaviour §0.2's invariant 4 and H-012 ask for, and is why they are skips and not errors. Nothing
+in this commit touches a code path any of them exercises: the diff is documentation, two evidence
+capture lists, and `tests/test_docs.py`. **The full-stack number is CI's**, whose pytest job runs
+the same suite against service containers.
+
+**Suite count: 1447 → 1449.** Two tests, both in `tests/test_docs.py`, both additive —
+`test_the_undershoot_is_attributed_to_the_short_window_and_not_to_efficiency` and
+`test_the_phase_9_billing_capture_is_absent_and_every_list_says_so`. No existing test changed
+behaviour; `test_the_cloud_cost_table_says_pending_until_the_billing_capture_lands` kept its name
+and both its branches and had the landed branch filled in, which is the branch it was written to
+reach. The README's `make test` line moves with the count, because
+`test_the_claimed_test_count_is_the_number_this_session_collected` compares the two.
