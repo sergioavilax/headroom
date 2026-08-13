@@ -8087,7 +8087,23 @@ Postgres or dynamodb-local and every test that needs a backing store skipped lou
 behaviour §0.2's invariant 4 and H-012 ask for, and is why they are skips and not errors. Nothing
 in this commit touches a code path any of them exercises: the diff is documentation, two evidence
 capture lists, and `tests/test_docs.py`. **The full-stack number is CI's**, whose pytest job runs
-the same suite against service containers.
+the same suite against service containers — and it is green, all six jobs on the first run
+([run 31670224418](https://github.com/sergioavilax/headroom/actions/runs/31670224418)):
+
+```
+$ gh pr checks 16
+lint + typecheck                                          pass  18s
+pytest (postgres + dynamodb-local service containers)     pass  1m15s
+terraform validates, the Lambda packages, and the chart renders  pass  35s
+ui lint + typecheck + unit tests + build                  pass  42s
+ui browser smoke (chromium, stub gateway)                 pass  1m6s
+gateway and ui images build and serve                     pass  51s
+
+pytest (…service containers) | ===== 1449 passed, 2 deselected, 1 warning in 39.97s =====
+```
+
+**1449 passed, 0 skipped in CI** — the 156 local skips are the stack-dependent ones and nothing
+else, which is what the two runs together establish.
 
 **Suite count: 1447 → 1449.** Two tests, both in `tests/test_docs.py`, both additive —
 `test_the_undershoot_is_attributed_to_the_short_window_and_not_to_efficiency` and
