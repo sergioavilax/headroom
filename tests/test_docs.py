@@ -494,25 +494,80 @@ def test_the_spend_table_is_the_reports_own_arithmetic() -> None:
 
 
 def test_the_cloud_cost_table_says_pending_until_the_billing_capture_lands() -> None:
-    """The one claim in this README that is deliberately incomplete, and says so.
+    """The one claim in this README that was deliberately incomplete — and no longer is.
 
-    Cost Explorer lags up to 24 hours behind the final day of usage, and three of the four
-    cost-allocation tag keys had not been offered for activation when the cluster was torn
-    down. So the actuals column is `pending` — and this test tightens the moment
-    `23-billing.png` arrives, rather than having to be remembered.
+    Written in Phase 11 to tighten by itself: while `23-billing.png` was absent the table
+    had to say `pending`, and the day the capture arrived this test failed until a number
+    replaced the word. It fired on 2026-08-12, which is why the branch below is now the
+    live one. It stays two-branched: delete the evidence and the README must go back to
+    admitting it has none.
     """
-    if BILLING_CAPTURE.exists():
-        assert "**pending**" not in README, (
-            f"{BILLING_CAPTURE.name} has landed, so the cloud-cost table's actual column "
-            "must carry the number rather than `pending` — and this test is why you are "
-            "reading about it now rather than finding it in six months"
+    if not BILLING_CAPTURE.exists():
+        says("| **pending** |", "**The actuals column is pending and says so.**")
+        assert "**pending**" in P10_EVIDENCE, (
+            "the evidence list must agree with the README about what has not arrived"
         )
-        assert "23-billing.png" in README
         return
-    says("| **pending** |", "**The actuals column is pending and says so.**")
-    assert "**pending**" in P10_EVIDENCE, (
-        "the evidence list must agree with the README about what has not arrived"
+
+    assert "**pending**" not in README, (
+        f"{BILLING_CAPTURE.name} has landed, so the cloud-cost table's actual column "
+        "must carry the number rather than `pending` — and this test is why you are "
+        "reading about it now rather than finding it in six months"
     )
+    for fragment in ("23-billing.png", "23-billing.txt"):
+        assert fragment in README, f"the README stopped citing {fragment}"
+
+    # Both totals, because the gap between them is the finding (H-102). A README that
+    # quotes only the tag-attributable $3.07 under-reports what the project actually cost.
+    for figure, why in (
+        ("$3.5556", "the Headroom-attributable total"),
+        ("$3.0706", "what the Project tag can see"),
+        ("$3.07", "what the console capture reads"),
+        ("$0.4850", "the gap between them"),
+        ("$2.2228", "the empty-Layer bucket"),
+        ("72.4%", "the empty-Layer share"),
+        ("$6.10/day", "the rate, which is what answers A7"),
+    ):
+        assert figure in README, f"the cost table no longer carries {figure} — {why}"
+
+
+def test_the_undershoot_is_attributed_to_the_short_window_and_not_to_efficiency() -> None:
+    """$3.56 against a pre-registered $20-25 is the single most quotable number in this
+    repo and the single easiest one to quote dishonestly. The window was fourteen hours,
+    not three days (H-096), and the rate came in *over* the estimate — so the copy has to
+    say compression, in those words, everywhere the total appears."""
+    for doc, name in ((README, "README.md"), (PHASE_LOG, "docs/PHASE_LOG.md")):
+        assert "fourteen hours, not three days" in doc, (
+            f"{name} quotes the undershoot without saying the window was compressed"
+        )
+        assert "not** efficiency" in doc or "not efficiency" in doc, (
+            f"{name} does not rule out the efficiency reading of the undershoot"
+        )
+    # And the rate, which is the number that actually answers A7, came in above estimate.
+    assert "$6.10/day" in README and "$5.58/day" in README
+
+
+def test_the_phase_9_billing_capture_is_absent_and_every_list_says_so() -> None:
+    """H-102: `18-billing.png` was not captured, because by the time `Layer` was active
+    there was no Phase 9 split left for it to show. The evidence README's own rule is that
+    an absent capture whose absence *is* the finding gets said in those words — so no list
+    may still be waiting for the file, and the file may not quietly reappear without the
+    prose changing with it."""
+    p9_capture = REPO / "docs" / "evidence" / "p9-aws" / "18-billing.png"
+    p9_evidence = (REPO / "docs" / "evidence" / "p9-aws" / "README.md").read_text(encoding="utf-8")
+    if p9_capture.exists():
+        pytest.fail(
+            "18-billing.png is in the repo, but every list in these docs records it as "
+            "not captured with a reason — update the prose in the same commit as the file"
+        )
+    for doc, name in (
+        (p9_evidence, "docs/evidence/p9-aws/README.md"),
+        (P10_EVIDENCE, "docs/evidence/p10-eks/README.md"),
+    ):
+        assert "18-billing" in doc, f"{name} stopped mentioning the capture entirely"
+        assert "not captured" in doc, (
+            f"{name} still lists 18-billing.png as expected rather than as not captured"
+        )
 
 
 def test_the_phase_9_cost_read_and_the_phase_10_rate_are_the_logged_ones() -> None:

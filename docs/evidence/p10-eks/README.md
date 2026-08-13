@@ -49,7 +49,8 @@ noticed.
 | `20-empty-checks.txt` | Every per-service query from §15, with its output | 15 | ✅ |
 | `21-data-destroy.txt` | `No changes.` on the data layer, then `Destroy complete! Resources: 26 destroyed.` | 16 | ✅ |
 | `22-final-empty-checks.txt` | RDS, snapshots, DynamoDB, ECR, secrets, VPC — all empty | 16 | ✅ |
-| `23-billing.png` | Cost Explorer, `Project=headroom`, grouped by `Layer`, across the window | 17 | **pending** — Cost Explorer lags ~24 h behind the final day of usage |
+| `23-billing.png` | Cost Explorer, `Project=headroom`, grouped by service — **Total costs $3.07**, the tag-attributable half of a $3.5556 bill | 17 | ✅ |
+| `23-billing.txt` | The CLI behind it: `Layer`-grouped and `Project`-filtered, then `SERVICE`-grouped unfiltered, daily across 2026-08-09 → 12 | 17 | ✅ (added — the console view alone cannot show the gap) |
 | `24-live-flip.png` | **Live traffic** from the cluster's own console: 104 requests, **66 failed over, 0 caller-visible 5xx**, the stack's colour moving `vllm_a` → `vllm_b`, every flipped row naming the hop that happened | 9, 11 | ✅ |
 | `25-breaker-open.png` | The same view mid-kill: **`vllm_a` `open`**, `4/5` breakers closed, `failures 10/20`, `probes in 0s`, `last error: upstream_timeout` | 9, 11 | ✅ |
 | `day2-pods-overnight.txt` | The unattended run: every pod `AGE 10h`, **`RESTARTS 0`** | — | ✅ (added by the window) |
@@ -59,7 +60,7 @@ noticed.
 had already reserved for the event stream and the uninstall check. They were renumbered
 out of that range rather than quietly taking the numbers, so that a reader following
 `deploy/k8s/README.md` §12 and §13 to a file does not find a screenshot of something else.
-`23` stays reserved for the billing capture that has not arrived yet.
+`23` was held for the billing capture, which arrived on 2026-08-12 and took the number.
 
 ### And the two this phase inherits
 
@@ -70,7 +71,7 @@ phase's first session, which is `deploy/k8s/README.md` §1:
 | File | What it shows | Status |
 |---|---|---|
 | `../p9-aws/02-cost-allocation-tags.png` | The four tag keys **Active** in Billing → Cost allocation tags, dated | **not in the repo.** §1 was run; no capture landed |
-| `../p9-aws/18-billing.png` | Cost Explorer filtered to `Project=headroom`, split by `Layer` — Phase 9's own spend, finally attributable | **pending**, with `23` |
+| `../p9-aws/18-billing.png` | Cost Explorer filtered to `Project=headroom`, split by `Layer` — Phase 9's own spend, finally attributable | **not captured.** Phase 9's spend predates the activation of `Layer`, so the capture would show the same un-attributable picture as `23`: no split to make. The absence *is* the finding — **H-102** |
 
 A screenshot of three keys that have not appeared yet is a picture of an empty screen, not
 evidence of a lagged activation. If they still have not surfaced by §17, that is itself the
@@ -151,14 +152,26 @@ other half: the cluster came and went without touching the network the data laye
 
 ## And the one that is about money rather than the product
 
-**`23` closes A7, and it has not landed.** §0.4 pre-registered *"EKS + Helm on 2 small
+**`23` closes A7, and it landed on 2026-08-12.** §0.4 pre-registered *"EKS + Helm on 2 small
 nodes for 3 days lands ≈ $20–25"*; `deploy/k8s/README.md`'s table projects **$17–19** from
 list price *for three days*. The window was **not** three days (see below), so the
 comparison A7 asked for is against a shorter denominator and the phase log says which.
-Both outcomes are publishable and the table in `docs/PHASE_LOG.md` gets the actual,
-whichever way it lands. What is not acceptable is an estimate with no actual beside it —
-which is what the Phase 9 spend line has been carrying since its close, and which
-`../p9-aws/18-billing.png` finally settles when Cost Explorer catches up.
+
+The actual: **$3.5556** for the window, all of it on one UTC day, at a rate of **≈$6.10/day**
+against the **$5.58/day** estimated. The window total is small **because the window was
+fourteen hours** — compression, not efficiency, and the phase log and README both say so in
+those words.
+
+**The two numbers this directory carries are different on purpose.** `23-billing.png` reads
+**$3.07** — that is everything the `Project=headroom` tag can see. `23-billing.txt`'s
+service-grouped read, less the account's pre-existing S3 baseline, is **$3.5556** — that is
+everything Headroom actually cost. The **$0.4850** between them is spend this project made
+that no tag can find, and **72.4%** of what *is* tagged has no `Layer` value at all, on a
+window where every resource was configured to carry one. **H-102** is that finding, and it is
+why the CLI output is committed beside the screenshot rather than the screenshot alone.
+
+`../p9-aws/18-billing.png` was **not captured**, for the same reason: Phase 9's spend predates
+the `Layer` activation, so there is no split for it to show.
 
 ---
 

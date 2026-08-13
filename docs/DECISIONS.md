@@ -6451,3 +6451,104 @@ range, which now reads `H-000 … H-101` because
 this file.
 
 ---
+
+## H-102 — Cost allocation tags label the bill from activation forward, so a perfectly tagged window can still be unattributable (Phase 10, closed out)
+
+**Status**: accepted · **Date**: 2026-08-12 · **Closes**: A7 · **Extends**: H-080 as amended
+
+**Context.** A7 asked for an estimate-versus-actual table with the data layer separated from the
+cluster, and `Layer` is the key that was supposed to answer it. H-080 chose four keys applied by
+`default_tags` on both Terraform roots so that no resource is ever charged untagged; its amendment
+found that Billing's *discovery* of a key is asynchronous and slow, and moved activation to an
+apply-then-retry that never blocks the runbook. Both entries treated the lag as a **delay** — the
+screenshot arrives late, the bill is accrued correctly regardless.
+
+The bill arrived. The lag is not a delay.
+
+**What the artifact shows.** All of Headroom's spend, Phase 9's and Phase 10's together, fell on
+one UTC billing day: **2026-08-11**. Grouped by `Layer` and filtered to `Project=headroom`,
+`23-billing.txt` returns rows for that day only — Aug 9, 10 and 12 are `$0` — and the rows are:
+
+| `Layer` | |
+|---|---:|
+| `Layer$` — **no value** | **$2.2228** |
+| `Layer$compute` | $0.7454 |
+| `Layer$data` | $0.1024 |
+| **total** | **$3.0706** |
+
+**72.4% of the tagged spend has no `Layer`.** That is the finding, and the reason it is a decision
+entry rather than a footnote is that **every resource in this window was configured to carry the
+key.** Both Terraform roots set it through `default_tags` (H-080).
+`deploy/k8s/eksctl/cluster.yaml` sets `Project`/`Layer`/`Phase`/`ManagedBy` on `metadata.tags`
+*and* on the managed node group, precisely so the cluster would be `Layer: compute` against the
+data layer's `Layer: data`. The tagging was not the thing that failed.
+
+**The activation clock is.** `Project` activated at **02:16 UTC**; `Layer`, `Phase` and `ManagedBy`
+at **16:54 UTC** — on the one day that carries the entire bill. Cost allocation tags are applied to
+line items **from activation forward and are not backfilled**, so an hour billed before 16:54 has
+no `Layer` value no matter what the resource was wearing at the time. A key activated in the
+afternoon groups nothing that happened that morning. The runbook already said this about days —
+*"a key activated on Day 3 groups nothing that happened on Day 1"* — and what it did not anticipate
+is a window short enough that the same sentence applies **within a single day**.
+
+**This is inference, and it is labelled as such.** Daily granularity cannot separate *billed before
+16:54* from *resource carried no key*, and the artifact is daily. The reading above is the one the
+configuration supports — the keys were on everything, so the clock is what is left — and the check
+that would settle it is a `--granularity HOURLY` query, which Cost Explorer serves for the trailing
+14 days and which nobody ran before the window aged out. The supporting number: the data layer
+billed **$0.3527** on Aug 11 and **$0.1024** of it carries `Layer=data` — **29.0%**, against the
+**29.6%** of that day which falls after 16:54 UTC. The clock explains it almost exactly.
+
+**The second loss, which is a resource problem rather than a clock problem.** Headroom's
+attributable spend on Aug 11 was **$3.5556** — the $3.7798 unfiltered day, less the ≈$0.2242/day of
+pre-existing S3 bucket spend that is the account's baseline and not this project's. Of that,
+**$3.0706** carries `Project`. The remaining **$0.4850 is Headroom's money that no tag can find**,
+and the console breakdown says where it went: Elastic Load Balancing shows **$0.02** against the
+service's actual **$0.3380**, and VPC **$0.13** against **$0.2778**. The Network Load Balancer is
+created by the in-cluster cloud controller manager in response to a Service annotation — it is
+declared by neither Terraform root nor by `cluster.yaml`, so it carries no `Project` tag at all and
+drops out of every tagged figure. **H-080 wrote this consequence down as theoretical** — *"a stray
+untagged resource is now visible rather than theoretical: anything created outside these two roots
+has no `Project` tag and drops out of every figure the phase log quotes"* — and it is now a
+measured $0.32 on a $3.56 bill: 9% of this project's cloud spend, invisible.
+
+**Decision — record the mechanism, and put the ordering in the runbook rather than only the
+lesson.** Three things, in `deploy/k8s/README.md` §17:
+
+1. **Activate the keys, wait for them to read `Active`, and only then create the first hourly
+   resource.** H-080's ECR-seed trick makes the keys *visible* to Billing; it does not make them
+   *active*, and the gap between the two is hours. The right shape is seed → poll
+   `list-cost-allocation-tags` until all four read `Active` → *then* apply everything else. The
+   wait costs nothing, because the only thing standing is an empty ECR repository.
+2. **Tag what Kubernetes creates on your behalf, not only what you declare.** The NLB needs
+   `service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags` on the Service if the
+   `Layer` split is meant to cover it. **Untested here** — the window was over before the gap was
+   measured — and labelled as such per H-097 rather than presented as a verified fix.
+3. **If the window is short, read `Layer` at `HOURLY` granularity while it is still inside the
+   14-day retention.** A daily read of a fourteen-hour window cannot distinguish the two failure
+   modes above, which is why this entry reasons about them instead of reporting them.
+
+**Alternatives considered.** *Report only the tag-attributable $3.07 and call A7 closed* — it is
+the number the console shows, and it is 14% short of what the project actually cost; a cost
+attribution story that under-reports its own bill is the failure A7 exists to prevent. *Report only
+the $3.5556 service-grouped figure and drop the tag view* — loses the finding entirely, and the
+finding is the more valuable half. *Re-run the window with the tags active to get a clean read* —
+roughly $3.56 and another day, to re-measure something already understood; refused under §0.6, and
+both numbers are published instead. *Treat the $0.4850 gap as noise* — it is 14% of the bill and it
+has a named cause.
+
+**Consequences.** A7 closes with **two totals and the gap between them stated**, which is what the
+README and both phase-log tables now carry. The estimate itself was good: the four lines
+`deploy/k8s/README.md` priced came in at **$3.2137** against the **$3.25** those same lines project
+for a fourteen-hour window — inside 1.2% — while the lines it had no row for at all (VPC, Secrets
+Manager, ECS, ECR) added **$0.3419**. The miss was scope, not rates. And the total undershoots A7's
+$20–25 for the arithmetic reason H-096 gave rather than a flattering one: **fourteen hours instead
+of three days.** The rate — **≈$6.10/day** against **$5.58/day** estimated — is the number that
+answers the pre-registered question, and it came in *over*. Nothing here got cheaper; the meter ran
+for less time, and the phase log says so in those words.
+
+The lesson for anyone repeating this, in one line: **tagging every resource from its first second
+is necessary and is not sufficient — the keys have to be `Active` before the meter starts, because
+Cost Explorer will not go back and look.**
+
+---
