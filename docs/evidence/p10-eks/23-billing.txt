@@ -1,0 +1,567 @@
+----------------------------------
+|         GetCostAndUsage        |
++--------------------------------+
+||       GroupDefinitions       ||
+|+---------------+--------------+|
+||      Key      |    Type      ||
+|+---------------+--------------+|
+||  Layer        |  TAG         ||
+|+---------------+--------------+|
+||         ResultsByTime        ||
+|+------------------------------+|
+||           Estimated          ||
+|+------------------------------+|
+||  True                        ||
+|+------------------------------+|
+|||         TimePeriod         |||
+||+-------------+--------------+||
+|||     End     |    Start     |||
+||+-------------+--------------+||
+|||  2026-08-10 |  2026-08-09  |||
+||+-------------+--------------+||
+|||            Total           |||
+||+----------------------------+||
+||||       UnblendedCost      ||||
+|||+--------------+-----------+|||
+||||    Amount    |   Unit    ||||
+|||+--------------+-----------+|||
+||||  0           |  USD      ||||
+|||+--------------+-----------+|||
+||         ResultsByTime        ||
+|+------------------------------+|
+||           Estimated          ||
+|+------------------------------+|
+||  True                        ||
+|+------------------------------+|
+|||         TimePeriod         |||
+||+-------------+--------------+||
+|||     End     |    Start     |||
+||+-------------+--------------+||
+|||  2026-08-11 |  2026-08-10  |||
+||+-------------+--------------+||
+|||            Total           |||
+||+----------------------------+||
+||||       UnblendedCost      ||||
+|||+--------------+-----------+|||
+||||    Amount    |   Unit    ||||
+|||+--------------+-----------+|||
+||||  0           |  USD      ||||
+|||+--------------+-----------+|||
+||         ResultsByTime        ||
+|+------------------------------+|
+||           Estimated          ||
+|+------------------------------+|
+||  True                        ||
+|+------------------------------+|
+|||           Groups           |||
+||||           Keys           ||||
+|||+--------------------------+|||
+||||  Layer$                  ||||
+|||+--------------------------+|||
+||||          Metrics         ||||
+|||+--------------------------+|||
+|||||      UnblendedCost     |||||
+||||+---------------+--------+||||
+|||||    Amount     | Unit   |||||
+||||+---------------+--------+||||
+|||||  2.2228323773 |  USD   |||||
+||||+---------------+--------+||||
+|||           Groups           |||
+||||           Keys           ||||
+|||+--------------------------+|||
+||||  Layer$compute           ||||
+|||+--------------------------+|||
+||||          Metrics         ||||
+|||+--------------------------+|||
+|||||      UnblendedCost     |||||
+||||+---------------+--------+||||
+|||||    Amount     | Unit   |||||
+||||+---------------+--------+||||
+|||||  0.7453818488 |  USD   |||||
+||||+---------------+--------+||||
+|||           Groups           |||
+||||           Keys           ||||
+|||+--------------------------+|||
+||||  Layer$data              ||||
+|||+--------------------------+|||
+||||          Metrics         ||||
+|||+--------------------------+|||
+|||||      UnblendedCost     |||||
+||||+---------------+--------+||||
+|||||    Amount     | Unit   |||||
+||||+---------------+--------+||||
+|||||  0.1024054295 |  USD   |||||
+||||+---------------+--------+||||
+|||         TimePeriod         |||
+||+-------------+--------------+||
+|||     End     |    Start     |||
+||+-------------+--------------+||
+|||  2026-08-12 |  2026-08-11  |||
+||+-------------+--------------+||
+||         ResultsByTime        ||
+|+------------------------------+|
+||           Estimated          ||
+|+------------------------------+|
+||  True                        ||
+|+------------------------------+|
+|||         TimePeriod         |||
+||+-------------+--------------+||
+|||     End     |    Start     |||
+||+-------------+--------------+||
+|||  2026-08-13 |  2026-08-12  |||
+||+-------------+--------------+||
+|||            Total           |||
+||+----------------------------+||
+||||       UnblendedCost      ||||
+|||+--------------+-----------+|||
+||||    Amount    |   Unit    ||||
+|||+--------------+-----------+|||
+||||  0           |  USD      ||||
+|||+--------------+-----------+|||
+{
+    "GroupDefinitions": [
+        {
+            "Type": "DIMENSION",
+            "Key": "SERVICE"
+        }
+    ],
+    "ResultsByTime": [
+        {
+            "TimePeriod": {
+                "Start": "2026-08-09",
+                "End": "2026-08-10"
+            },
+            "Total": {},
+            "Groups": [
+                {
+                    "Keys": [
+                        "AWS Amplify"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0000028343",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Glue"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon DynamoDB"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Storage Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.224160369",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AmazonCloudWatch"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                }
+            ],
+            "Estimated": true
+        },
+        {
+            "TimePeriod": {
+                "Start": "2026-08-10",
+                "End": "2026-08-11"
+            },
+            "Total": {},
+            "Groups": [
+                {
+                    "Keys": [
+                        "AWS Amplify"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0000015476",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Glue"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon DynamoDB"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.000870125",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Storage Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.224154703",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AmazonCloudWatch"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                }
+            ],
+            "Estimated": true
+        },
+        {
+            "TimePeriod": {
+                "Start": "2026-08-11",
+                "End": "2026-08-12"
+            },
+            "Total": {},
+            "Groups": [
+                {
+                    "Keys": [
+                        "AWS Amplify"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0000016646",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS CloudFormation"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Glue"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Key Management Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Lambda"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Secrets Manager"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.03849534",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon DynamoDB"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.015744375",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon EC2 Container Registry (ECR)"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0021185966",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "EC2 - Other"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0603670079",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Elastic Compute Cloud - Compute"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "1.109264",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Elastic Container Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0235260557",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Elastic Container Service for Kubernetes"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "1.353326472",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Elastic Load Balancing"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.338040791",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Relational Database Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.3369578645",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Notification Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Queue Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Storage Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.2241915264",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Virtual Private Cloud"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.2777504819",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AmazonCloudWatch"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                }
+            ],
+            "Estimated": true
+        },
+        {
+            "TimePeriod": {
+                "Start": "2026-08-12",
+                "End": "2026-08-13"
+            },
+            "Total": {},
+            "Groups": [
+                {
+                    "Keys": [
+                        "AWS Amplify"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.0000015255",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Glue"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AWS Key Management Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon DynamoDB"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Queue Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "Amazon Simple Storage Service"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0.1199812382",
+                            "Unit": "USD"
+                        }
+                    }
+                },
+                {
+                    "Keys": [
+                        "AmazonCloudWatch"
+                    ],
+                    "Metrics": {
+                        "UnblendedCost": {
+                            "Amount": "0",
+                            "Unit": "USD"
+                        }
+                    }
+                }
+            ],
+            "Estimated": true
+        }
+    ],
+    "DimensionValueAttributes": []
+}
